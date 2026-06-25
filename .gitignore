@@ -1,0 +1,27 @@
+# Python
+backend/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local data (DB + encrypted secret store) — never commit
+*.db
+*.db-wal
+*.db-shm
+secrets.enc
+
+# Env / secrets
+.env
+backend/.env
+
+# OS
+.DS_Store
+Thumbs.db

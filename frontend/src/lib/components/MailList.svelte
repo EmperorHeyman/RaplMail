@@ -424,7 +424,7 @@
             <SmartGroupCard
               label={CAT_META[item.category]?.label || item.category}
               icon={CAT_META[item.category]?.icon || icons.folder}
-              count={item.count} senders={item.senders} more={item.more} recent={item.recent}
+              count={item.count} senders={item.senders} more={item.more}
               focused={i === focusIndex} expanded={expandedKeys.has(item.key)}
               onToggle={() => { focusIndex = i; activate(item); }}
               onSender={(email) => searchAddress(email)}

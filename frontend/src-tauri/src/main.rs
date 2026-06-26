@@ -151,6 +151,15 @@ fn main() {
     let base = format!("http://127.0.0.1:{port}");
 
     tauri::Builder::default()
+        // Must be the FIRST plugin: a second launch (e.g. Start-menu / Win+search)
+        // focuses the existing window instead of spawning another instance.
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())

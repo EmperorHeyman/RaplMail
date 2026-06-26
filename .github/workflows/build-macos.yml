@@ -37,7 +37,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "lts/*"       # always the newest LTS (currently 24)
 
       - name: Install frontend deps
         working-directory: frontend
@@ -46,10 +46,23 @@ jobs:
       - name: Build the Tauri app (.dmg)
         working-directory: frontend
         env:
-          # Updater signing — set these as repo secrets to emit signed artifacts.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: npx tauri build
+        # Sign updater artifacts only when a VALID key secret is present; otherwise
+        # build a plain .dmg (avoids the "Missing comment in secret key" failure
+        # when the secret is unset or malformed). To emit signed mac updater
+        # artifacts: store the FULL contents of frontend/src-tauri/.tauri-updater.key
+        # (including the "untrusted comment:" first line) in the
+        # TAURI_SIGNING_PRIVATE_KEY repo secret, set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+        # (empty if the key has no password), and drop the --config override below.
+        run: |
+          if printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | grep -q "untrusted comment"; then
+            echo "Signing key present — building signed updater artifacts."
+            npx tauri build
+          else
+            echo "No valid signing key secret — building .dmg without updater artifacts."
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          fi
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

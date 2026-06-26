@@ -1,6 +1,5 @@
 <script>
-  import { listTime } from "../time.js";
-  let { label, icon, count = 0, senders = [], more = 0, recent = [], expanded = false, focused = false,
+  let { label, icon, count = 0, senders = [], more = 0, expanded = false, focused = false,
         onToggle, onSender } = $props();
   const initial = (s) => (s || "?").trim()[0]?.toUpperCase() || "?";
 </script>
@@ -13,20 +12,8 @@
     <span class="chev" aria-hidden="true">⌄</span>
     <span class="state">{expanded ? "Hide" : "Show"}</span>
   </button>
-  {#if !expanded && recent.length}
-    <!-- Newest first — what actually just arrived in this group. -->
-    <div class="recent">
-      {#each recent as m}
-        <button class="rrow" title={m.email} onclick={(e) => { e.stopPropagation(); onSender?.(m.email); }}>
-          <span class="av">{initial(m.name || m.email)}</span>
-          <span class="nm">{m.name || m.email}</span>
-          <span class="subj">{m.subject}</span>
-          <span class="t">{listTime(m.date)}</span>
-        </button>
-      {/each}
-      {#if count > recent.length}<button class="morechip" onclick={onToggle}>+{(count - recent.length).toLocaleString()} more</button>{/if}
-    </div>
-  {:else if !expanded && senders.length}
+  {#if !expanded && senders.length}
+    <!-- Compact sender chips with counts (matches the Settings preview). -->
     <div class="chips">
       {#each senders as s}
         <button class="chip" title={s.email} onclick={(e) => { e.stopPropagation(); onSender?.(s.email); }}>
@@ -60,12 +47,6 @@
     font-size: 14px; line-height: 1; color: var(--muted); flex: none;
     transition: transform 0.18s ease, color 0.15s, border-color 0.15s, background 0.15s; }
   .sg.open .chev { transform: rotate(180deg); color: #fff; background: var(--accent); border-color: var(--accent); }
-  .recent { display: flex; flex-direction: column; gap: 1px; padding: 4px 0 0 28px; }
-  .rrow { display: flex; align-items: center; gap: 8px; width: 100%; padding: 3px 6px; border-radius: 6px; text-align: left; }
-  .rrow:hover { background: var(--surface-2); }
-  .rrow .nm { font-size: 12px; font-weight: 600; color: var(--text); flex: none; max-width: 38%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .rrow .subj { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
-  .rrow .t { font-size: 11px; color: var(--faint); flex: none; margin-left: auto; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 0 28px; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px 3px 3px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); max-width: 220px; }
   .chip:hover { border-color: var(--accent); }

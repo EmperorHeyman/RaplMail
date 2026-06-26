@@ -343,6 +343,24 @@
     }
   }
 
+  // Detach the docked composer into its own OS window, carrying the draft over.
+  async function popOut() {
+    const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
+                   in_reply_to: c.in_reply_to, account_id: accountId, attachments };
+    try { sessionStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
+    const url = `${location.pathname}${location.search}#compose`;
+    try {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+        new WebviewWindow(`compose-${Date.now()}`, { url, title: "New message", width: 720, height: 680 });
+      } else {
+        window.open(url, "_blank", "width=720,height=680");
+      }
+      clearDraft();
+      app.composing = null;   // close the docked panel; the window now owns it
+    } catch (e) { notify(e.message || "Couldn't open a window", "error"); }
+  }
+
   function onHeaderDown(e) {
     if (standalone) return;
     dragging = true;
@@ -374,7 +392,12 @@
 <div class="panel" class:standalone style={dockStyle}>
   <header onpointerdown={onHeaderDown}>
     <span>New message</span>
-    <button class="x" onpointerdown={(e) => e.stopPropagation()} onclick={close}>{@html icons.close}</button>
+    <div class="hbtns" onpointerdown={(e) => e.stopPropagation()}>
+      {#if !standalone}
+        <button class="x" title="Open in a separate window" onclick={popOut}>{@html icons.window || icons.external || "⧉"}</button>
+      {/if}
+      <button class="x" onclick={close}>{@html icons.close}</button>
+    </div>
   </header>
 
   <div class="fields">
@@ -474,12 +497,14 @@
 <style>
   .panel { position: fixed; bottom: 18px; z-index: 50; width: min(580px, 94vw); height: min(600px, 86vh);
     display: flex; flex-direction: column; overflow: hidden; background: var(--surface); color: var(--text);
-    border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
-  .panel.standalone { position: static; width: 100%; height: 100vh; border: none; border-radius: 0; box-shadow: none; }
+    border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
+    resize: both; min-width: 380px; min-height: 360px; max-width: 96vw; max-height: 92vh; }
+  .panel.standalone { position: static; width: 100%; height: 100vh; border: none; border-radius: 0; box-shadow: none; resize: none; max-width: none; max-height: none; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--border); font-weight: 600; cursor: move; user-select: none; background: var(--surface-2); }
   .panel.standalone header { cursor: default; }
-  .x { color: var(--muted); font-size: 14px; padding: 3px 7px; border-radius: 6px; }
-  .x:hover { background: var(--surface-3); }
+  .hbtns { display: flex; align-items: center; gap: 2px; }
+  .x { color: var(--muted); font-size: 14px; padding: 3px 7px; border-radius: 6px; display: inline-flex; }
+  .x:hover { background: var(--surface-3); color: var(--text); }
   .pgp { display: inline-flex; gap: 4px; }
   .pgp-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .pgp-btn.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent); }
@@ -503,8 +528,9 @@
   .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-3); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
   .chip button { color: var(--muted); }
   .chip button:hover { color: var(--danger); }
-  footer { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--border); }
-  .later { position: relative; }
+  footer { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
+  footer > .btn, footer .later > .btn, .pgp-btn { flex: none; white-space: nowrap; }
+  .later { position: relative; flex: none; }
   .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 220px; }
   .later-menu > button { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
   .later-menu > button:hover { background: var(--accent); color: #fff; }

@@ -79,10 +79,19 @@ Living doc — add freely. Status: ✅ done · 🚧 in progress · ⬜ planned
 
 ## Planned
 - ⬜ Templates / canned replies (beyond snippets)
+- ⬜ **Pinned mails** — pin important messages to the top of the list regardless of date/category (own pin flag, pinned section above everything)
+- ✅ **Invitation categorization fix** — meeting requests now classify as Invitations even when the subject isn't English-keyworded: subject-prefix detection (meeting/schůzka/porada/…) + the reliable signal — a real `text/calendar` event in the body recategorizes to Invitations / Invitation-responses on open
+- ✅ **Notifications: test button + diagnosis** — "Send test notification" in Settings (bypasses the unfocused rule) so you can confirm the OS path; clearer guidance when Windows/Focus-Assist is the blocker; fixed the notification icon
+- ✅ **Text & UI size** — Appearance slider (80–140%) scales the whole UI via WebView zoom, persisted
+- ⬜ **BYOK AI integration** — bring-your-own-key (OpenAI/Anthropic/Ollama-local); summarize threads, draft/reply, "catch me up", smart categorize — key stored in the encrypted vault, calls go direct from the local backend, nothing through a middleman
+- ⬜ **Auto-updater** — Tauri updater plugin: check a release feed, download + verify signature, one-click update (so the installed `.exe` self-updates instead of manual re-install)
+- ⬜ **Background / tray mode** — minimize to the system tray, keep IMAP IDLE + sync running, show unread badge, native "new mail" notifications even when the window is closed; launch-on-startup option
+- ⬜ **macOS port** — build the Tauri app for macOS (universal arm64+x86_64), `.dmg` bundle, PyInstaller mac sidecar, Gmail/M365 loopback-OAuth parity, keychain-style vault
 
 ## Ideas / backlog
 - ⬜ Calendar / contacts integration
 - ⬜ End-to-end test harness for IMAP/SMTP against a test account
+- See [potential_features.md](potential_features.md) for a longer brainstorm of candidate features.
 
 ---
 _Add your own items below._

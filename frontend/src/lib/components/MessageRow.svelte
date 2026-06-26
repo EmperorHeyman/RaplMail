@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, prefetchBody } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody } from "../store.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
@@ -141,7 +141,7 @@
         <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, null); }}>Unsnooze now</button>
       {/if}
       {#each snoozePresets() as p}
-        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, p.iso, p.presence); }}>{p.label}</button>
+        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, p.iso, p.presence); }}>{p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}</button>
       {/each}
     </div>
   {/if}
@@ -187,8 +187,10 @@
   .shield.bad { color: var(--danger); }
   .avatar .box { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; opacity: 0; transition: opacity 0.1s; }
   /* Show a checkbox on hover, in selection mode, or when checked. */
-  .row:hover .avatar .initial, .avatar.selecting .initial, .avatar.checked .initial { opacity: 0; }
-  .row:hover .avatar .box, .avatar.selecting .box, .avatar.checked .box { opacity: 1; background: rgba(0,0,0,0.25); }
+  /* Keep the favicon/initial visible on hover; only swap to a checkbox once
+     selection mode is active (or this row is checked). */
+  .avatar.selecting .initial, .avatar.checked .initial { opacity: 0; }
+  .avatar.selecting .box, .avatar.checked .box { opacity: 1; background: rgba(0,0,0,0.25); }
   .avatar.checked { background: var(--accent); }
   .avatar.checked .box { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -221,4 +223,6 @@
   }
   .snooze-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
   .snooze-menu button:hover { background: var(--accent); color: #fff; }
+  .snooze-menu .when { color: var(--faint); font-size: 11px; }
+  .snooze-menu button:hover .when { color: #e7e9ff; }
 </style>

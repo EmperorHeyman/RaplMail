@@ -63,6 +63,7 @@
   }
   function setMode(mode) { saveSettings({ themeMode: mode }); applyTheme(); }
   function setRadius(v) { saveSettings({ radius: Number(v) }); applyTheme(); }
+  function setScale(v) { saveSettings({ uiScale: Number(v) }); applyTheme(); }
   function setCss(v) { saveSettings({ customCss: v }); applyTheme(); }
   function reset() {
     saveSettings({ theme: {}, themeMode: "manual" });
@@ -107,6 +108,11 @@
 
   <section class="card">
     <h3>Shape & layout</h3>
+    <label class="slider-row">
+      <span>Text &amp; UI size</span>
+      <input type="range" min="0.8" max="1.4" step="0.05" value={app.settings.uiScale ?? 1} oninput={(e) => setScale(e.currentTarget.value)} />
+      <span class="val">{Math.round((app.settings.uiScale ?? 1) * 100)}%</span>
+    </label>
     <label class="slider-row">
       <span>Corner roundness</span>
       <input type="range" min="0" max="22" value={app.settings.radius} oninput={(e) => setRadius(e.currentTarget.value)} />

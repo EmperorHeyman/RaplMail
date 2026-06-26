@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets } from "../store.svelte.js";
+  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { signatures as sigApi, compose as composeApi } from "../api.js";
   import RecipientInput from "./RecipientInput.svelte";
@@ -35,14 +35,37 @@
   }
   function applySignature() {
     if (!editor) return;
-    editor.querySelector(".rapl-sig")?.remove();
-    if (signatureId === "none") return;
-    const sig = sigs.find((s) => String(s.id) === String(signatureId));
-    if (!sig) return;
-    const div = document.createElement("div");
-    div.className = "rapl-sig";
-    div.innerHTML = sigHtml(sig);
-    editor.appendChild(div);
+    editor.querySelector(".rapl-sig-wrap")?.remove();
+    if (signatureId !== "none") {
+      const sig = sigs.find((s) => String(s.id) === String(signatureId));
+      if (sig) {
+        const wrap = document.createElement("div");
+        wrap.className = "rapl-sig-wrap";
+        // Blank line above the signature so it never butts against your text.
+        wrap.innerHTML = `<div><br></div><div class="rapl-sig">${sigHtml(sig)}</div>`;
+        editor.appendChild(wrap);
+      }
+    }
+    // Guarantee at least one editable line that isn't the signature, so you can
+    // always type above it (fixes "signature stuck at the very top").
+    const hasBody = [...editor.childNodes].some(
+      (n) => !(n.nodeType === 1 && n.classList && n.classList.contains("rapl-sig-wrap"))
+    );
+    if (!hasBody) {
+      const lead = document.createElement("div");
+      lead.innerHTML = "<br>";
+      editor.insertBefore(lead, editor.firstChild);
+    }
+  }
+  function focusTop() {
+    if (!editor) return;
+    editor.focus();
+    try {
+      const sel = window.getSelection();
+      const r = document.createRange();
+      r.setStart(editor, 0); r.collapse(true);
+      sel.removeAllRanges(); sel.addRange(r);
+    } catch {}
   }
 
   onMount(async () => {
@@ -56,13 +79,13 @@
     if (c.cc) showCc = true;
     if (Array.isArray(c.attachments)) attachments = c.attachments;
     if (editor && c.html) editor.innerHTML = c.html;
-    editor?.focus();
     try {
       sigs = await sigApi.list();
       const d = defaultSigFor(accountId);
       signatureId = d ? d.id : "none";
-      applySignature();
     } catch {}
+    applySignature();
+    focusTop();
   });
 
   // Re-pick the default signature when the From account changes.
@@ -107,6 +130,7 @@
   function removeAttachment(i) { attachments = attachments.filter((_, idx) => idx !== i); }
 
   let laterMenu = $state(false);
+  let customWhen = $state("");
 
   function autoBccFor(recipients) {
     const rules = app.settings.autoBcc || [];
@@ -156,6 +180,18 @@
       notify(`Scheduled — ${label}`);
       if (standalone) window.close(); else app.composing = null;
     } catch (e) { notify("Couldn't schedule: " + e.message, "error"); }
+  }
+
+  // datetime-local needs "YYYY-MM-DDTHH:MM" in local time.
+  function nowLocal() {
+    const d = new Date(Date.now() - new Date().getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  }
+  function sendCustom() {
+    if (!customWhen) { notify("Pick a date & time", "error"); return; }
+    const d = new Date(customWhen);
+    if (isNaN(d.getTime()) || d <= new Date()) { notify("Pick a future time", "error"); return; }
+    sendLater(d.toISOString(), d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }));
   }
 
   function fillVars(body) {
@@ -285,7 +321,13 @@
       <button class="btn" onclick={() => (laterMenu = !laterMenu)} title="Send later">{@html icons.clock} Later ⌄</button>
       {#if laterMenu}
         <div class="later-menu">
-          {#each snoozePresets().filter((p) => p.iso) as p}<button onclick={() => sendLater(p.iso, p.label)}>{p.label}</button>{/each}
+          {#each snoozePresets().filter((p) => p.iso) as p}
+            <button onclick={() => sendLater(p.iso, p.label)}><span>{p.label}</span><span class="when">{presetWhen(p.at)}</span></button>
+          {/each}
+          <div class="custom">
+            <input type="datetime-local" bind:value={customWhen} min={nowLocal()} />
+            <button class="btn primary sm" onclick={sendCustom}>Schedule</button>
+          </div>
         </div>
       {/if}
     </div>
@@ -329,9 +371,14 @@
   .chip button:hover { color: var(--danger); }
   footer { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-top: 1px solid var(--border); }
   .later { position: relative; }
-  .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 150px; }
-  .later-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
-  .later-menu button:hover { background: var(--accent); color: #fff; }
+  .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 220px; }
+  .later-menu > button { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+  .later-menu > button:hover { background: var(--accent); color: #fff; }
+  .later-menu .when { color: var(--muted); font-size: 12px; }
+  .later-menu > button:hover .when { color: #e7e9ff; }
+  .later-menu .custom { display: flex; gap: 6px; padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+  .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
+  .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
   .sigpick { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
   .sigpick select { padding: 5px 8px; }
   .hint { color: var(--faint); font-size: 12px; margin-left: auto; }

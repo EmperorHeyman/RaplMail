@@ -28,6 +28,7 @@ const DEFAULT_SETTINGS = {
   ],
   theme: {},                     // CSS custom-property overrides: { "--accent": "#..." }
   radius: 11,                    // corner roundness (px)
+  uiScale: 1,                    // overall UI/font scale (0.85–1.3) via CSS zoom
   customCss: "",                 // user CSS injected app-wide
   sidebarWidth: 248,             // resizable layout (Customize mode)
   listWidth: 400,
@@ -38,6 +39,9 @@ const DEFAULT_SETTINGS = {
   smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
   senderAvatars: true,           // fetch + cache the sender domain's favicon as the avatar
   relativeTime: false,           // list rows show "3 hours ago" instead of a date
+  scheduleLaterHours: 3,         // "Later today" = now + this many hours
+  scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
+  scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
   rowActions: ["snooze", "done"],// the two hover buttons on each message row (left, right)
@@ -135,6 +139,10 @@ export function applyTheme() {
   const r = app.settings.radius ?? 11;
   root.style.setProperty("--radius", `${r}px`);
   root.style.setProperty("--radius-sm", `${Math.max(3, r - 4)}px`);
+  // UI scale (font/zoom). WebView2/Chromium honors `zoom`, which scales the whole
+  // px-based UI cleanly.
+  const scale = app.settings.uiScale ?? 1;
+  root.style.setProperty("zoom", String(scale));
   // User custom CSS (escape hatch for buttons, spacing, anything).
   let el = document.getElementById("rapl-custom-css");
   if (!el) { el = document.createElement("style"); el.id = "rapl-custom-css"; document.head.appendChild(el); }
@@ -414,22 +422,38 @@ export async function syncAllAccounts() {
 
 /** Snooze preset times relative to now. */
 export function snoozePresets() {
+  const s = app.settings;
+  const morning = s.scheduleMorningHour ?? 9;
+  const eveningH = s.scheduleEveningHour ?? 18;
+  const laterH = s.scheduleLaterHours ?? 3;
   const at = (d, h) => { const x = new Date(d); x.setHours(h, 0, 0, 0); return x; };
   const now = new Date();
-  const laterToday = new Date(now.getTime() + 3 * 3600 * 1000);
-  const tomorrow = at(new Date(now.getTime() + 86400000), 9);
-  const evening = at(now, 18);
-  const eveningOut = evening > now ? evening : at(new Date(now.getTime() + 86400000), 18);
-  const sat = new Date(now); sat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7)); sat.setHours(9, 0, 0, 0);
-  const mon = new Date(now); mon.setDate(now.getDate() + ((1 - now.getDay() + 7) % 7 || 7)); mon.setHours(9, 0, 0, 0);
+  const laterToday = new Date(now.getTime() + laterH * 3600 * 1000);
+  const tomorrow = at(new Date(now.getTime() + 86400000), morning);
+  const evening = at(now, eveningH);
+  const eveningOut = evening > now ? evening : at(new Date(now.getTime() + 86400000), eveningH);
+  const sat = new Date(now); sat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7)); sat.setHours(morning, 0, 0, 0);
+  const mon = new Date(now); mon.setDate(now.getDate() + ((1 - now.getDay() + 7) % 7 || 7)); mon.setHours(morning, 0, 0, 0);
   return [
-    { label: "Later today", iso: laterToday.toISOString() },
-    { label: "This evening", iso: eveningOut.toISOString() },
-    { label: "Tomorrow", iso: tomorrow.toISOString() },
-    { label: "This weekend", iso: sat.toISOString() },
-    { label: "Next week", iso: mon.toISOString() },
+    { label: "Later today", at: laterToday, iso: laterToday.toISOString() },
+    { label: "This evening", at: eveningOut, iso: eveningOut.toISOString() },
+    { label: "Tomorrow", at: tomorrow, iso: tomorrow.toISOString() },
+    { label: "This weekend", at: sat, iso: sat.toISOString() },
+    { label: "Next week", at: mon, iso: mon.toISOString() },
     { label: "Until I'm back", presence: true },
   ];
+}
+
+// Human "when" for a preset target, e.g. "5:30 PM", "tomorrow 9:00 AM", "Mon 9:00 AM".
+export function presetWhen(at) {
+  if (!at) return "";
+  const now = new Date();
+  const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  if (at.toDateString() === now.toDateString()) return time;
+  const tom = new Date(now.getTime() + 86400000);
+  if (at.toDateString() === tom.toDateString()) return `tomorrow ${time}`;
+  if (at - now < 7 * 86400000) return `${at.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  return `${at.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
 export async function snoozeMessage(message, untilISO, presence = false) {
@@ -683,9 +707,24 @@ function desktopNotify(payload, count) {
     body = p.subject || "";
   }
   try {
-    const n = new Notification(title, { body, tag: "raplmail-newmail", icon: "/favicon.png" });
+    const n = new Notification(title, { body, tag: "raplmail-newmail", icon: "/favicon.svg" });
     n.onclick = () => { try { window.focus(); } catch {} n.close(); };
   } catch {}
+}
+
+// Fire a notification immediately to verify the OS path works (ignores the
+// "only when unfocused" rule so the user always sees the test).
+export async function testNotification() {
+  const perm = await enableNotifications();
+  if (perm === "unsupported") return { ok: false, reason: "unsupported" };
+  if (perm !== "granted") return { ok: false, reason: "denied" };
+  try {
+    const n = new Notification("RaplMail", { body: "Test notification — you're all set ✓", tag: "raplmail-test" });
+    n.onclick = () => { try { window.focus(); } catch {} n.close(); };
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, reason: e?.message || "error" };
+  }
 }
 
 let disconnect = null;

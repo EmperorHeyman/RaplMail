@@ -19,6 +19,10 @@ _INV_WORDS = ("invitation:", "invites you", "meeting invitation", "calendar invi
               "you're invited", "you are invited", "you have been invited", "invited you",
               "pozvánka", "schůzka", "meeting invite", "updated invitation",
               "canceled event", "cancelled event")
+# Subject prefixes that almost always denote a meeting request (Outlook titles
+# the invite with the meeting name, often starting with these).
+_INV_PREFIXES = ("meeting", "schůzka", "schuzka", "porada", "pozvánka", "pozvanka",
+                 "invitation", "call with", "1:1", "sync:", "huddle")
 
 
 def _domain_matches(domain: str, suffixes) -> bool:
@@ -64,7 +68,7 @@ def categorize(from_addr: str = "", from_name: str = "", subject: str = "",
     # Calendar invitations + their accept/decline responses (high priority).
     if subj.startswith(_INV_RESP_PREFIX):
         return "invitation_responses"
-    if any(w in text for w in _INV_WORDS):
+    if any(w in text for w in _INV_WORDS) or subj.startswith(_INV_PREFIXES):
         return "invitations"
 
     if _domain_matches(domain, _SOCIAL_DOMAINS):

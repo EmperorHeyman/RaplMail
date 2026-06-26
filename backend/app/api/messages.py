@@ -399,6 +399,13 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
             from app.api.calendar import upsert_events
             try: upsert_events(session, msg.account_id, msg.id, events)
             except Exception: pass
+            # A real calendar event in the body proves this is an invite/response,
+            # even if the subject didn't look like one.
+            methods = {(e.get("method") or "").upper() for e in events}
+            if "REPLY" in methods:
+                msg.category = "invitation_responses"
+            elif methods & {"REQUEST", "CANCEL"}:
+                msg.category = "invitations"
         session.add(msg)
         # Index the body for full-text search now that we have it.
         try:

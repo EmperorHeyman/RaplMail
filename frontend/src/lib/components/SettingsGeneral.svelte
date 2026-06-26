@@ -1,5 +1,5 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, exportConfig, importConfig } from "../store.svelte.js";
+  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig } from "../store.svelte.js";
   import { vault } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
@@ -69,6 +69,14 @@
     } else {
       saveSettings({ notifyNewMail: false });
     }
+  }
+  async function sendTest() {
+    const res = await testNotification();
+    notifPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    if (res.ok) notify("Test notification sent — check your desktop");
+    else if (res.reason === "denied") notify("Blocked — allow notifications for this app in Windows Settings → Notifications (and turn off Focus Assist)", "error");
+    else if (res.reason === "unsupported") notify("Notifications aren't supported here", "error");
+    else notify("Couldn't show notification: " + res.reason, "error");
   }
 
   // Configurable quick-action buttons.
@@ -306,9 +314,32 @@
           <span>Stay quiet while you're already looking at the app.</span>
         </div>
       </label>
+      <button class="btn" style="margin-top:10px" onclick={sendTest}>Send test notification</button>
+      <p class="hint" style="margin-top:8px">No popup? It's almost always the OS: Windows <b>Settings → Notifications</b> must allow this app, and <b>Focus Assist / Do Not Disturb</b> must be off.</p>
     {:else}
       <p class="hint">Desktop notifications aren't available in this environment.</p>
     {/if}
+  </section>
+
+  <section class="card">
+    <h3>Scheduling &amp; snooze times</h3>
+    <p class="hint">What the snooze / send-later presets actually mean.</p>
+    <label class="inline">“Later today” = now +
+      <select value={app.settings.scheduleLaterHours ?? 3} onchange={(e) => saveSettings({ scheduleLaterHours: Number(e.currentTarget.value) })}>
+        {#each [1,2,3,4,6,8] as h}<option value={h}>{h}</option>{/each}
+      </select> hours
+    </label>
+    <label class="inline">Morning (Tomorrow / weekend / next week) at
+      <select value={app.settings.scheduleMorningHour ?? 9} onchange={(e) => saveSettings({ scheduleMorningHour: Number(e.currentTarget.value) })}>
+        {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
+      </select>
+    </label>
+    <label class="inline">“This evening” at
+      <select value={app.settings.scheduleEveningHour ?? 18} onchange={(e) => saveSettings({ scheduleEveningHour: Number(e.currentTarget.value) })}>
+        {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
+      </select>
+    </label>
+    <p class="hint" style="margin-top:8px">Need an exact time? The compose “Later ⌄” menu has a date &amp; time picker.</p>
   </section>
 
   <section class="card">

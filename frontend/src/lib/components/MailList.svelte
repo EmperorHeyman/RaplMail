@@ -1,7 +1,7 @@
 <script>
   import { flip } from "svelte/animate";
   import { fly } from "svelte/transition";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
@@ -304,7 +304,7 @@
     <div class="ctx-sub">
       {@html icons.snooze} Snooze ▸
       <div class="ctx-subm">
-        {#each snoozePresets() as p}<button onclick={() => ctxRun((m) => snoozeMessage(m, p.iso, p.presence))}>{p.label}</button>{/each}
+        {#each snoozePresets() as p}<button onclick={() => ctxRun((m) => snoozeMessage(m, p.iso, p.presence))}>{p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}</button>{/each}
       </div>
     </div>
     <div class="ctx-sep"></div>
@@ -510,6 +510,8 @@
   .ctx-sub:hover .ctx-subm { display: flex; }
   .ctx-subm button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
   .ctx-subm button:hover { background: var(--accent); color: #fff; }
+  .ctx-subm .when { color: var(--faint); font-size: 11px; }
+  .ctx-subm button:hover .when { color: #e7e9ff; }
 
   /* Loading skeleton */
   .skel { display: flex; gap: 11px; align-items: center; padding: 13px 14px; border-bottom: 1px solid var(--border); }

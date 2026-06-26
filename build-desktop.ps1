@@ -49,16 +49,20 @@ else {
   $new = "$($p[0]).$($p[1]).$($p[2])"
 }
 
+# Write UTF-8 WITHOUT a BOM. PowerShell 5.1's `Set-Content -Encoding utf8` adds a
+# BOM, which breaks JSON/TOML tooling (vite can't read "type":"module", etc.).
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Write-NoBom([string]$path, [string]$content) {
+  [System.IO.File]::WriteAllText($path, $content, $utf8NoBom)
+}
+
 if ($new -ne $current) {
   Write-Host "Version: $current -> $new" -ForegroundColor Yellow
   $verRepl = '${1}' + $new + '${2}'
-  (Get-Content -Raw $confPath) -replace '("version"\s*:\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl |
-    Set-Content -NoNewline -Encoding utf8 $confPath -ErrorAction Stop
-  (Get-Content -Raw $pkgPath) -replace '("version"\s*:\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl |
-    Set-Content -NoNewline -Encoding utf8 $pkgPath -ErrorAction Stop
+  Write-NoBom $confPath ((Get-Content -Raw $confPath) -replace '("version"\s*:\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl)
+  Write-NoBom $pkgPath ((Get-Content -Raw $pkgPath) -replace '("version"\s*:\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl)
   # Cargo.toml: the [package] version is the only line that starts with `version =`
-  (Get-Content -Raw $cargoPath) -replace '(?m)^(version\s*=\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl |
-    Set-Content -NoNewline -Encoding utf8 $cargoPath -ErrorAction Stop
+  Write-NoBom $cargoPath ((Get-Content -Raw $cargoPath) -replace '(?m)^(version\s*=\s*")[0-9]+\.[0-9]+\.[0-9]+(")', $verRepl)
 }
 else {
   Write-Host "Version: $new (unchanged)" -ForegroundColor Yellow

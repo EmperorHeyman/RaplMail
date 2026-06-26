@@ -23,6 +23,48 @@ def _find(blob: str, name: str) -> str:
     return m.group(1).lower() if m else ""
 
 
+_DOMAIN_IN_TEXT = re.compile(r"\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b", re.IGNORECASE)
+_HREF_A = re.compile(r'<a\b[^>]*\bhref=["\']https?://([^/"\'?#\s]+)[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
+
+
+def _reg_domain(host: str) -> str:
+    host = (host or "").lower().split(":")[0].strip().rstrip(".")
+    parts = host.split(".")
+    return ".".join(parts[-2:]) if len(parts) >= 2 else host
+
+
+def spoof_warnings(from_addr: str = "", from_name: str = "", html: str = "") -> list[str]:
+    """Social-engineering checks DMARC can't catch: lookalike/IDN domains,
+    display-name domain mismatch, and link-text-vs-href mismatch."""
+    out: list[str] = []
+    from_dom = (from_addr or "").split("@")[-1].lower()
+
+    # 1) Confusable / punycode sender domain (Cyrillic 'е', etc.).
+    if from_dom and (from_dom.startswith("xn--") or any(ord(c) > 127 for c in from_dom)):
+        out.append(f"Sender domain “{from_dom}” uses non-standard characters — possible lookalike.")
+
+    # 2) Display name claims a different domain/email than the actual address.
+    if from_name and from_dom:
+        for m in _DOMAIN_IN_TEXT.finditer(from_name):
+            d = _reg_domain(m.group(1))
+            if "." in d and d != _reg_domain(from_dom):
+                out.append(f"Display name mentions “{d}” but the address is @{from_dom}.")
+                break
+
+    # 3) A link's visible text names one domain but it points to another.
+    if html:
+        for m in _HREF_A.finditer(html):
+            href_dom = _reg_domain(m.group(1))
+            shown_text = re.sub(r"<[^>]+>", "", m.group(2))
+            tm = _DOMAIN_IN_TEXT.search(shown_text)
+            if tm:
+                shown = _reg_domain(tm.group(1))
+                if "." in shown and href_dom and shown != href_dom:
+                    out.append(f"A link labeled “{shown}” actually goes to “{href_dom}”.")
+                    break
+    return out
+
+
 def check_auth(raw: bytes, from_addr: str = "") -> dict:
     out = {"status": "none", "dkim": "", "spf": "", "dmarc": "", "detail": "", "from_domain": ""}
     try:

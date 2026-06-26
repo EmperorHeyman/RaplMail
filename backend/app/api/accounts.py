@@ -29,16 +29,49 @@ class AccountOut(BaseModel):
     provider: Provider
     color: str
     enabled: bool
+    aliases: list[str] = []
 
 
 def _to_out(a: Account) -> AccountOut:
     return AccountOut(id=a.id, email=a.email, display_name=a.display_name,
-                      provider=a.provider, color=a.color, enabled=a.enabled)
+                      provider=a.provider, color=a.color, enabled=a.enabled,
+                      aliases=list(a.aliases or []))
 
 
 @router.get("", response_model=list[AccountOut])
 def list_accounts(session: Session = Depends(get_session)) -> list[AccountOut]:
     return [_to_out(a) for a in session.exec(select(Account))]
+
+
+@router.get("/health")
+def accounts_health(request: Request, session: Session = Depends(get_session)) -> list[dict]:
+    """Per-account connection/sync/IDLE status for the health dashboard."""
+    from app.models import Folder, Message
+    from sqlalchemy import func
+    snap = request.app.state.sync.health_snapshot()
+    out: list[dict] = []
+    for a in session.exec(select(Account)):
+        h = snap.get(a.id, {})
+        folder_count = session.exec(
+            select(func.count()).select_from(Folder).where(Folder.account_id == a.id)
+        ).one()
+        msg_count = session.exec(
+            select(func.count()).select_from(Message).where(Message.account_id == a.id)
+        ).one()
+        out.append({
+            "id": a.id, "email": a.email, "display_name": a.display_name,
+            "provider": a.provider, "color": a.color, "enabled": a.enabled,
+            "status": h.get("status", "idle" if a.enabled else "disabled"),
+            "last_sync": h.get("last_sync"),
+            "last_attempt": h.get("last_attempt"),
+            "last_new": h.get("last_new"),
+            "last_error": h.get("last_error"),
+            "last_error_at": h.get("last_error_at"),
+            "idle_active": h.get("idle_active", False),
+            "folders": folder_count,
+            "messages": msg_count,
+        })
+    return out
 
 
 # --- autodiscovery ---------------------------------------------------------
@@ -202,6 +235,7 @@ def _upsert_oauth_account(session: Session, store: SecretStore, email: str,
 class AccountUpdate(BaseModel):
     color: str | None = None
     display_name: str | None = None
+    aliases: list[str] | None = None
 
 
 @router.patch("/{account_id}", response_model=AccountOut)
@@ -214,9 +248,44 @@ def update_account(account_id: int, body: AccountUpdate,
         account.color = body.color
     if body.display_name is not None:
         account.display_name = body.display_name
+    if body.aliases is not None:
+        # Drop blanks and dedupe while preserving order.
+        seen, cleaned = set(), []
+        for a in (s.strip() for s in body.aliases):
+            if a and a.lower() not in seen:
+                seen.add(a.lower()); cleaned.append(a)
+        account.aliases = cleaned
     session.add(account)
     session.commit()
     session.refresh(account)
+    return _to_out(account)
+
+
+class ReconnectIn(BaseModel):
+    password: str
+
+
+@router.post("/{account_id}/reconnect", response_model=AccountOut)
+async def reconnect(account_id: int, body: ReconnectIn, request: Request,
+                    store: SecretStore = Depends(require_unlocked_store),
+                    session: Session = Depends(get_session)) -> AccountOut:
+    """Re-enter / fix the password for a password-based IMAP account (verifies it
+    against the server before storing), without removing the account."""
+    account = session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    if account.use_oauth or account.provider != Provider.imap:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            "This account signs in with OAuth — use Sign in with Microsoft/Google instead.")
+    if not body.password:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter your password.")
+    try:
+        await run_in_threadpool(_verify_imap_login, account.imap_host, account.imap_port,
+                                True, account.email, body.password)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    store.set(account.secret_key, body.password)
+    request.app.state.sync.request_sync()
     return _to_out(account)
 
 

@@ -175,6 +175,20 @@ class SecretStore:
             self._cache.pop(key, None)
             self._flush()
 
+    def cache_fernet(self) -> Fernet | None:
+        """A Fernet for encrypting the local message cache at rest. Uses a random
+        data-encryption key kept *inside* the vault (created on first use), so the
+        cache is sealed by the same master password. Returns None if locked."""
+        with self._lock:
+            if self._fernet is None:
+                return None
+            dek = self._cache.get("__cache_dek__")
+            if not dek:
+                dek = Fernet.generate_key().decode("ascii")
+                self._cache["__cache_dek__"] = dek
+                self._flush()
+            return Fernet(dek.encode("ascii"))
+
     def _require_unlocked(self) -> None:
         if self._fernet is None:
             raise LockedError("secret store is locked")

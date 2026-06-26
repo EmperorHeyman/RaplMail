@@ -19,6 +19,12 @@ from app.sync.compose import inject_signature
 router = APIRouter(prefix="/compose", tags=["compose"], dependencies=[Depends(verify_token)])
 
 
+def _alias_addr(s: str) -> str:
+    """Bare email from a 'Name <email>' or plain 'email' identity string."""
+    from email.utils import parseaddr
+    return parseaddr(s)[1] or s
+
+
 class Attachment(BaseModel):
     filename: str
     content_type: str = "application/octet-stream"
@@ -27,6 +33,7 @@ class Attachment(BaseModel):
 
 class SendIn(BaseModel):
     account_id: int
+    from_addr: str = ""        # send-as identity (account email or one of its aliases)
     to: list[str]
     cc: list[str] = []
     bcc: list[str] = []
@@ -38,6 +45,9 @@ class SendIn(BaseModel):
     use_default_signature: bool = True
     attachments: list[Attachment] = []
     send_at: datetime | None = None   # schedule for later (Send Later)
+    pgp_sign: bool = False
+    pgp_encrypt: bool = False
+    request_receipt: bool = False   # embed a read-receipt tracking pixel
 
 
 @router.post("/send", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_unlocked_store)])
@@ -67,6 +77,25 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
         return {"queued": True}
     request.app.state.sync.request_sync()
     return {"sent": True}
+
+
+class DraftIn(SendIn):
+    replace_uid: int | None = None   # delete this previously-saved draft first
+
+
+@router.post("/draft", dependencies=[Depends(require_unlocked_store)])
+async def save_draft(body: DraftIn, session: Session = Depends(get_session)) -> dict:
+    """Save the message to the account's IMAP Drafts folder (cross-device drafts)."""
+    if session.get(Account, body.account_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    payload = body.model_dump(mode="json")
+    payload.pop("replace_uid", None)
+    payload.pop("send_at", None)
+    try:
+        result = await run_in_threadpool(_save_draft_blocking, payload, body.replace_uid)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc))
+    return {"saved": True, **result}
 
 
 # --- scheduled sends --------------------------------------------------------
@@ -110,6 +139,71 @@ def _resolve_signature(session: Session, body: SendIn) -> Signature | None:
     ).first()
 
 
+def _build_message(session: Session, account: Account, body: SendIn) -> OutgoingMessage:
+    """Assemble the outgoing MIME message (signature + inline images + send-as)."""
+    signature = _resolve_signature(session, body)
+    html = body.html
+    inline_images: list[dict] = []
+    if signature:
+        html, inline_images = inject_signature(html, signature.html, signature.inline_images)
+    # Convert any data:base64 images in the body (e.g. an in-body signature or
+    # pasted image) into proper inline CID attachments so recipients see them.
+    from app.sync.compose import extract_data_images
+    html, body_imgs = extract_data_images(html)
+    inline_images = inline_images + body_imgs
+    # Use the chosen send-as identity, but only if it's a recognized alias of
+    # this account (or the account's own address) — never an arbitrary From.
+    from_addr = account.email
+    if body.from_addr:
+        valid = {account.email.lower(), *( _alias_addr(a).lower() for a in (account.aliases or []) )}
+        if _alias_addr(body.from_addr).lower() in valid or body.from_addr.lower() in valid:
+            from_addr = body.from_addr
+    message = OutgoingMessage(
+        from_addr=from_addr, to=body.to, cc=body.cc, bcc=body.bcc,
+        subject=body.subject, html=html, in_reply_to=body.in_reply_to,
+        references=body.references, inline_images=inline_images,
+        attachments=[{"filename": a.filename, "content_type": a.content_type,
+                      "data": base64.b64decode(a.data_b64)} for a in body.attachments],
+    )
+    # OpenPGP: sign and/or encrypt the body inline (ASCII-armored). Encryption
+    # needs a stored public key for every recipient.
+    if getattr(body, "pgp_sign", False) or getattr(body, "pgp_encrypt", False):
+        from app.sync import pgp as pgpmod
+        from app.sync.compose import _html_to_text
+        from app.models import Setting
+        row = session.get(Setting, 1)
+        blob = dict(row.data) if row and row.data else {}
+        recipients = [*body.to, *body.cc, *body.bcc]
+        recip_keys = pgpmod.pubkeys_for(recipients, blob) if body.pgp_encrypt else []
+        if body.pgp_encrypt and len(recip_keys) < len({r.lower() for r in recipients if r}):
+            raise RuntimeError("Missing a PGP public key for one or more recipients — import it first.")
+        armored = pgpmod.sign_and_encrypt(
+            _html_to_text(html), blob, recip_keys,
+            do_sign=body.pgp_sign, do_encrypt=body.pgp_encrypt)
+        if armored:
+            message.text = armored
+            message.html = ""
+            message.inline_images = []
+    return message
+
+
+def _embed_receipt(session: Session, message: OutgoingMessage, body: SendIn) -> None:
+    """Append a read-receipt pixel to the HTML body and record the tracker."""
+    import secrets
+
+    from app.core.config import get_settings
+    from app.models import OpenTrack, Setting
+    row = session.get(Setting, 1)
+    blob = dict(row.data) if row and row.data else {}
+    cfg = get_settings()
+    base = (blob.get("trackBaseUrl") or f"http://{cfg.host}:{cfg.port}").rstrip("/")
+    token = secrets.token_urlsafe(16)
+    message.html += f'<img src="{base}/track/o/{token}.png" width="1" height="1" alt="" style="display:none">'
+    session.add(OpenTrack(token=token, subject=body.subject,
+                          recipient=", ".join(body.to) or ""))
+    session.commit()
+
+
 def _deliver_blocking(body_dict: dict) -> None:
     """Build, send via SMTP, and append to Sent. Blocking; used everywhere."""
     from app.core.db import get_engine
@@ -120,23 +214,11 @@ def _deliver_blocking(body_dict: dict) -> None:
         account = session.get(Account, body.account_id)
         if account is None:
             raise RuntimeError("account not found")
-        signature = _resolve_signature(session, body)
-        html = body.html
-        inline_images: list[dict] = []
-        if signature:
-            html, inline_images = inject_signature(html, signature.html, signature.inline_images)
-        # Convert any data:base64 images in the body (e.g. an in-body signature or
-        # pasted image) into proper inline CID attachments so recipients see them.
-        from app.sync.compose import extract_data_images
-        html, body_imgs = extract_data_images(html)
-        inline_images = inline_images + body_imgs
-        message = OutgoingMessage(
-            from_addr=account.email, to=body.to, cc=body.cc, bcc=body.bcc,
-            subject=body.subject, html=html, in_reply_to=body.in_reply_to,
-            references=body.references, inline_images=inline_images,
-            attachments=[{"filename": a.filename, "content_type": a.content_type,
-                          "data": base64.b64decode(a.data_b64)} for a in body.attachments],
-        )
+        message = _build_message(session, account, body)
+        # Read-receipt: embed a tracking pixel (only into an HTML body — skip if
+        # the message was PGP-encrypted/signed into a plaintext armored block).
+        if body.request_receipt and message.html:
+            _embed_receipt(session, message, body)
         sent_path = session.exec(
             select(Folder.path).where(Folder.account_id == body.account_id,
                                       Folder.role == FolderRole.sent)
@@ -151,6 +233,53 @@ def _deliver_blocking(body_dict: dict) -> None:
                 pass
     finally:
         provider.close()
+
+
+def _save_draft_blocking(body_dict: dict, replace_uid: int | None) -> dict:
+    """Build the MIME and APPEND it to the account's IMAP Drafts folder.
+    Optionally expunges a previously-saved draft (replace_uid) so updating a
+    draft doesn't pile up copies. Returns {folder, uid}."""
+    from app.core.db import get_engine
+    from app.sync.compose import build_mime
+    from app.sync.engine import build_provider
+
+    body = SendIn(**body_dict)
+    with Session(get_engine()) as session:
+        account = session.get(Account, body.account_id)
+        if account is None:
+            raise RuntimeError("account not found")
+        message = _build_message(session, account, body)
+        drafts_path = session.exec(
+            select(Folder.path).where(Folder.account_id == body.account_id,
+                                      Folder.role == FolderRole.drafts)
+        ).first()
+        provider = build_provider(account)
+    if not drafts_path:
+        provider.close()
+        raise RuntimeError("no Drafts folder for this account")
+    raw = build_mime(message).as_bytes()
+    try:
+        client = provider._imap()
+        if replace_uid:
+            try:
+                client.select_folder(drafts_path)
+                client.delete_messages([replace_uid])
+                client.expunge()
+            except Exception:
+                pass
+        uid = None
+        try:
+            resp = client.append(drafts_path, raw, flags=[b"\\Draft", b"\\Seen"])
+            # imapclient returns the server's APPENDUID line when supported.
+            import re
+            m = re.search(rb"APPENDUID\s+\d+\s+(\d+)", resp or b"")
+            if m:
+                uid = int(m.group(1))
+        except Exception as exc:
+            raise RuntimeError(f"couldn't save draft: {exc}")
+    finally:
+        provider.close()
+    return {"folder": drafts_path, "uid": uid}
 
 
 def process_due_scheduled() -> int:

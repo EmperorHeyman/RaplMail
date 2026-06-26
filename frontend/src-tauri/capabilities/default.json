@@ -8,6 +8,14 @@
     {
       "identifier": "shell:allow-execute",
       "allow": [{ "name": "binaries/raplmail-backend", "sidecar": true, "args": false }]
-    }
+    },
+    "updater:default",
+    "process:default",
+    "process:allow-restart",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+    "opener:default",
+    "notification:default"
   ]
 }

@@ -217,14 +217,22 @@ class ImapSmtpProvider:
                 server.auth("XOAUTH2", lambda: f"user={self._auth.user}\x01auth=Bearer {self._auth.secret}\x01\x01")
             else:
                 server.login(self._auth.user, self._auth.secret)
-            server.sendmail(message.from_addr, recipients, raw)
+            # Envelope sender must be a bare address even if From is "Name <addr>".
+            from email.utils import parseaddr
+            envelope_from = parseaddr(message.from_addr)[1] or message.from_addr
+            server.sendmail(envelope_from, recipients, raw)
         finally:
             server.quit()
         return raw
 
-    def append_to_folder(self, folder_path: str, raw: bytes, seen: bool = True) -> None:
-        """Save a (sent) message into an IMAP folder so it shows up there."""
-        flags = [b"\\Seen"] if seen else []
+    def append_to_folder(self, folder_path: str, raw: bytes, seen: bool = True,
+                          draft: bool = False) -> None:
+        """Save a message into an IMAP folder (Sent copy, or a Draft)."""
+        flags = []
+        if seen:
+            flags.append(b"\\Seen")
+        if draft:
+            flags.append(b"\\Draft")
         self._imap().append(folder_path, raw, flags=flags)
 
 

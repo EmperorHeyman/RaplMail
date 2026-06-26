@@ -127,6 +127,30 @@
       </div>
     </label>
     <label class="check">
+      <input type="checkbox" checked={app.settings.collapseQuotes !== false}
+        onchange={(e) => saveSettings({ collapseQuotes: e.currentTarget.checked })} />
+      <div>
+        <b>Collapse quoted replies</b>
+        <span>Hide the nested "On … wrote:" history behind a "Show quoted" toggle so you see just the new text.</span>
+      </div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.linkUnfurls}
+        onchange={(e) => saveSettings({ linkUnfurls: e.currentTarget.checked })} />
+      <div>
+        <b>Rich link previews</b>
+        <span>Show a preview card (title, image) for the main link in a message. Off by default — enabling fetches the linked page from your machine.</span>
+      </div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.highlightCode !== false}
+        onchange={(e) => saveSettings({ highlightCode: e.currentTarget.checked })} />
+      <div>
+        <b>Syntax-highlight code blocks</b>
+        <span>Color keywords, strings, and comments inside <code>&lt;pre&gt;</code> code blocks in messages. Language-agnostic.</span>
+      </div>
+    </label>
+    <label class="check">
       <input type="checkbox" checked={!!app.settings.relativeTime}
         onchange={(e) => saveSettings({ relativeTime: e.currentTarget.checked })} />
       <div>

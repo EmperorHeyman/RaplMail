@@ -1,7 +1,7 @@
 <script>
   import { flip } from "svelte/animate";
   import { fly } from "svelte/transition";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
@@ -27,6 +27,16 @@
   };
   const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
+  // Messages marked done from *inside* a group/bundle row — markDone only manages
+  // the main list, so we hide these from the grouped views ourselves.
+  let hiddenDone = $state(new Set());
+  function doneRow(m, doneNow) {
+    markDone(m, doneNow);
+    const next = new Set(hiddenDone);
+    if (doneNow) next.add(m.id); else next.delete(m.id);
+    hiddenDone = next;
+  }
+  const visibleIn = (arr) => (app.showDone ? arr : arr.filter((x) => !hiddenDone.has(x.id)));
   function smartScope() {
     return app.selectedKind === "smart" ? { role: "inbox" } : { folder_id: app.selectedFolderId };
   }
@@ -50,7 +60,7 @@
           const shown = (g.senders || []).slice(0, n);
           const more = Math.max(0, (g.distinct ?? shown.length) - shown.length);
           groups.push({ kind: "group", gtype: "category", key: c, category: c,
-                        count: g.count, senders: shown, more, latest: g.latest });
+                        count: g.count, senders: shown, more, latest: g.latest, recent: g.recent || [] });
         }
       }
       if (app.settings.smartOrderMode === "custom") {
@@ -105,7 +115,16 @@
     }
     return msgs.map((m) => ({ kind: "msg", msg: m }));
   }
-  const items = $derived(buildItems(app.messages));
+  const items = $derived.by(() => {
+    const built = buildItems(app.messages);
+    // Pinned first, then VIP-sender mail, then everything else (stable).
+    const isP = (it) => it.kind === "msg" && it.msg.pinned;
+    const isV = (it) => it.kind === "msg" && !it.msg.pinned && isVip(it.msg.from_addr);
+    const pinned = built.filter(isP);
+    const vip = built.filter(isV);
+    if (!pinned.length && !vip.length) return built;
+    return [...pinned, ...vip, ...built.filter((it) => !isP(it) && !isV(it))];
+  });
 
   function itemMsgs(item) { return item.kind === "msg" ? [item.msg] : item.msgs; }
 
@@ -298,6 +317,8 @@
 {#if ctx}
   <div class="ctxmenu" style="left:{ctx.x}px; top:{ctx.y}px" onclick={(e) => e.stopPropagation()}>
     <button onclick={() => ctxRun((m) => open(m, focusIndex))}>Open</button>
+    <button onclick={() => ctxRun((m) => pinMessage(m))}>{@html icons.pin} {ctx.msg.pinned ? "Unpin" : "Pin to top"}</button>
+    <button onclick={() => ctxRun((m) => toggleVip(m.from_addr))}>{@html icons.star} {isVip(ctx.msg.from_addr) ? "Remove VIP" : "Mark sender VIP"}</button>
     <button onclick={() => ctxRun((m) => markDone(m, !m.is_done))}>{#if !ctx.msg.is_done}{@html icons.done} {/if}{ctx.msg.is_done ? "Mark not done" : "Mark done"}</button>
     <button onclick={() => ctxRun(toggleSeen)}>{ctx.msg.is_seen ? "Mark unread" : "Mark read"}</button>
     <button onclick={() => ctxRun(toggleFlag)}>{#if !ctx.msg.is_flagged}{@html icons.flag} {/if}{ctx.msg.is_flagged ? "Unflag" : "Flag"}</button>
@@ -403,19 +424,19 @@
             <SmartGroupCard
               label={CAT_META[item.category]?.label || item.category}
               icon={CAT_META[item.category]?.icon || icons.folder}
-              count={item.count} senders={item.senders} more={item.more}
+              count={item.count} senders={item.senders} more={item.more} recent={item.recent}
               focused={i === focusIndex} expanded={expandedKeys.has(item.key)}
               onToggle={() => { focusIndex = i; activate(item); }}
               onSender={(email) => searchAddress(email)}
             />
             {#if expandedKeys.has(item.key)}
               {#if smartCatMsgs[item.key]}
-                {#each smartCatMsgs[item.key] as m (m.id)}
+                {#each visibleIn(smartCatMsgs[item.key]) as m (m.id)}
                   <div class="bundled">
                     <MessageRow message={m} selected={app.selectedMessageId === m.id}
                       checked={isChecked(m.id)} selecting={selectedIds.length > 0}
                       onselect={(e) => toggleSelect(m, i, e)}
-                      onopen={() => open(m, i)} ondone={() => markDone(m, !m.is_done)}
+                      onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
                       onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
                       onmenu={(e) => openCtx(e, m)} />
                   </div>
@@ -434,12 +455,12 @@
               onselect={() => selectGroup(item)}
             />
             {#if item.gtype === "bundle" && expandedKeys.has(item.key)}
-              {#each item.msgs as m (m.id)}
+              {#each visibleIn(item.msgs) as m (m.id)}
                 <div class="bundled">
                   <MessageRow message={m} selected={app.selectedMessageId === m.id}
                     checked={isChecked(m.id)} selecting={selectedIds.length > 0}
                     onselect={(e) => toggleSelect(m, i, e)}
-                    onopen={() => open(m, i)} ondone={() => markDone(m, !m.is_done)}
+                    onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
                     onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
                     onmenu={(e) => openCtx(e, m)} />
                 </div>

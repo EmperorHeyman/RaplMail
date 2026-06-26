@@ -90,6 +90,59 @@ export async function fetchAttachment(messageId, index) {
   return res.blob();
 }
 
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",", 2)[1] || "");
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Open an attachment with the OS default app. In the Tauri shell we must write
+// the bytes to disk via Rust and open the path (blob: URLs don't reach the OS).
+// In a browser we open a blob URL in a new tab.
+export async function openAttachment(messageId, index, filename) {
+  const blob = await fetchAttachment(messageId, index);
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_attachment", { filename: filename || "attachment", dataB64: await blobToBase64(blob) });
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// Save an attachment to disk. Returns the saved path in Tauri, else null.
+export async function saveAttachment(messageId, index, filename) {
+  const blob = await fetchAttachment(messageId, index);
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke("save_attachment", { filename: filename || "attachment", dataB64: await blobToBase64(blob) });
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename || "attachment"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return null;
+}
+
+export async function revealPath(path) {
+  if (!path || !isTauri()) return;
+  try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("reveal_path", { path }); } catch {}
+}
+
+export const unfurl = (url) => api.get(`/unfurl?url=${encodeURIComponent(url)}`);
+
+// Absolute base URL of the backend (e.g. http://127.0.0.1:8765), once resolved.
+// Used to show the user the local /metrics URL for LAN devices.
+export function backendBase() {
+  const base = cfg ? cfg.base : "/api";
+  if (base.startsWith("http")) return base;
+  try { return `${location.origin}${base}`; } catch { return base; }
+}
+
 export const appSettings = {
   get: () => api.get("/settings"),
   put: (data) => api.put("/settings", { data }),
@@ -97,10 +150,19 @@ export const appSettings = {
   import: (bundle) => api.post("/settings/import", bundle),
 };
 
+export const ai = {
+  status: () => api.get("/ai/status"),
+  summarize: (body) => api.post("/ai/summarize", body),
+  draft: (body) => api.post("/ai/draft", body),
+  digest: () => api.post("/ai/digest", {}),
+  triage: (limit = 20) => api.post("/ai/triage", { limit }),
+};
+
 export const calendar = {
   list: (startIso, endIso) => api.get(`/calendar?start=${encodeURIComponent(startIso)}&end=${encodeURIComponent(endIso)}`),
   scan: (limit = 100) => api.post(`/calendar/scan?limit=${limit}`),
   rsvp: (id, status) => api.post(`/calendar/${id}/rsvp`, { status }),
+  caldavSync: () => api.post("/calendar/caldav/sync", {}),
 };
 
 // --- domain helpers --------------------------------------------------------
@@ -114,6 +176,7 @@ export const vault = {
 
 export const accounts = {
   list: () => api.get("/accounts"),
+  health: () => api.get("/accounts/health"),
   update: (id, body) => api.patch(`/accounts/${id}`, body),
   autodiscover: (email) => api.get(`/accounts/autodiscover?email=${encodeURIComponent(email)}`),
   createImap: (body) => api.post("/accounts/imap", body),
@@ -121,6 +184,7 @@ export const accounts = {
   msComplete: (flow_id) => api.post("/accounts/ms/device-flow/complete", { flow_id }),
   googleConnect: () => api.post("/accounts/google/connect"),
   sync: (id) => api.post(`/accounts/${id}/sync`),
+  reconnect: (id, password) => api.post(`/accounts/${id}/reconnect`, { password }),
   remove: (id) => api.del(`/accounts/${id}`),
 };
 
@@ -145,7 +209,9 @@ export const messages = {
   bulk: (ids, action, until = null) => api.post("/messages/bulk", { ids, action, until }),
   mute: (id) => api.post(`/messages/${id}/mute`),
   muteThread: (id) => api.post(`/messages/${id}/mute-thread`),
+  pin: (id, value) => api.post(`/messages/${id}/pin`, { value }),
   followups: (days = 3) => api.get(`/messages/followups?days=${days}`),
+  plusAliases: () => api.get("/messages/plus-aliases"),
   thread: (threadId) => api.get(`/messages/thread?thread_id=${encodeURIComponent(threadId)}`),
   categoryCounts: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null)).toString();
@@ -179,6 +245,7 @@ export const signatures = {
 
 export const compose = {
   send: (body) => api.post("/compose/send", body),
+  saveDraft: (body) => api.post("/compose/draft", body),
   scheduled: () => api.get("/compose/scheduled"),
   cancelScheduled: (id) => api.del(`/compose/scheduled/${id}`),
 };

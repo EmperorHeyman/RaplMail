@@ -1,8 +1,27 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig } from "../store.svelte.js";
-  import { vault } from "../api.js";
+  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, checkForUpdates, setAutostart, setCloseToTray } from "../store.svelte.js";
+  import { vault, backendBase } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
+
+  // --- Local API / metrics for LAN devices ---------------------------------
+  function randomKey() {
+    const b = new Uint8Array(24); crypto.getRandomValues(b);
+    return Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+  }
+  function toggleLocalApi(on) {
+    const patch = { localApiEnabled: on };
+    if (on && !app.settings.localApiKey) patch.localApiKey = randomKey();
+    saveSettings(patch);
+  }
+  function regenKey() {
+    if (!confirm("Generate a new API key? Devices using the old key will stop working until updated.")) return;
+    saveSettings({ localApiKey: randomKey() });
+  }
+  const metricsUrl = $derived(`${backendBase()}/metrics`);
+  async function copyText(t) {
+    try { await navigator.clipboard.writeText(t); notify("Copied"); } catch { notify("Couldn't copy", "error"); }
+  }
 
   const SMART_CATS = [
     { id: "updates", label: "Notifications", icon: icons.bell },
@@ -59,7 +78,15 @@
     e.currentTarget.value = "";
   }
 
-  let notifPerm = $state(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+  let notifPerm = $state("default");
+  const _isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  async function refreshPerm() {
+    if (_isTauri) {
+      try { const m = await import("@tauri-apps/plugin-notification"); notifPerm = (await m.isPermissionGranted()) ? "granted" : "default"; return; } catch {}
+    }
+    notifPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+  }
+  refreshPerm();
   async function toggleNotify(on) {
     if (on) {
       const r = await enableNotifications();
@@ -72,7 +99,7 @@
   }
   async function sendTest() {
     const res = await testNotification();
-    notifPerm = typeof Notification !== "undefined" ? Notification.permission : "unsupported";
+    await refreshPerm();
     if (res.ok) notify("Test notification sent — check your desktop");
     else if (res.reason === "denied") notify("Blocked — allow notifications for this app in Windows Settings → Notifications (and turn off Focus Assist)", "error");
     else if (res.reason === "unsupported") notify("Notifications aren't supported here", "error");
@@ -296,6 +323,102 @@
   </section>
 
   <section class="card">
+    <h3>Local API <span class="tag">developer</span></h3>
+    <p class="hint">Expose a read-only mailbox metrics endpoint for dashboards and home-automation
+      (Home Assistant, ESP32, Grafana). It returns counts only — never message content — and is
+      protected by the API key below.</p>
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.localApiEnabled}
+        onchange={(e) => toggleLocalApi(e.currentTarget.checked)} />
+      <div><b>Enable local metrics API</b><span>When off, the endpoint returns 404.</span></div>
+    </label>
+    {#if app.settings.localApiEnabled}
+      <div class="apibox">
+        <div class="kv"><span>URL</span>
+          <code>{metricsUrl}</code>
+          <button class="btn ghost" onclick={() => copyText(metricsUrl)}>Copy</button>
+        </div>
+        <div class="kv"><span>API key</span>
+          <code class="key">{app.settings.localApiKey || "—"}</code>
+          <button class="btn ghost" onclick={() => copyText(app.settings.localApiKey)}>Copy</button>
+          <button class="btn ghost" onclick={regenKey}>Regenerate</button>
+        </div>
+        <div class="kv"><span>Test</span>
+          <code>curl -H "X-API-Key: {app.settings.localApiKey}" {metricsUrl}</code>
+          <button class="btn ghost" onclick={() => copyText(`curl -H "X-API-Key: ${app.settings.localApiKey}" ${metricsUrl}`)}>Copy</button>
+        </div>
+        <p class="hint">JSON at <code>/metrics</code>, Prometheus text at <code>/metrics/prometheus</code>. Pass the key as
+          the <code>X-API-Key</code> header or <code>?key=</code> query param. To reach it from <b>other devices on your
+          LAN</b>, start the backend with <code>RAPLMAIL_HOST=0.0.0.0</code> and use this machine's LAN IP in place of the host.</p>
+      </div>
+    {/if}
+  </section>
+
+  <section class="card">
+    <h3>Updates</h3>
+    <p class="hint">RaplMail checks a signed release feed and updates itself in place. Updates are verified against
+      a built-in public key, so only releases signed with your private key install.</p>
+    <div class="rowbtns">
+      <button class="btn primary" onclick={() => checkForUpdates()}>{@html icons.sync} Check for updates</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Tray &amp; startup</h3>
+    <p class="hint">RaplMail can keep running in the system tray so new-mail sync and notifications keep working
+      with the window closed.</p>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.minimizeToTray !== false}
+        onchange={(e) => setCloseToTray(e.currentTarget.checked)} />
+      <div><b>Minimize to tray on close</b><span>Clicking the window's ✕ hides RaplMail to the tray instead of quitting. Use the tray icon's <b>Quit</b> to exit fully. (Off = ✕ quits the app.)</span></div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.launchOnStartup}
+        onchange={(e) => setAutostart(e.currentTarget.checked)} />
+      <div><b>Launch at login</b><span>Start RaplMail automatically when you sign in (into the tray).</span></div>
+    </label>
+    <p class="hint">These take effect in the installed app — not in the browser dev view.</p>
+  </section>
+
+  <section class="card">
+    <h3>AI assistant <span class="tag">bring your own key</span></h3>
+    <p class="hint">Powers the “Catch me up” thread summary in the reader. Your API key is stored locally and
+      calls go straight from this app to the provider — there's no RaplMail server in between. Get a key at
+      <code>console.anthropic.com</code>.</p>
+    <label class="fieldrow"><span>Anthropic API key</span>
+      <input type="password" placeholder="sk-ant-…" value={app.settings.aiApiKey || ""}
+        onchange={(e) => saveSettings({ aiApiKey: e.currentTarget.value.trim() })} />
+    </label>
+    <label class="fieldrow"><span>Model (optional)</span>
+      <input placeholder="claude-haiku-4-5-20251001" value={app.settings.aiModel || ""}
+        onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
+    </label>
+    <p class="hint">{app.settings.aiApiKey ? "✓ Key set — AI actions are active." : "No key — AI buttons stay hidden until you add one."}</p>
+    {#if app.settings.aiApiKey}
+      <label class="check">
+        <input type="checkbox" checked={app.settings.aiButtons !== false}
+          onchange={(e) => saveSettings({ aiButtons: e.currentTarget.checked })} />
+        <div><b>Show AI buttons</b><span>“Catch me up” / “AI reply” in the reader and the inbox-assistant command. Turn off to hide them even with a key set.</span></div>
+      </label>
+    {/if}
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.digestEnabled}
+        onchange={(e) => saveSettings({ digestEnabled: e.currentTarget.checked })} />
+      <div>
+        <b>Daily morning briefing</b>
+        <span>Once a day, deliver an AI digest of your unread inbox as a notification (needs the key above).</span>
+      </div>
+    </label>
+    {#if app.settings.digestEnabled}
+      <label class="fieldrow"><span>Deliver at</span>
+        <select value={app.settings.digestHour ?? 8} onchange={(e) => saveSettings({ digestHour: Number(e.currentTarget.value) })}>
+          {#each Array(24) as _, h}<option value={h}>{String(h).padStart(2, "0")}:00</option>{/each}
+        </select>
+      </label>
+    {/if}
+  </section>
+
+  <section class="card">
     <h3>Notifications</h3>
     {#if notificationsAvailable()}
       <label class="check">
@@ -314,6 +437,24 @@
           <span>Stay quiet while you're already looking at the app.</span>
         </div>
       </label>
+      <label class="check">
+        <input type="checkbox" checked={!!app.settings.quietHoursEnabled}
+          onchange={(e) => saveSettings({ quietHoursEnabled: e.currentTarget.checked })} />
+        <div>
+          <b>Quiet hours</b>
+          <span>Silence notifications overnight.</span>
+        </div>
+      </label>
+      {#if app.settings.quietHoursEnabled}
+        <label class="inline" style="margin-left:28px">From
+          <select value={app.settings.quietStart ?? 22} onchange={(e) => saveSettings({ quietStart: Number(e.currentTarget.value) })}>
+            {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
+          </select> to
+          <select value={app.settings.quietEnd ?? 7} onchange={(e) => saveSettings({ quietEnd: Number(e.currentTarget.value) })}>
+            {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
+          </select>
+        </label>
+      {/if}
       <button class="btn" style="margin-top:10px" onclick={sendTest}>Send test notification</button>
       <p class="hint" style="margin-top:8px">No popup? It's almost always the OS: Windows <b>Settings → Notifications</b> must allow this app, and <b>Focus Assist / Do Not Disturb</b> must be off.</p>
     {:else}
@@ -441,4 +582,14 @@
   .warn { background: rgba(240,180,41,0.12); border: 1px solid var(--warning); color: #f0d28a; padding: 12px 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6; margin-bottom: 12px; }
   .confirm { display: flex; gap: 8px; }
   .confirm input { flex: 1; }
+  .tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; background: var(--surface-3); color: var(--accent); vertical-align: middle; margin-left: 6px; }
+  .apibox { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .kv { display: flex; align-items: center; gap: 10px; }
+  .kv > span:first-child { width: 64px; flex: none; color: var(--muted); font-size: 12px; }
+  .kv code { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); padding: 5px 9px; border-radius: var(--radius-sm); font-size: 12px; overflow-x: auto; white-space: nowrap; }
+  .kv code.key { letter-spacing: 0.04em; }
+  .apibox .hint { margin: 4px 0 0; }
+  .fieldrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  .fieldrow > span { width: 140px; flex: none; color: var(--muted); font-size: 13px; }
+  .fieldrow input { flex: 1; }
 </style>

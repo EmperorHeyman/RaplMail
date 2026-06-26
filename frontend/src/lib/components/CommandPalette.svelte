@@ -17,6 +17,7 @@
   const commands = $derived.by(() => {
     const cmds = [
       { icon: icons.compose, label: "Compose new message", run: () => openCompose({ to: "", subject: "", html: "" }) },
+      { icon: icons.sent, label: "Mail merge (personalized bulk send)", run: () => (app.mailMergeOpen = true) },
       { icon: icons.unified, label: "Go to All Inboxes", run: selectUnifiedInbox },
       { icon: icons.snooze, label: "Go to Snoozed", run: selectSnoozed },
       { icon: icons.sync, label: "Sync all accounts", run: syncAllAccounts },
@@ -24,6 +25,10 @@
       { icon: "↔", label: app.settings.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar", run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
       { icon: icons.settings, label: "Open Settings", run: () => (app.view = "settings") },
     ];
+    // AI command only when a key is configured.
+    if ((app.settings.aiApiKey || "").trim() && app.settings.aiButtons !== false) {
+      cmds.splice(2, 0, { icon: icons.bolt, label: "AI: catch me up on my inbox", run: () => (app.aiInboxOpen = true) });
+    }
     for (const c of ["primary", "newsletters", "social", "updates", "promotions"]) {
       cmds.push({ icon: icons.tag, label: `Category: ${c[0].toUpperCase() + c.slice(1)}`, run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(c); } });
     }

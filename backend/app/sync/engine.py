@@ -13,6 +13,7 @@ import asyncio
 import logging
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlmodel import Session, select
@@ -103,6 +104,21 @@ class SyncManager:
         self._idle: dict[int, dict] = {}
         self._idle_stop = threading.Event()
         self._presence_thread: threading.Thread | None = None
+        # Per-account live health for the dashboard (in-memory; reset on restart).
+        self._health: dict[int, dict] = {}
+        # Morning-digest scheduler: the local date we last delivered a brief.
+        self._last_digest_day: str | None = None
+
+    def _set_health(self, account_id: int, **fields) -> None:
+        self._health.setdefault(account_id, {}).update(fields)
+
+    def health_snapshot(self) -> dict[int, dict]:
+        """Per-account status: last sync time/result, error, IDLE state."""
+        snap: dict[int, dict] = {}
+        for aid, h in self._health.items():
+            idle = self._idle.get(aid)
+            snap[aid] = {**h, "idle_active": bool(idle and idle.get("connected"))}
+        return snap
 
     async def start(self) -> None:
         self._loop_ref = asyncio.get_running_loop()
@@ -161,6 +177,8 @@ class SyncManager:
                     return  # server doesn't support IDLE; rely on polling
                 client.select_folder("INBOX")
                 client.idle()
+                if account_id in self._idle:
+                    self._idle[account_id]["connected"] = True
                 while not self._idle_stop.is_set() and account_id in self._idle:
                     responses = client.idle_check(timeout=60)
                     if responses:
@@ -172,6 +190,8 @@ class SyncManager:
                 except Exception:
                     pass
             except Exception:
+                if account_id in self._idle:
+                    self._idle[account_id]["connected"] = False
                 self._idle_stop.wait(15)  # back off, then reconnect
             finally:
                 if provider:
@@ -199,6 +219,10 @@ class SyncManager:
                 await asyncio.get_running_loop().run_in_executor(self._executor, pool.keepalive)
             except Exception:
                 pass
+            try:
+                await self._maybe_digest()
+            except Exception:
+                log.exception("morning digest failed")
             with _suppress_timeout():
                 try:
                     await asyncio.wait_for(self._wake.wait(), timeout=SYNC_INTERVAL_SECONDS)
@@ -226,6 +250,32 @@ class SyncManager:
         if flushed:
             await self._hub.broadcast("sync:done", {"new": 0})
 
+    def _digest_settings(self) -> tuple[bool, int]:
+        from app.models import Setting
+        with Session(get_engine()) as session:
+            row = session.get(Setting, 1)
+            data = dict(row.data) if row and row.data else {}
+        return bool(data.get("digestEnabled")), int(data.get("digestHour", 8) or 8)
+
+    async def _maybe_digest(self) -> None:
+        """Once per day, after the configured morning hour, push an AI inbox brief."""
+        if not get_secret_store().is_unlocked:
+            return
+        enabled, hour = self._digest_settings()
+        if not enabled:
+            return
+        now = datetime.now()  # local time
+        today = now.date().isoformat()
+        if self._last_digest_day == today or now.hour < hour:
+            return
+        from app.api.ai import generate_scheduled_digest
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(self._executor, generate_scheduled_digest)
+        # Mark done for today even if AI is unconfigured, so we don't retry all day.
+        self._last_digest_day = today
+        if result:
+            await self._hub.broadcast("inbox:digest", result)
+
     async def sync_all(self) -> None:
         store = get_secret_store()
         if not store.is_unlocked:
@@ -238,12 +288,18 @@ class SyncManager:
 
     async def sync_account(self, account_id: int) -> None:
         loop = asyncio.get_running_loop()
+        now = datetime.now(timezone.utc).isoformat()
+        self._set_health(account_id, last_attempt=now, status="syncing")
         try:
             counts = await loop.run_in_executor(self._executor, self._sync_account_blocking, account_id)
-        except Exception:
+        except Exception as exc:
             log.exception("sync failed for account %s", account_id)
+            self._set_health(account_id, status="error", last_error=str(exc),
+                             last_error_at=datetime.now(timezone.utc).isoformat())
             await self._hub.broadcast("sync:error", {"account_id": account_id})
             return
+        self._set_health(account_id, status="ok", last_sync=datetime.now(timezone.utc).isoformat(),
+                         last_new=counts.get("new", 0), last_error=None)
         await self._hub.broadcast("sync:done", {"account_id": account_id, **counts})
 
     # --- blocking worker ----------------------------------------------------
@@ -334,6 +390,7 @@ class SyncManager:
             if previews is not None and folder.role == FolderRole.inbox and not msg.is_done:
                 previews.append({
                     "from": msg.from_name or msg.from_addr or "",
+                    "from_addr": msg.from_addr or "",
                     "subject": msg.subject or "(no subject)",
                     "date": (msg.date.isoformat() if getattr(msg, "date", None) else ""),
                 })
@@ -381,6 +438,7 @@ class SyncManager:
             msg.is_done = state.is_done
             msg.snooze_until = state.snooze_until
             msg.snooze_presence = getattr(state, "snooze_presence", False)
+            msg.pinned = getattr(state, "is_pinned", False)
 
     def _mark_state_done(self, session: Session, account: Account, msg: Message) -> None:
         if not msg.message_id:

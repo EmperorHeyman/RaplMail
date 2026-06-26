@@ -77,21 +77,54 @@ Living doc — add freely. Status: ✅ done · 🚧 in progress · ⬜ planned
 - ✅ Right-click context menu on messages: done, read/unread, flag, snooze, archive, delete, show-from-sender, mute, block, create rule, reclassify sender (learned)
 - ✅ Smart Inbox tuning: configurable preview-sender count (with live preview), group order (recency or custom drag-order), and "mark sender as <category>" that sticks across syncs
 
-## Planned
-- ⬜ Templates / canned replies (beyond snippets)
-- ⬜ **Pinned mails** — pin important messages to the top of the list regardless of date/category (own pin flag, pinned section above everything)
-- ✅ **Invitation categorization fix** — meeting requests now classify as Invitations even when the subject isn't English-keyworded: subject-prefix detection (meeting/schůzka/porada/…) + the reliable signal — a real `text/calendar` event in the body recategorizes to Invitations / Invitation-responses on open
-- ✅ **Notifications: test button + diagnosis** — "Send test notification" in Settings (bypasses the unfocused rule) so you can confirm the OS path; clearer guidance when Windows/Focus-Assist is the blocker; fixed the notification icon
-- ✅ **Text & UI size** — Appearance slider (80–140%) scales the whole UI via WebView zoom, persisted
-- ⬜ **BYOK AI integration** — bring-your-own-key (OpenAI/Anthropic/Ollama-local); summarize threads, draft/reply, "catch me up", smart categorize — key stored in the encrypted vault, calls go direct from the local backend, nothing through a middleman
-- ⬜ **Auto-updater** — Tauri updater plugin: check a release feed, download + verify signature, one-click update (so the installed `.exe` self-updates instead of manual re-install)
-- ⬜ **Background / tray mode** — minimize to the system tray, keep IMAP IDLE + sync running, show unread badge, native "new mail" notifications even when the window is closed; launch-on-startup option
-- ⬜ **macOS port** — build the Tauri app for macOS (universal arm64+x86_64), `.dmg` bundle, PyInstaller mac sidecar, Gmail/M365 loopback-OAuth parity, keychain-style vault
+## Planned (details for the brainstormed items in [potential_features.md](potential_features.md))
 
-## Ideas / backlog
-- ⬜ Calendar / contacts integration
-- ⬜ End-to-end test harness for IMAP/SMTP against a test account
-- See [potential_features.md](potential_features.md) for a longer brainstorm of candidate features.
+**Shipped recently**
+- ✅ **Pinned mails** — pin messages to the top of the list (durable via MessageState, survives re-sync); pin/unpin in the right-click menu, pin marker on the row
+- ✅ **Invitation categorization fix** — subject-prefix detection (meeting/schůzka/porada/…) + a real `text/calendar` event in the body recategorizes to Invitations / Invitation-responses on open
+- ✅ **Notifications: test button + diagnosis** — "Send test notification" (bypasses the unfocused rule); clearer Windows/Focus-Assist guidance; fixed the icon
+- ✅ **Text & UI size** — Appearance slider (80–140%) scales the whole UI via WebView zoom, persisted
+- ✅ **Quiet hours / Do Not Disturb** — suppress notifications during a nightly window (handles past-midnight); toggle + start/end in Settings
+- ✅ **Attachment reminder** — warns before send/schedule if the body mentions an attachment (EN+CZ) but none is attached
+
+**Platform & distribution**
+- ✅ **Auto-updater** — Tauri updater + process plugins wired; a signing keypair is generated (private key gitignored, public key baked into `tauri.conf.json`), `createUpdaterArtifacts` on, capabilities granted, and Settings → General → Updates has a **Check for updates** button that downloads + signature-verifies + self-installs + relaunches. `cargo check` + frontend build green. Activates once you publish a signed release `latest.json` (sign with `TAURI_SIGNING_PRIVATE_KEY` at build; endpoint set to the GitHub releases pattern — adjust org/repo)
+- ✅ **Background / tray mode** — closing the window hides to a system-tray icon (IMAP IDLE + sync keep running); tray menu **Open RaplMail** / **Quit**, left-click reopens. Taskbar/dock **unread badge** + tray tooltip via a `set_unread_badge` command driven by inbox unread totals, and **Launch at login** (autostart plugin, toggle in Settings → General → Updates). Tauri `tray-icon`/`updater`/`process`/`autostart` plugins; `cargo check` + frontend build green (runtime tray/badge UX confirmed only when bundled)
+- ✅ **macOS port** — the shell is cross-platform (tray/updater/autostart/dock-badge all work on macOS, mac `icon.icns` present, `run.py` honors `RAPLMAIL_HOST`), with a `.github/workflows/build-macos.yml` CI that builds the PyInstaller mac sidecar + `tauri build` → signed `.dmg`, and a pinned `backend/requirements.txt` for reproducible builds. OAuth (device-code/PKCE) and the encrypted-file vault are already platform-agnostic. (Produced by CI on a mac runner — can't be built on this Windows box; keychain-backed vault is a future nicety)
+
+**AI & productivity (BYOK — keys in the vault, calls straight from the local backend)**
+- ✅ Thread summarize, "Catch me up" & morning digest — a **Catch me up** button in the reader summarizes the whole thread (TL;DR + key points + action items); plus an opt-in **daily morning briefing** (Settings → General → AI assistant: toggle + delivery hour) that the sync engine generates once a day and pushes as a desktop notification + into the inbox assistant. BYOK Anthropic key, stored locally
+- ✅ Draft & smart reply — reader **AI reply** button drafts a full reply from thread context (in your tone) + one-tap quick-reply chips; both open the composer prefilled and never auto-send
+- ✅ AI priority scoring & inbox digest — command palette → **AI: catch me up on my inbox** opens an assistant with a prioritized "catch me up" briefing of unread mail (🔴/🟡/⚪) and a **Prioritize** tab scoring unread 0–100 with one-line reasons, each row clickable straight to the message
+
+**Security & privacy**
+- ✅ Encryption-at-rest for the local cache — opt-in (Settings → Encryption (PGP) → "Encrypt the local message cache"): cached `body_html`/`body_text` are sealed with a vault-held data-encryption key (Fernet) on write and transparently decrypted on read. Field-level so it can't corrupt the DB; FTS is indexed from plaintext in-memory so search still works. `app/core/atrest.py` + 4 unit tests green
+- ✅ PGP (OpenPGP) — verify signed mail, decrypt encrypted mail, and sign/encrypt outgoing (inline PGP), using your own keys managed in Settings → Encryption (PGP). Reader shows a PGP shield badge (verified signer / decrypted-locally) next to the auth shield; compose has **Sign**/**Encrypt** toggles. Backend `app/sync/pgp.py` (pgpy), 4 round-trip unit tests green. (S/MIME + full PGP/MIME multipart construction still TODO — inline PGP + PGP/MIME detection covered)
+- ✅ Lookalike / homoglyph & link-mismatch warnings — reader bar flags confusable/punycode sender domains, display-name domain mismatch, and link-text-vs-href mismatch
+
+**Power-user & developer**
+- ✅ Full-text search inside attachments — text/code/CSV/JSON and Office OOXML (.docx/.xlsx/.pptx, parsed via stdlib zip+xml, no deps) are extracted on message open and folded into the FTS index, so search matches words that appear only inside a file. PDF/legacy-binary formats still TODO (need a parser lib)
+- ✅ Multiple identities / send-as aliases — manage per-account send-as identities in Settings → Accounts (Identities editor, plain address or `Name <addr>`); compose shows an identity dropdown next to the account when aliases exist; backend only honors a recognized identity and sets a correct envelope sender
+- ✅ Mail merge / personalized bulk send — Command palette → "Mail merge": a subject/body template with `{{column}}` vars + a CSV (or one-address-per-line) recipient list → one individualized message per recipient (separate sends, no shared To/Cc), with a live preview and send progress
+- ✅ Plus-address / alias generator with per-service tracking — Settings → Aliases & Tracking: generate a `you+service@domain` per site, then a scan of your mail lists every sub-address in use with message count, the senders hitting it, last-seen, a ⚠ leak flag when >1 sender uses one, and one-click **Mute** (auto-creates an archive rule for that alias)
+- ✅ Per-account health dashboard — Settings → Accounts shows each account's live status dot (Connected/Syncing/Error/Idle), ⚡live IMAP-IDLE indicator, message + folder counts, last-sync relative time, last error, and a per-account "sync now" ↻ button (auto-refreshes every 5s)
+- ✅ Collapse quoted replies ("Just the Diff" lite) — reader hides nested "On … wrote:" history behind a Show/Hide-quoted toggle (EN+CZ markers, blockquote/gmail_quote/Outlook dividers); setting in Appearance. Full git-diff rendering still TODO.
+- ✅ Code-block syntax highlighting in the reader — language-agnostic highlighting of `<pre>` blocks (keywords/strings/comments/numbers), injected into the email iframe; toggle in Appearance (on by default)
+- ✅ Local API — read-only `/metrics` (JSON) + `/metrics/prometheus` for dashboards/ESP32/Home-Assistant; opt-in (404 when off), authenticated by a stable API key (`X-API-Key`/`?key=`), configured in Settings → General → Local API. LAN access needs `RAPLMAIL_HOST=0.0.0.0`. (Outbound webhooks/push still TODO)
+- ✅ Custom CLI — `backend/cli/raplmail_cli.py` (pure stdlib): `unread`, `search`, `accounts`, `metrics`, and `send` (body from `--body` or piped stdin, e.g. `make 2>&1 | raplmail-cli send -t me@x.com -s "build log"`). Points at the backend via `RAPLMAIL_URL`/`RAPLMAIL_TOKEN`
+
+**Triage & UX polish**
+- ✅ Universal undo for triage — Undo button on the toast for Done & Snooze (restores the message in place); archive/delete undo still TODO
+- ✅ VIP senders & a Priority lane — mark a sender VIP (right-click row / reader sender-menu); their mail floats to the top with a ⭐ and always notifies, bypassing quiet hours + the focused-window rule
+- ✅ Drafts autosave + restore — compose autosaves locally as you type and restores into a fresh blank compose; cleared on send/schedule. Plus a **Save draft** button that `APPEND`s to the IMAP Drafts folder for cross-device sync
+- ✅ Keyboard chord shortcuts — `g` then i/s/c/f/n/p/t/a jumps to Inbox/Snoozed/Calendar/Follow-ups/Newsfeed/Paper-Trail/Scheduled/Settings (in the cheatsheet)
+- ✅ Rich link unfurls in the reader — OpenGraph preview card for the main content link, fetched locally; off by default (toggle in Appearance)
+- ✅ Templates / canned replies — full subject+body templates with `{{vars}}`, managed in Settings → Snippets & Templates, inserted from the compose **Templates ⌄** menu
+
+**Larger / longer-horizon**
+- ✅ Calendar / contacts integration (CalDAV/CardDAV) — Settings → General → "Calendar & contacts" holds a CalDAV/CardDAV URL + credentials and a **Sync now** that pulls VEVENTs into the calendar and vCards into the address book (stdlib `REPORT` client in `app/sync/caldav.py`, reuses the iCal parser; 3 parsing unit tests green). Read-only server→local for now; live sync verified against fixture responses (needs a real DAV server for end-to-end)
+- ✅ Drafts: two-way IMAP `APPEND` to the Drafts folder — compose has a **Save draft** button that builds the MIME and `APPEND`s it (with `\Draft`) to the account's Drafts folder so it syncs across devices; re-saving expunges the prior copy (verified end-to-end against a live account)
+- ✅ End-to-end API test harness — `pytest` suite (`backend/tests/`) boots the real app against a throwaway temp DB and exercises health, settings persistence, metrics opt-in + auth, AI graceful-degradation, plus-aliases, message listing, and attachment text extraction (13 tests, green). Live IMAP/SMTP variant against a real test account still TODO
 
 ---
 _Add your own items below._
@@ -114,7 +147,7 @@ _Add your own items below._
    - ✅ **Presence-aware Smart Snooze** — shipped. "Snooze until I'm back" hides mail with no timer; a local idle-time monitor (Windows `GetLastInputInfo` via ctypes) detects when you return to the desk and instantly resurfaces it via a WebSocket push.
 
 4. **Mailspring / Developer: Power Tools**
-   - ⬜ Local open-tracking (your own read-receipt pixel served by FastAPI).
+   - ✅ Local open-tracking — compose **Receipt** toggle embeds a 1×1 pixel served by the backend (`/track/o/{token}.png`); when the recipient's client loads it, the open is recorded and pushed as a live "📬 opened" notification. `OpenTrack` table + `/track` list endpoint. (Caveat: the recipient must be able to reach this backend — set `trackBaseUrl` to a reachable address; localhost-only won't register remote opens.)
    - ✅ Regex search over the local DB — shipped (`/pattern/`).
    - ✅ Auto-BCC outgoing mail by recipient domain — shipped.
 
@@ -126,12 +159,12 @@ _Add your own items below._
      IMAP/SMTP and retries when the connection returns (⏳ N actions syncing) — shipped.
 
 10. **Hardware Hacker: Local Extensibility**
-   - ⬜ Local API / Webhooks: a read-only `http://localhost:port/metrics` endpoint so external hardware (ESP32 e-ink display, Home Assistant) can query unread counts / telemetry over the LAN, no cloud.
-   - ⬜ Custom CLI tool: a `raplmail-cli` to pipe terminal output into a draft or fire off mail without opening the UI.
+   - ✅ Local API / Webhooks: read-only `/metrics` (+ Prometheus) endpoint — shipped (opt-in, API-key auth; see Power-user section).
+   - ✅ Custom CLI tool: `raplmail-cli` (unread/search/accounts/metrics/send, stdin→draft) — shipped.
 
 11. **Developer: Anti-Noise**
-   - ⬜ "Just the Diff" thread view: a Python regex pipeline that strips nested quote garbage (`> On Jun 26, … wrote:`) and renders a reply like a clean git diff of net-new text.
-   - ⬜ Code-block syntax highlighting: detect code blocks in the HTML body and apply Prism/Highlight.js so pasted code looks like an IDE (toggle in Settings).
+   - ✅ "Just the Diff" thread view: collapse-quoted replies — shipped (reader hides nested "On … wrote:" history behind a toggle; EN+CZ markers).
+   - ✅ Code-block syntax highlighting: shipped (language-agnostic highlighting of `<pre>` blocks in the reader, toggle in Appearance).
 
 12. **Trust No One: Local Security**
    - ✅ **Local DMARC/DKIM visualizer** — shipped. A red/green shield on the sender avatar: the backend reads the Authentication-Results stamped at your mailbox provider's trust boundary (full SPF/DKIM/DMARC w/ DNS) and surfaces pass (green) / fail (red, likely spoof). The reader shows the breakdown (DKIM/SPF/DMARC) and a "may be spoofed" banner — flagging spoofed `a123systems.eu` / RAPL mail before you read it.

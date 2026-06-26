@@ -61,9 +61,14 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "brand_domain": "ALTER TABLE message ADD COLUMN brand_domain TEXT DEFAULT ''",
         "snooze_presence": "ALTER TABLE message ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",
         "auth_status": "ALTER TABLE message ADD COLUMN auth_status TEXT DEFAULT ''",
+        "pinned": "ALTER TABLE message ADD COLUMN pinned BOOLEAN DEFAULT 0",
     },
     "messagestate": {
         "snooze_presence": "ALTER TABLE messagestate ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",
+        "is_pinned": "ALTER TABLE messagestate ADD COLUMN is_pinned BOOLEAN DEFAULT 0",
+    },
+    "account": {
+        "aliases": "ALTER TABLE account ADD COLUMN aliases TEXT DEFAULT '[]'",
     },
 }
 

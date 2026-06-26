@@ -13,7 +13,12 @@
   const multiAcct = $derived(app.accounts.length > 1);
   let imgFailed = $state(false);
   const avSrc = $derived(latest && app.settings.senderAvatars !== false ? avatarUrl(latest.from_addr) : "");
-  $effect(() => { void latest?.from_addr; imgFailed = false; });
+  // Reset only when the sender actually changes (avoids re-flashing on refresh).
+  let _gKey = "";
+  $effect(() => {
+    const k = latest?.from_addr || "";
+    if (k !== _gKey) { _gKey = k; imgFailed = false; }
+  });
   const hasLogo = $derived(!!avSrc && !imgFailed && !checked);
 
   const fmtTime = (iso) => (app.settings.relativeTime ? relativeTime(iso) : listTime(iso));

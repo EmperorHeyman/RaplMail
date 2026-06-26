@@ -32,6 +32,85 @@ export function sanitizeTrackers(html, block = true) {
   }
 }
 
+// Split a reply into the new text vs. the quoted history below it, so the reader
+// can hide the nested "On … wrote: >>>" garbage behind a toggle.
+const _QUOTE_MARKERS = [
+  /<blockquote/i,
+  /<div[^>]+class=["'][^"']*gmail_quote/i,
+  /<div[^>]+(?:id|class)=["'][^"']*(?:divRplyFwdMsg|appendonsend|moz-cite|yahoo_quoted)/i,
+  /-----+\s*(?:Original Message|Původní zpráva|Forwarded message)\s*-----+/i,
+  /________________________________+/,
+  /(?:^|>)\s*On\b.{3,120}?\bwrote:\s*(?:<|$)/i,
+  /(?:^|>)\s*[Dd]ne\b.{3,120}?\bnapsal(?:\(a\))?:\s*(?:<|$)/i,
+];
+export function splitQuoted(html) {
+  if (!html) return { main: "", quoted: "" };
+  let idx = -1;
+  for (const re of _QUOTE_MARKERS) {
+    const m = re.exec(html);
+    if (m && (idx === -1 || m.index < idx)) idx = m.index;
+  }
+  // Need a meaningful amount of "new" text above the quote to bother collapsing.
+  if (idx < 40) return { main: html, quoted: "" };
+  return { main: html.slice(0, idx), quoted: html.slice(idx) };
+}
+
+// --- code-block syntax highlighting ---------------------------------------
+// Language-agnostic: highlights comments, strings, numbers, and a broad set of
+// keywords common across C-family/Python/JS/SQL/shell. Good enough to make
+// pasted code in an email readable without bundling a multi-MB highlighter.
+const HL_KEYWORDS = new Set((
+  "abstract and arguments as assert async await base bool boolean break byte case catch " +
+  "char class const continue debugger def default del delete do double elif else end enum " +
+  "except export extends false final finally float fn for foreach from func function global " +
+  "go goto if impl implements import in instanceof int interface is lambda let long match mod " +
+  "module mut namespace native new nil none not null object operator or override package params " +
+  "pass private protected pub public raise readonly rec ref return select self short signed " +
+  "sizeof static str string struct super switch synchronized template this throw throws trait " +
+  "true try type typedef typeof union unsigned use using val var virtual void volatile when " +
+  "where while with yield"
+).split(" "));
+const HL_LITERALS = new Set(["true", "false", "null", "nil", "none", "undefined", "nan", "self", "this"]);
+
+function decodeEntities(s) {
+  return (s || "")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
+}
+
+function highlightSource(raw) {
+  const TOKEN = /(\/\/[^\n]*|#[^\n]*|\/\*[\s\S]*?\*\/|--[^\n]*)|("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)|(\b\d[\d._]*(?:\.\d+)?(?:[eE][+-]?\d+)?\b)|([A-Za-z_$][\w$]*)/g;
+  let out = "", last = 0, m;
+  while ((m = TOKEN.exec(raw)) !== null) {
+    out += escapeHtml(raw.slice(last, m.index));
+    if (m[1]) out += `<span class="hl-c">${escapeHtml(m[1])}</span>`;
+    else if (m[2]) out += `<span class="hl-s">${escapeHtml(m[2])}</span>`;
+    else if (m[3]) out += `<span class="hl-n">${escapeHtml(m[3])}</span>`;
+    else {
+      const w = m[4];
+      const lw = w.toLowerCase();
+      if (HL_LITERALS.has(lw)) out += `<span class="hl-l">${escapeHtml(w)}</span>`;
+      else if (HL_KEYWORDS.has(w)) out += `<span class="hl-k">${escapeHtml(w)}</span>`;
+      else out += escapeHtml(w);
+    }
+    last = m.index + m[0].length;
+  }
+  out += escapeHtml(raw.slice(last));
+  return out;
+}
+
+/** Re-render every <pre> code block in an email with syntax highlighting. */
+export function highlightCodeBlocks(html) {
+  if (!html || !/<pre[\s>]/i.test(html)) return html;
+  return html.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_full, inner) => {
+    const codeMatch = inner.match(/<code\b[^>]*>([\s\S]*?)<\/code>/i);
+    const body = codeMatch ? codeMatch[1] : inner;
+    const text = decodeEntities(body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, ""));
+    const hl = highlightSource(text);
+    return `<pre class="rapl-code">${codeMatch ? `<code>${hl}</code>` : hl}</pre>`;
+  });
+}
+
 /** Is a CSS color string (hex or rgb()) dark enough to need light text? */
 export function isDarkColor(c) {
   c = (c || "").trim();
@@ -73,11 +152,21 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
     : "";
   // Opt-in: let the user's custom CSS also style email bodies (default off — emails untouched).
   const userCss = !raw && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
+  // Syntax-highlight code blocks (default ON) — developer-friendly reading of pasted code.
+  const highlight = !raw && app?.settings?.highlightCode !== false;
+  const body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
+  const codeCss = highlight
+    ? `pre.rapl-code{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;padding:12px 14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+       pre.rapl-code .hl-k{color:#cf222e;font-weight:600;} pre.rapl-code .hl-s{color:#0a3069;}
+       pre.rapl-code .hl-c{color:#6e7781;font-style:italic;} pre.rapl-code .hl-n{color:#0550ae;}
+       pre.rapl-code .hl-l{color:#8250df;}`
+    : "";
   return `<!doctype html><html><head><meta charset="utf-8">
     <style>html{background:#fff;}
     body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;margin:16px;}
     a{color:#1a56db;} img{max-width:100%;height:auto;} blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}
+    ${codeCss}
     ${filter}
     ${userCss}</style>
-    </head><body>${bodyHtml}</body></html>`;
+    </head><body>${body}</body></html>`;
 }

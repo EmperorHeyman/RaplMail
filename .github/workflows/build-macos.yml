@@ -1,0 +1,60 @@
+name: Build macOS
+
+# Produces a signed .dmg for macOS. Runs on a mac runner because the PyInstaller
+# sidecar and the Tauri .app/.dmg must be built on the target OS. Trigger on a
+# version tag (v*) or manually.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14            # Apple-silicon runner (arm64)
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Build backend sidecar (PyInstaller)
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+          pyinstaller raplmail-backend.spec --noconfirm
+          # Tauri resolves an external binary by <name>-<target-triple>.
+          TRIPLE=$(rustc -Vv 2>/dev/null | awk '/host:/ {print $2}' || echo aarch64-apple-darwin)
+          mkdir -p ../frontend/src-tauri/binaries
+          cp dist/raplmail-backend "../frontend/src-tauri/binaries/raplmail-backend-${TRIPLE}"
+          chmod +x "../frontend/src-tauri/binaries/raplmail-backend-${TRIPLE}"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build the Tauri app (.dmg)
+        working-directory: frontend
+        env:
+          # Updater signing — set these as repo secrets to emit signed artifacts.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: raplmail-macos
+          path: |
+            frontend/src-tauri/target/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/release/bundle/macos/*.app

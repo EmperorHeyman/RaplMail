@@ -39,11 +39,38 @@ const DEFAULT_SETTINGS = {
   smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
   senderAvatars: true,           // fetch + cache the sender domain's favicon as the avatar
   relativeTime: false,           // list rows show "3 hours ago" instead of a date
+  collapseQuotes: true,          // hide quoted reply history behind a toggle in the reader
+  templates: [],                 // canned messages: [{ id, name, subject, body }]
+  vipSenders: [],                // emails/domains whose mail floats to the top + always notifies
+  linkUnfurls: false,            // fetch an OpenGraph preview card for the main link (privacy: off)
+  highlightCode: true,           // syntax-highlight <pre> code blocks in the reader
+  localApiEnabled: false,        // expose read-only /metrics for LAN devices
+  localApiKey: "",               // stable API key for the local metrics endpoint
+  aiApiKey: "",                  // BYOK: your own Anthropic API key (stays local)
+  aiModel: "",                   // optional model override (blank = sensible default)
+  aiButtons: true,               // show AI buttons (only relevant once a key is set)
+  digestEnabled: false,          // deliver a daily AI "morning briefing" of unread mail
+  digestHour: 8,                 // local hour (0-23) to deliver the briefing
+  launchOnStartup: false,        // start RaplMail at login (tray/background mode)
+  minimizeToTray: true,          // closing the window hides to the tray instead of quitting
+  dashboard: true,               // show the Home dashboard entry in the sidebar
+  pgpPrivateKey: "",             // your armored OpenPGP private key (for decrypt/sign)
+  pgpPassphrase: "",             // passphrase for the private key (if protected)
+  pgpPublicKeys: [],             // armored public keys of correspondents (verify/encrypt)
+  encryptCache: false,           // seal cached message bodies at rest with the vault key
+  trackBaseUrl: "",              // public base URL for read-receipt pixels (else localhost)
+  caldavUrl: "",                 // CalDAV collection URL (events)
+  carddavUrl: "",                // CardDAV collection URL (contacts)
+  caldavUser: "",                // CalDAV/CardDAV username
+  caldavPassword: "",            // CalDAV/CardDAV password
   scheduleLaterHours: 3,         // "Later today" = now + this many hours
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
+  quietHoursEnabled: false,      // suppress notifications during a nightly window
+  quietStart: 22,                // quiet hours start hour (local)
+  quietEnd: 7,                   // quiet hours end hour (local)
   rowActions: ["snooze", "done"],// the two hover buttons on each message row (left, right)
   readerActions: ["reply", "replyAll", "forward", "done", "flag"], // buttons under the recipient
   followupDays: 3,               // nudge to follow up after this many days with no reply
@@ -83,6 +110,9 @@ export const app = $state({
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
   composing: null,
+  mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
+  aiInboxOpen: false,            // AI inbox digest + priority triage dialog
+  aiDigest: "",                  // last scheduled morning-brief text (shown in the assistant)
   pendingSend: null,             // { payload, seed, delay, label, timer } while undo-send counts down
   paletteOpen: false,            // command palette (Ctrl+K)
   loading: false,
@@ -193,12 +223,21 @@ export function saveSettings(patch) {
 // Load settings from the server on boot. The server copy is authoritative; if
 // it's empty (fresh install), seed it from whatever localStorage had.
 export async function initSettings() {
+  // Read whatever the local copy has so we can backfill keys the server might be
+  // missing (e.g. an older/partial blob) — server stays authoritative per-key.
+  let local = {};
+  try { local = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch {}
   try {
     const server = await appSettings.get();
     if (server && Object.keys(server).length) {
-      app.settings = { ...DEFAULT_SETTINGS, ...server };
-      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(app.settings)); } catch {}
+      const merged = { ...DEFAULT_SETTINGS, ...local, ...server };
+      app.settings = merged;
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged)); } catch {}
       applyTheme();
+      // If local had keys the server lost, heal the server copy.
+      if (Object.keys(local).some((k) => !(k in server))) {
+        appSettings.put(merged).catch(() => {});
+      }
     } else {
       appSettings.put(app.settings).catch(() => {});
     }
@@ -234,18 +273,83 @@ export async function openCompose(seed = {}) {
   }
 }
 
-export function notify(message, kind = "info") {
-  app.toast = { message, kind, id: Math.random() };
-  setTimeout(() => { if (app.toast && app.toast.message === message) app.toast = null; }, 3200);
+// Self-update via the Tauri updater plugin. No-op in the browser dev build.
+export async function checkForUpdates({ silent = false } = {}) {
+  if (!isTauri()) {
+    if (!silent) notify("Updates are only available in the installed app", "info");
+    return;
+  }
+  try {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const update = await check();
+    if (!update) { if (!silent) notify("You're on the latest version ✓"); return; }
+    if (!confirm(`Update available: ${update.version}\n\n${update.body || ""}\n\nDownload and install now? The app will restart.`)) return;
+    notify(`Downloading update ${update.version}…`);
+    await update.downloadAndInstall();
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();
+  } catch (e) {
+    if (!silent) notify(`Update check failed: ${e.message || e}`, "error");
+  }
+}
+
+export function notify(message, kind = "info", undo = null) {
+  const id = Math.random();
+  app.toast = { message, kind, id, undo };
+  setTimeout(() => { if (app.toast && app.toast.id === id) app.toast = null; }, undo ? 6000 : 3200);
+}
+export function runUndo() {
+  const u = app.toast?.undo;
+  app.toast = null;
+  if (u) u();
 }
 
 export async function refreshVault() {
   app.vault = { ...(await vault.status()), ready: true };
 }
 
+// Reflect total inbox-unread on the taskbar/dock icon + tray tooltip (Tauri only).
+export async function updateBadge() {
+  if (!isTauri()) return;
+  try {
+    const count = (app.folders || [])
+      .filter((f) => f.role === "inbox")
+      .reduce((n, f) => n + (f.unread_count || 0), 0);
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_unread_badge", { count });
+  } catch {}
+}
+
+// Close-to-tray toggle: tell the Rust shell whether the window-close button
+// hides to the tray (true) or fully quits (false).
+export async function setCloseToTray(on) {
+  saveSettings({ minimizeToTray: on });
+  if (!isTauri()) return;
+  try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("set_close_to_tray", { on }); } catch {}
+}
+// Push the saved tray preference to the shell on boot (default: hide to tray).
+export async function syncTrayPref() {
+  if (!isTauri()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("set_close_to_tray", { on: app.settings.minimizeToTray !== false });
+  } catch {}
+}
+
+// Launch RaplMail at login (Tauri autostart plugin).
+export async function setAutostart(on) {
+  saveSettings({ launchOnStartup: on });
+  if (!isTauri()) return;
+  try {
+    const { enable, disable } = await import("@tauri-apps/plugin-autostart");
+    if (on) await enable(); else await disable();
+  } catch (e) { notify(`Couldn't change startup setting: ${e.message || e}`, "error"); }
+}
+
 export async function loadAccountsAndFolders() {
   app.accounts = await accounts.list();
   app.folders = await folders.list();
+  updateBadge();
   // Default selection on first load.
   if (app.selectedFolderId === null && app.selectedKind === "folder") {
     const hasInbox = app.folders.some((f) => f.role === "inbox");
@@ -458,15 +562,54 @@ export function presetWhen(at) {
 
 export async function snoozeMessage(message, untilISO, presence = false) {
   // Optimistically drop it from the current view.
+  const idx = app.messages.findIndex((m) => m.id === message.id);
   app.messages = app.messages.filter((m) => m.id !== message.id);
   if (app.selectedMessageId === message.id) app.selectedMessageId = null;
   try {
     await messages.snooze(message.id, presence ? null : untilISO, presence);
-    notify(presence ? "Snoozed until you're back" : (untilISO ? "Snoozed" : "Unsnoozed"));
+    if (untilISO || presence) {
+      notify(presence ? "Snoozed until you're back" : "Snoozed", "info", () => {
+        messages.snooze(message.id, null, false).catch(() => {});
+        message.snooze_until = null;
+        if (!app.messages.some((m) => m.id === message.id)) {
+          const at = idx >= 0 ? idx : app.messages.length;
+          app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
+        }
+      });
+    } else {
+      notify("Unsnoozed");
+    }
   } catch (e) {
     notify("Couldn't snooze", "error");
     refreshMessages({ background: true });
   }
+}
+
+export function isVip(addr) {
+  const a = (addr || "").toLowerCase().trim();
+  if (!a) return false;
+  const dom = a.split("@")[1] || "";
+  return (app.settings.vipSenders || []).some((raw) => {
+    const v = (raw || "").toLowerCase().trim().replace(/^@/, "");
+    return v && (v === a || v === dom || dom.endsWith("." + v));
+  });
+}
+export function toggleVip(addrOrMsg) {
+  const a = (typeof addrOrMsg === "string" ? addrOrMsg : addrOrMsg?.from_addr || "").toLowerCase().trim();
+  if (!a) return;
+  const list = app.settings.vipSenders || [];
+  const has = list.some((x) => (x || "").toLowerCase().trim() === a);
+  saveSettings({ vipSenders: has ? list.filter((x) => (x || "").toLowerCase().trim() !== a) : [...list, a] });
+  notify(has ? "Removed from VIP" : "Marked as VIP ⭐");
+}
+
+export async function pinMessage(message, value) {
+  const v = value ?? !message.pinned;
+  const item = app.messages.find((m) => m.id === message.id);
+  if (item) item.pinned = v;       // optimistic — list re-sorts immediately
+  message.pinned = v;
+  try { await messages.pin(message.id, v); }
+  catch (e) { notify("Couldn't pin", "error"); if (item) item.pinned = !v; }
 }
 
 export async function muteThread(message) {
@@ -498,6 +641,15 @@ export function openThread(latest) {
   app.threadKey = latest.thread_id;
   app.selectedMessageId = latest.id;
   if (!latest.is_seen) { latest.is_seen = true; messages.setSeen(latest.id, true).catch(() => {}); }
+}
+
+// Open a message in the reader by id (used by the AI inbox assistant). The
+// Reader fetches the full message from the id, so it needn't be in the list.
+export function openMessageById(id) {
+  if (id == null) return;
+  app.view = "mail";
+  app.threadKey = null;
+  app.selectedMessageId = id;
 }
 
 export async function refreshMessages({ background = false } = {}) {
@@ -643,6 +795,17 @@ export async function markDone(message, done) {
   try {
     await messages.setDone(message.id, done);
     app.folders = await folders.list();
+    // Offer a quick undo when a message was archived out of the view.
+    if (!app.showDone && done) {
+      notify("Marked done", "info", () => {
+        message.is_done = false;
+        if (!app.messages.some((m) => m.id === message.id)) {
+          const at = idx >= 0 ? idx : app.messages.length;
+          app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
+        }
+        messages.setDone(message.id, false).then(() => folders.list().then((f) => (app.folders = f))).catch(() => {});
+      });
+    }
   } catch (e) {
     notify("Couldn't update — restoring", "error");
     refreshMessages({ background: true });
@@ -683,20 +846,62 @@ export function removeSavedSearch(id) {
 }
 
 // --- desktop notifications -------------------------------------------------
+// In the Tauri shell we use the native notification plugin (the webview's web
+// Notification API is usually blocked and can't be re-enabled by the user —
+// that's the "blocked by the system" you saw). In a browser we fall back to the
+// web Notification API.
+async function _notifPlugin() {
+  if (!isTauri()) return null;
+  try { return await import("@tauri-apps/plugin-notification"); } catch { return null; }
+}
 export function notificationsAvailable() {
-  return typeof Notification !== "undefined";
+  return isTauri() || typeof Notification !== "undefined";
 }
 export async function enableNotifications() {
-  if (!notificationsAvailable()) return "unsupported";
+  const mod = await _notifPlugin();
+  if (mod) {
+    let granted = await mod.isPermissionGranted();
+    if (!granted) granted = (await mod.requestPermission()) === "granted";
+    return granted ? "granted" : "denied";
+  }
+  if (typeof Notification === "undefined") return "unsupported";
   if (Notification.permission === "granted") return "granted";
   try { return await Notification.requestPermission(); } catch { return "denied"; }
 }
+// Low-level send used by every notification path.
+async function sendNative(title, body) {
+  const mod = await _notifPlugin();
+  if (mod) {
+    try {
+      if (!(await mod.isPermissionGranted()) && (await mod.requestPermission()) !== "granted") return false;
+      mod.sendNotification({ title, body });
+      return true;
+    } catch { return false; }
+  }
+  if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+    try { const n = new Notification(title, { body }); n.onclick = () => { try { window.focus(); } catch {} n.close(); }; return true; }
+    catch { return false; }
+  }
+  return false;
+}
+// Quiet hours: true if the current local hour is within the configured window
+// (handles windows that wrap past midnight, e.g. 22 → 7).
+export function inQuietHours() {
+  if (!app.settings.quietHoursEnabled) return false;
+  const h = new Date().getHours();
+  const s = app.settings.quietStart ?? 22;
+  const e = app.settings.quietEnd ?? 7;
+  return s <= e ? (h >= s && h < e) : (h >= s || h < e);
+}
 function desktopNotify(payload, count) {
   if (app.settings.notifyNewMail === false) return;
-  if (!notificationsAvailable() || Notification.permission !== "granted") return;
-  // Optionally stay quiet while the user is actively looking at the window.
-  if (app.settings.notifyOnlyUnfocused !== false && typeof document !== "undefined"
-      && document.hasFocus && document.hasFocus()) return;
+  // VIP mail always breaks through quiet hours and the focused-window rule.
+  const vip = isVip(payload?.from_addr);
+  if (!vip) {
+    if (inQuietHours()) return;
+    if (app.settings.notifyOnlyUnfocused !== false && typeof document !== "undefined"
+        && document.hasFocus && document.hasFocus()) return;
+  }
   const p = payload || {};
   let title, body;
   if (count > 1) {
@@ -706,10 +911,7 @@ function desktopNotify(payload, count) {
     title = p.from || "New message";
     body = p.subject || "";
   }
-  try {
-    const n = new Notification(title, { body, tag: "raplmail-newmail", icon: "/favicon.svg" });
-    n.onclick = () => { try { window.focus(); } catch {} n.close(); };
-  } catch {}
+  sendNative(title, body);
 }
 
 // Fire a notification immediately to verify the OS path works (ignores the
@@ -718,13 +920,8 @@ export async function testNotification() {
   const perm = await enableNotifications();
   if (perm === "unsupported") return { ok: false, reason: "unsupported" };
   if (perm !== "granted") return { ok: false, reason: "denied" };
-  try {
-    const n = new Notification("RaplMail", { body: "Test notification — you're all set ✓", tag: "raplmail-test" });
-    n.onclick = () => { try { window.focus(); } catch {} n.close(); };
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, reason: e?.message || "error" };
-  }
+  const ok = await sendNative("RaplMail", "Test notification — you're all set ✓");
+  return ok ? { ok: true } : { ok: false, reason: "error" };
 }
 
 let disconnect = null;
@@ -749,6 +946,16 @@ export function startEvents() {
       // Returned to the desk — "until I'm back" mail was resurfaced server-side.
       if (ev.payload?.count) notify(`Welcome back — ${ev.payload.count} message(s) resurfaced`);
       refreshMessages({ background: true });
+    } else if (ev.event === "mail:opened") {
+      // A read-receipt tracking pixel fired — someone opened your message.
+      const subj = ev.payload?.subject ? `“${ev.payload.subject}”` : "your message";
+      notify(`📬 ${ev.payload?.recipient || "Someone"} opened ${subj}`);
+    } else if (ev.event === "inbox:digest") {
+      // Scheduled morning briefing arrived — cache it and nudge the user.
+      app.aiDigest = ev.payload?.digest || "";
+      const first = (app.aiDigest.split("\n").find((l) => l.trim()) || "Your morning briefing is ready");
+      notify("☀️ Morning briefing ready — open the inbox assistant");
+      sendNative("RaplMail — morning briefing", first.slice(0, 180));
     }
   });
   refreshQueue();

@@ -34,6 +34,8 @@
   const specialItems = $derived.by(() => {
     const s = app.settings;
     const items = [];
+    if (s.dashboard !== false)
+      items.push({ id: "home", icon: icons.home || icons.smart, label: "Home", active: app.view === "dashboard", run: () => { app.view = "dashboard"; } });
     if (hasInbox && s.smartInbox)
       items.push({ id: "smart", icon: icons.smart, label: "Smart Inbox", active: app.selectedKind === "smart" && app.view === "mail", run: () => { app.view = "mail"; selectSmartInbox(); } });
     else if (hasInbox && s.unifiedInbox)

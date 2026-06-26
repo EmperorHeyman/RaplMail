@@ -82,6 +82,7 @@ export const icons = {
   search: line('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>'),
   close: line('<path d="M6 6 18 18M18 6 6 18"/>'),
   copy: line('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>'),
+  pin: line('<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>'),
   hide: line(
     '<path d="m3 3 18 18"/>' +
     '<path d="M10.5 6.2A9.8 9.8 0 0 1 12 6c5.5 0 9.5 4.5 10.5 6a13.7 13.7 0 0 1-3.1 3.8"/>' +

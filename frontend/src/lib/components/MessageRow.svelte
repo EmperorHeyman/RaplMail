@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip } from "../store.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
@@ -26,7 +26,13 @@
     return out;
   });
   let avIdx = $state(0);
-  $effect(() => { void message.id; void message.brand_domain; avIdx = 0; });
+  // Only reset the avatar candidate when the domains actually change — NOT on every
+  // background refresh (which swaps the message object and would re-flash the icon).
+  let _avKey = "";
+  $effect(() => {
+    const key = avatarDomains.join("|");
+    if (key !== _avKey) { _avKey = key; avIdx = 0; }
+  });
   const avSrc = $derived(avatarDomains[avIdx] ? avatarUrlDomain(avatarDomains[avIdx]) : "");
   const hasLogo = $derived(!!avSrc && !done);
   function onAvatarError() {
@@ -125,6 +131,8 @@
       <span class="snippet">{message.snippet}</span>
     </span>
     <span class="marks">
+      {#if isVip(message.from_addr)}<span class="vip" title="VIP sender">{@html icons.star}</span>{/if}
+      {#if message.pinned}<span class="pin">{@html icons.pin}</span>{/if}
       {#if !message.is_seen && !done}<span class="unread-dot"></span>{/if}
       {#if message.is_flagged}<span class="star">{@html icons.flagged}</span>{/if}
       {#if message.has_attachments}<span class="clip">{@html icons.attachment}</span>{/if}
@@ -203,6 +211,8 @@
   .marks { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
   .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
   .star { color: var(--warning); font-size: 13px; }
+  .pin { color: var(--accent); font-size: 12px; }
+  .vip { color: #e8b923; font-size: 12px; }
   .clip { font-size: 11px; }
 
   .row-btn {

@@ -106,6 +106,7 @@
   }
 
   function removeChip(i) { chips = chips.filter((_, j) => j !== i); emit(); inputEl?.focus(); }
+  function clearAll() { chips = []; text = ""; emit(); inputEl?.focus(); recompute(); }
 
   function onKey(e) {
     if (e.key === "Backspace" && text === "" && chips.length) {
@@ -142,6 +143,9 @@
     onfocus={focus}
     onblur={() => setTimeout(() => (open = false), 120)}
   />
+  {#if chips.length || text.trim()}
+    <button class="clear" title="Clear search" onmousedown={(e) => { e.preventDefault(); clearAll(); }}>{@html icons.close}</button>
+  {/if}
 
   {#if open && sugg.length}
     <ul class="whisper">
@@ -158,7 +162,9 @@
 <style>
   .sb { position: relative; flex: 1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
         background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 8px; }
-  .sb.focused { border-color: var(--accent); }
+  .sb.focused { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent); }
+  .clear { margin-left: auto; color: var(--muted); display: inline-flex; padding: 2px; border-radius: 50%; flex: none; }
+  .clear:hover { color: var(--text); background: var(--surface-3); }
   .ic { color: var(--muted); display: inline-flex; }
   .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent); color: #fff;
           border-radius: 6px; padding: 2px 4px 2px 7px; font-size: 12px; max-width: 240px; }

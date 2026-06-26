@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref } from "./lib/store.svelte.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
   import CommandPalette from "./lib/components/CommandPalette.svelte";
@@ -9,10 +9,13 @@
   import MailList from "./lib/components/MailList.svelte";
   import Reader from "./lib/components/Reader.svelte";
   import Compose from "./lib/components/Compose.svelte";
+  import MailMerge from "./lib/components/MailMerge.svelte";
+  import AiInbox from "./lib/components/AiInbox.svelte";
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
   import CalendarView from "./lib/components/CalendarView.svelte";
+  import Dashboard from "./lib/components/Dashboard.svelte";
   import ShortcutsOverlay from "./lib/components/ShortcutsOverlay.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import SendingIndicator from "./lib/components/SendingIndicator.svelte";
@@ -67,11 +70,46 @@
     return () => clearInterval(t);
   });
 
+  // Chord ("g" then a letter) navigation.
+  let chordArmed = false;
+  let chordTimer = null;
+  const goInbox = () => { app.view = "mail"; (app.settings.smartInbox ? selectSmartInbox : selectUnifiedInbox)(); };
+  const chordTargets = {
+    i: goInbox,
+    s: () => { app.view = "mail"; selectSnoozed(); },
+    c: () => (app.view = "calendar"),
+    t: () => (app.view = "scheduled"),
+    f: () => { app.view = "mail"; selectFollowups(); },
+    n: () => (app.view = "newsfeed"),
+    p: () => { app.view = "mail"; selectPaperTrail(); },
+    a: () => { app.view = "settings"; },
+  };
+
   function onGlobalKey(e) {
     if (composeWindow) return;
     const kb = app.settings.keybinds || {};
+    // Ctrl/Cmd+R → check for new mail (override the webview's reload-the-app default).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "r" || e.key === "R")) {
+      e.preventDefault();
+      syncAllAccounts();
+      return;
+    }
     const combo = keyCombo(e);
     if (!combo) return;
+
+    // Chord shortcuts: press "g" then a letter to jump between views.
+    if (chordArmed && !isTyping(e)) {
+      chordArmed = false;
+      const go = chordTargets[e.key.toLowerCase()];
+      if (go) { go(); e.preventDefault(); return; }
+    }
+    if (combo === "g" && !isTyping(e)) {
+      chordArmed = true;
+      clearTimeout(chordTimer);
+      chordTimer = setTimeout(() => (chordArmed = false), 1200);
+      e.preventDefault();
+      return;
+    }
     // Ctrl+1..9 switch workspace, Ctrl+0 = All (fixed).
     if ((e.ctrlKey || e.metaKey) && /^[0-9]$/.test(e.key)) {
       const ws = app.settings.workspaces || [];
@@ -90,7 +128,7 @@
   $effect(() => {
     if (app.vault.unlocked && !_booted) {
       _booted = true;
-      (async () => { await initSettings(); await loadAccountsAndFolders(); })();
+      (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); })();
       startEvents();
       recategorizeOnce();
     }
@@ -126,6 +164,8 @@
       <NewsletterFeed />
     {:else if app.view === "calendar"}
       <CalendarView />
+    {:else if app.view === "dashboard"}
+      <Dashboard />
     {:else}
       <MailList />
       <Reader />
@@ -150,6 +190,12 @@
 
 {#if app.composing}
   <Compose />
+{/if}
+{#if app.mailMergeOpen}
+  <MailMerge />
+{/if}
+{#if app.aiInboxOpen}
+  <AiInbox />
 {/if}
 <SendingIndicator />
 <svelte:window on:keydown={onGlobalKey} />
@@ -195,7 +241,8 @@
   :global(.app:has(.settings)),
   :global(.app:has(.cal)),
   :global(.app:has(.sched)),
-  :global(.app:has(.feed)) {
+  :global(.app:has(.feed)),
+  :global(.app:has(.dash)) {
     grid-template-columns: var(--sidebar-w) 1fr;
   }
 </style>

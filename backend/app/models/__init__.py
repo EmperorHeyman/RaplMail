@@ -77,6 +77,9 @@ class Account(SQLModel, table=True):
 
     color: str = "#4f8cff"      # UI accent for unified inbox
     enabled: bool = True
+    # Extra send-as identities for this account, e.g. ["Sales <sales@co.com>",
+    # "me+side@co.com"]. The primary `email` is always implicitly available.
+    aliases: list = Field(default_factory=list, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -129,6 +132,7 @@ class Message(SQLModel, table=True):
     auth_status: str = ""        # sender-auth verdict: ""=unchecked, pass|fail|none (anti-spoof shield)
     attachments: list = Field(default_factory=list, sa_column=Column(JSON))  # metadata, filled on body fetch
     snooze_presence: bool = False  # snoozed "until I'm back" — resurfaced by the idle monitor
+    pinned: bool = False         # pinned to the top of the list (durable via MessageState)
     pending_action: str = Field(default="", index=True)  # queued archive/delete — hidden until flushed
 
 
@@ -143,6 +147,7 @@ class MessageState(SQLModel, table=True):
     is_blocked: bool = False
     snooze_until: datetime | None = None
     snooze_presence: bool = False
+    is_pinned: bool = False
     updated_at: datetime = Field(default_factory=utcnow)
 
 
@@ -253,3 +258,16 @@ class Contact(SQLModel, table=True):
     favorite: bool = False
     source: str = "scanned"      # "scanned" | "manual"
     created_at: datetime = Field(default_factory=utcnow)
+
+
+class OpenTrack(SQLModel, table=True):
+    """A read-receipt tracking pixel embedded in an outgoing message. The pixel
+    URL is fetched when the recipient opens the mail, recording the open here."""
+    id: int | None = Field(default=None, primary_key=True)
+    token: str = Field(index=True, unique=True)
+    subject: str = ""
+    recipient: str = ""
+    created_at: datetime = Field(default_factory=utcnow)
+    open_count: int = 0
+    first_open: datetime | None = None
+    last_open: datetime | None = None

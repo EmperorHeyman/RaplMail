@@ -9,6 +9,14 @@
 
   let c = $state({ to: "", cc: "", subject: "", html: "", in_reply_to: "", account_id: null });
   let accountId = $state(null);
+  let fromIdentity = $state("");   // chosen send-as identity ("" = account's primary address)
+  // Identities available for the selected account: primary address + its aliases.
+  const identitiesFor = (id) => {
+    const a = app.accounts.find((x) => x.id === id);
+    if (!a) return [];
+    const primary = a.display_name && a.display_name !== a.email ? `${a.display_name} <${a.email}>` : a.email;
+    return [{ value: "", label: primary }, ...(a.aliases || []).map((al) => ({ value: al, label: al }))];
+  };
   let showCc = $state(false);
   let editor;
   let attachments = $state([]);
@@ -68,6 +76,28 @@
     } catch {}
   }
 
+  const DRAFT_KEY = "raplmail.draft";
+  let draftTimer;
+  // Is there real user content beyond the auto-inserted signature?
+  function userTyped() {
+    if (c.to.trim() || (c.cc || "").trim() || c.subject.trim()) return true;
+    if (!editor) return false;
+    const clone = editor.cloneNode(true);
+    clone.querySelector(".rapl-sig-wrap")?.remove();
+    return !!clone.innerText.trim();
+  }
+  function saveDraft() {
+    if (standalone) return;
+    try {
+      if (!userTyped()) { localStorage.removeItem(DRAFT_KEY); return; }
+      localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", account_id: accountId,
+      }));
+    } catch {}
+  }
+  function scheduleSave() { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 700); }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
+
   onMount(async () => {
     if (standalone) {
       try { c = { ...c, ...JSON.parse(sessionStorage.getItem("raplmail.compose.seed") || "{}") }; } catch {}
@@ -85,8 +115,27 @@
       signatureId = d ? d.id : "none";
     } catch {}
     applySignature();
+
+    // Restore an autosaved draft, but only into a blank new compose (never over a reply/forward).
+    if (!standalone && !c.to && !c.subject && !c.html) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+        if (saved && (saved.to || saved.subject || (saved.html || "").trim())) {
+          c.to = saved.to || ""; c.cc = saved.cc || ""; c.subject = saved.subject || "";
+          if (saved.account_id) accountId = saved.account_id;
+          if (saved.cc) showCc = true;
+          if (editor && saved.html) editor.innerHTML = saved.html;
+          notify("Restored your draft");
+        }
+      } catch {}
+    }
     focusTop();
+    // Autosave as fields change.
+    scheduleSave();
   });
+
+  // Persist subject/recipients as they change.
+  $effect(() => { void c.to; void c.cc; void c.subject; if (editor) scheduleSave(); });
 
   // Re-pick the default signature when the From account changes.
   let _lastAcct = null;
@@ -131,6 +180,20 @@
 
   let laterMenu = $state(false);
   let customWhen = $state("");
+  let tplMenu = $state(false);
+  function insertTemplate(t) {
+    tplMenu = false;
+    if (t.subject && !c.subject.trim()) c.subject = fillVars(t.subject);
+    const body = fillVars(t.body || "");
+    if (editor) {
+      // Insert above the signature, leaving it in place.
+      const sig = editor.querySelector(".rapl-sig-wrap");
+      const block = document.createElement("div");
+      block.innerHTML = body;
+      if (sig) editor.insertBefore(block, sig); else editor.appendChild(block);
+      editor.focus();
+    }
+  }
 
   function autoBccFor(recipients) {
     const rules = app.settings.autoBcc || [];
@@ -145,11 +208,35 @@
     return [...out];
   }
 
+  let pgpSign = $state(false);
+  let pgpEncrypt = $state(false);
+  let requestReceipt = $state(false);
+  const pgpConfigured = $derived(!!(app.settings.pgpPrivateKey || (app.settings.pgpPublicKeys || []).length));
+
+  let savingDraft = $state(false);
+  let draftUid = $state(null);   // IMAP UID of the last server-saved draft (for replace)
+  async function saveToDrafts() {
+    if (!accountId) { notify("Pick an account", "error"); return; }
+    savingDraft = true;
+    try {
+      const r = await composeApi.saveDraft({ ...buildPayload(), replace_uid: draftUid });
+      draftUid = r.uid ?? draftUid;
+      clearDraft();   // server now holds it; drop the local autosave copy
+      notify(`Saved to Drafts (${r.folder})`);
+    } catch (e) {
+      notify(e.message, "error");
+    } finally { savingDraft = false; }
+  }
+
   function buildPayload() {
     const to = c.to.split(",").map((s) => s.trim()).filter(Boolean);
     const cc = (c.cc || "").split(",").map((s) => s.trim()).filter(Boolean);
     return {
       account_id: accountId,
+      from_addr: fromIdentity || "",
+      pgp_sign: pgpSign,
+      pgp_encrypt: pgpEncrypt,
+      request_receipt: requestReceipt,
       to,
       cc,
       bcc: autoBccFor([...to, ...cc]),
@@ -164,19 +251,31 @@
     };
   }
 
+  // Warn if the message talks about an attachment but none is attached.
+  const _ATTACH_HINTS = /\b(attach(ed|ment|ing)?|enclosed|in the attachment|see attached|find attached|p[řr]ipoj|p[řr]iloh|v p[řr]íloze|p[řr]ikládám)\b/i;
+  function attachmentMissing() {
+    if (attachments.length > 0) return false;
+    const text = `${c.subject} ${editor?.innerText || ""}`;
+    return _ATTACH_HINTS.test(text);
+  }
+
   function send() {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Send anyway?")) return;
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", in_reply_to: c.in_reply_to, account_id: accountId, attachments };
+    clearDraft();
     queueSend(buildPayload(), seed);
   }
 
   async function sendLater(iso, label) {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Schedule anyway?")) return;
     laterMenu = false;
     try {
       await composeApi.send({ ...buildPayload(), send_at: iso });
+      clearDraft();
       notify(`Scheduled — ${label}`);
       if (standalone) window.close(); else app.composing = null;
     } catch (e) { notify("Couldn't schedule: " + e.message, "error"); }
@@ -280,9 +379,16 @@
 
   <div class="fields">
     <label class="f"><span>From</span>
-      <select bind:value={accountId}>
-        {#each app.accounts as a}<option value={a.id}>{a.display_name && a.display_name !== a.email ? `${a.display_name} <${a.email}>` : a.email}</option>{/each}
-      </select>
+      <div class="from-row">
+        <select bind:value={accountId} onchange={() => (fromIdentity = "")}>
+          {#each app.accounts as a}<option value={a.id}>{a.display_name && a.display_name !== a.email ? `${a.display_name} <${a.email}>` : a.email}</option>{/each}
+        </select>
+        {#if identitiesFor(accountId).length > 1}
+          <select class="ident" bind:value={fromIdentity} title="Send as identity">
+            {#each identitiesFor(accountId) as id}<option value={id.value}>{id.label}</option>{/each}
+          </select>
+        {/if}
+      </div>
     </label>
     <div class="f"><span>To</span>
       <RecipientInput bind:value={c.to} placeholder="Start typing a name or email…" />
@@ -299,12 +405,24 @@
     <button class="tool" title="Insert link" onmousedown={(e) => { e.preventDefault(); addLink(); }}>{@html icons.link}</button>
     <button class="tool" title="Clear formatting" onmousedown={(e) => { e.preventDefault(); exec("removeFormat"); }}>{@html icons.clearFormat}</button>
     <span class="tspace"></span>
+    {#if (app.settings.templates || []).length}
+      <div class="tpl-pick">
+        <button class="tool" title="Insert a template" onclick={() => (tplMenu = !tplMenu)}>{@html icons.drafts} Templates ⌄</button>
+        {#if tplMenu}
+          <div class="tpl-menu">
+            {#each app.settings.templates as t}
+              <button onmousedown={(e) => { e.preventDefault(); insertTemplate(t); }}>{t.name}</button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {/if}
     <button class="tool" title="Attach file" onclick={() => fileInput.click()}>{@html icons.attachment} Attach</button>
     <input bind:this={fileInput} type="file" multiple hidden onchange={(e) => readFiles(e.currentTarget.files)} />
   </div>
 
   <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label="Message body"
-    bind:this={editor} onkeydown={onEditorKey} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
+    bind:this={editor} onkeydown={onEditorKey} oninput={scheduleSave} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
     data-placeholder="Write your message…  (Ctrl+Enter to send)"></div>
 
   {#if attachments.length}
@@ -317,6 +435,9 @@
 
   <footer>
     <button class="btn primary" onclick={send}>Send</button>
+    <button class="btn" onclick={saveToDrafts} disabled={savingDraft} title="Save to your Drafts folder (syncs across devices)">
+      {@html icons.save || icons.folder} {savingDraft ? "Saving…" : "Save draft"}
+    </button>
     <div class="later">
       <button class="btn" onclick={() => (laterMenu = !laterMenu)} title="Send later">{@html icons.clock} Later ⌄</button>
       {#if laterMenu}
@@ -331,6 +452,13 @@
         </div>
       {/if}
     </div>
+    {#if pgpConfigured}
+      <span class="pgp" title="OpenPGP">
+        <button class="pgp-btn" class:on={pgpSign} onclick={() => (pgpSign = !pgpSign)} title="Sign with your PGP key">{@html icons.signature} Sign</button>
+        <button class="pgp-btn" class:on={pgpEncrypt} onclick={() => (pgpEncrypt = !pgpEncrypt)} title="Encrypt to recipients' PGP keys">{@html icons.shieldCheck || icons.shield} Encrypt</button>
+      </span>
+    {/if}
+    <button class="pgp-btn" class:on={requestReceipt} onclick={() => (requestReceipt = !requestReceipt)} title="Embed a read-receipt tracking pixel (recipient must be able to reach this app)">{@html icons.eye || icons.mail} Receipt</button>
     {#if sigs.length}
       <label class="sigpick" title="Signature">{@html icons.signature}
         <select bind:value={signatureId} onchange={applySignature}>
@@ -352,11 +480,17 @@
   .panel.standalone header { cursor: default; }
   .x { color: var(--muted); font-size: 14px; padding: 3px 7px; border-radius: 6px; }
   .x:hover { background: var(--surface-3); }
+  .pgp { display: inline-flex; gap: 4px; }
+  .pgp-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
+  .pgp-btn.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent); }
   .fields { padding: 4px 14px; }
   .f { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); position: relative; }
   .f > span { width: 52px; color: var(--muted); font-size: 13px; }
   .f input, .f select { flex: 1; border: none; background: transparent; padding: 4px 0; color: var(--text); }
   .f input:focus, .f select:focus { border: none; }
+  .from-row { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .from-row select { flex: 1; min-width: 0; }
+  .from-row .ident { flex: 0 1 auto; max-width: 50%; color: var(--accent); }
   .cc-toggle { color: var(--accent); font-size: 13px; }
   .toolbar { display: flex; align-items: center; gap: 4px; padding: 7px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .tool { min-width: 28px; padding: 5px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; }
@@ -379,6 +513,10 @@
   .later-menu .custom { display: flex; gap: 6px; padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
   .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
   .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
+  .tpl-pick { position: relative; }
+  .tpl-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 180px; max-height: 260px; overflow-y: auto; }
+  .tpl-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
+  .tpl-menu button:hover { background: var(--accent); color: #fff; }
   .sigpick { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
   .sigpick select { padding: 5px 8px; }
   .hint { color: var(--faint); font-size: 12px; margin-left: auto; }

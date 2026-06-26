@@ -130,6 +130,50 @@ class RsvpIn(BaseModel):
     status: str  # accepted | declined | tentative | needsAction
 
 
+class CalDavResult(BaseModel):
+    events: int = 0
+    contacts: int = 0
+    error: str = ""
+
+
+@router.post("/caldav/sync", response_model=CalDavResult)
+async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
+    """Pull events (CalDAV) and contacts (CardDAV) from the configured servers."""
+    from app.models import Contact, Setting
+    row = session.get(Setting, 1)
+    cfg = dict(row.data) if row and row.data else {}
+    cal_url = (cfg.get("caldavUrl") or "").strip()
+    card_url = (cfg.get("carddavUrl") or "").strip()
+    user = cfg.get("caldavUser") or ""
+    pw = cfg.get("caldavPassword") or ""
+    if not cal_url and not card_url:
+        return CalDavResult(error="No CalDAV/CardDAV URL configured.")
+
+    from app.sync import caldav as dav
+    acct_id = session.exec(select(Account.id)).first() or 0
+    res = CalDavResult()
+    try:
+        if cal_url:
+            events = await run_in_threadpool(dav.fetch_events, cal_url, user, pw)
+            res.events = upsert_events(session, acct_id, None, events)
+        if card_url:
+            cards = await run_in_threadpool(dav.fetch_contacts, card_url, user, pw)
+            for c in cards:
+                email = c.get("email", "")
+                if not email:
+                    continue
+                existing = session.exec(select(Contact).where(Contact.email == email)).first()
+                if existing is None:
+                    session.add(Contact(email=email, name=c.get("name", ""), source="carddav"))
+                    res.contacts += 1
+                elif c.get("name") and not existing.name:
+                    existing.name = c["name"]
+        session.commit()
+    except Exception as exc:
+        res.error = str(exc)
+    return res
+
+
 @router.post("/{event_id}/rsvp", response_model=EventOut)
 def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_session)) -> CalendarEvent:
     ev = session.get(CalendarEvent, event_id)

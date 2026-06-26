@@ -5,13 +5,16 @@
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hiddenimports = []
-for pkg in ("uvicorn", "anyio", "app", "email", "encodings"):
+for pkg in ("uvicorn", "anyio", "app", "email", "encodings", "pgpy"):
     hiddenimports += collect_submodules(pkg)
 hiddenimports += [
     "websockets", "websockets.legacy", "h11",
     "mailparser", "msal", "google.auth", "google.auth.transport.requests",
     "google_auth_oauthlib", "google_auth_oauthlib.flow", "requests_oauthlib",
     "imapclient", "aiosmtplib", "argon2", "cryptography",
+    # OpenPGP (pgpy) — needs the stdlib `imghdr` module that was removed in
+    # Python 3.13 and restored by the `standard-imghdr` backport.
+    "pgpy", "imghdr",
 ]
 
 datas = collect_data_files("certifi")

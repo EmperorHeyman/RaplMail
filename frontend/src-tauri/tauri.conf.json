@@ -34,7 +34,16 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/raplmail-backend"]
+    "externalBin": ["binaries/raplmail-backend"],
+    "createUpdaterArtifacts": true
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/a123systems/raplmail/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY2MkQ1NTdBMjNFRTExQTUKUldTbEVlNGplbFV0WmlZVE1ieWVuQVFXbERrMWlWL01LOG9CZlc4SHhFSTFZVVR6LzU0V1U1OWkK",
+      "windows": { "installMode": "passive" }
+    }
+  }
 }

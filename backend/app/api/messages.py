@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -15,11 +16,12 @@ from app.api.deps import verify_token
 from app.core.db import get_engine, get_session, index_message_fts
 from app.models import (
     Account, ActionQueue, Contact, Folder, FolderRole, Message, MessageState,
-    Rule, RuleAction, RuleField, RuleOp, SenderCategory,
+    Rule, RuleAction, RuleField, RuleOp, SenderCategory, Setting,
 )
 from app.providers.imap_smtp import decode_mime_words
 
 router = APIRouter(prefix="/messages", tags=["messages"], dependencies=[Depends(verify_token)])
+log = logging.getLogger("raplmail.messages")
 
 
 class MessageOut(BaseModel):
@@ -40,6 +42,7 @@ class MessageOut(BaseModel):
     thread_id: str
     brand_domain: str = ""
     auth_status: str = ""
+    pinned: bool = False
 
 
 class MessageDetail(MessageOut):
@@ -49,6 +52,8 @@ class MessageDetail(MessageOut):
     unsubscribe: str = ""
     attachments: list[dict] = []
     auth: dict = {}
+    warnings: list[str] = []
+    pgp: dict | None = None       # {type, verified, signer} for PGP-signed/encrypted mail
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -61,11 +66,12 @@ def _to_out(m: Message) -> MessageOut:
         snippet=m.snippet, date=m.date, is_seen=m.is_seen, is_flagged=m.is_flagged,
         is_done=m.is_done, has_attachments=m.has_attachments, category=m.category,
         thread_id=m.thread_id, brand_domain=m.brand_domain or "", auth_status=m.auth_status or "",
+        pinned=bool(m.pinned),
     )
 
 
 # Typed search operators: from:  to:  subject:  has:attachment  is:unread|read|done|flagged
-_TOKEN_RE = re.compile(r'(\w+):(?:"([^"]*)"|(\S+))')
+_TOKEN_RE = re.compile(r'(\w+):\s*(?:"([^"]*)"|(\S+))')
 
 
 def _parse_query(q: str):
@@ -188,27 +194,29 @@ def list_messages(
     if op_filters.get("subject"):
         stmt = stmt.where(func.lower(Message.subject).like(f"%{op_filters['subject'].lower()}%"))
 
-    # Free text -> FTS5, restrict + rank.
-    fts_rank = None
+    # Free text -> substring match across every visible field. Each whitespace-
+    # separated term must appear somewhere (sender, recipients, subject, snippet,
+    # or cached body) — so partial words like "ertel" match "erteltrading@…".
     if free_text:
-        # Quote each token so emails/punctuation don't trigger FTS5 syntax errors.
-        safe = " ".join('"' + t.replace('"', '""') + '"' for t in free_text.split())
-        rows = session.exec(
-            text("SELECT rowid FROM message_fts WHERE message_fts MATCH :q ORDER BY rank LIMIT 2000")
-            .bindparams(q=safe)
-        ).all()
-        ids = [r[0] for r in rows]
-        if not ids:
-            return []
-        stmt = stmt.where(Message.id.in_(ids))
-        fts_rank = {mid: i for i, mid in enumerate(ids)}
+        from sqlalchemy import or_
+        for term in free_text.split():
+            like = f"%{term.lower()}%"
+            stmt = stmt.where(or_(
+                func.lower(Message.from_addr).like(like),
+                func.lower(Message.from_name).like(like),
+                func.lower(Message.subject).like(like),
+                func.lower(Message.snippet).like(like),
+                func.lower(cast(Message.to_addrs, String)).like(like),
+                func.lower(cast(Message.cc_addrs, String)).like(like),
+                func.lower(Message.body_text).like(like),
+            ))
 
     # Newest first at the SQL level, so the limit keeps the most recent mail
     # (not the first rows by insertion order).
     stmt = stmt.order_by(Message.date.desc())
 
     use_screener = screener in ("only", "exclude") and not searching
-    fetch_limit = 2000 if fts_rank else (max(limit * 5, 200) if use_screener else limit)
+    fetch_limit = max(limit * 5, 200) if use_screener else limit
     msgs = list(session.exec(stmt.limit(fetch_limit)))
 
     if use_screener:
@@ -221,12 +229,8 @@ def list_messages(
 
         msgs = [m for m in msgs if (not known_sender(m)) == (screener == "only")]
 
-    if fts_rank is not None:
-        msgs.sort(key=lambda m: fts_rank.get(m.id, 1_000_000))
-        msgs = msgs[:limit]
-    else:
-        msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0, reverse=True)
-        msgs = msgs[offset:offset + limit]
+    msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0, reverse=True)
+    msgs = msgs[offset:offset + limit]
     return [_to_out(m) for m in msgs]
 
 
@@ -344,12 +348,70 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
         ).one()
         senders = [{"email": addr, "name": decode_mime_words(nm) or addr, "count": sc}
                    for addr, nm, sc in sender_rows]
+        # Newest messages first — what the card shows "at a glance" so it reflects
+        # what just arrived, not the most prolific (and often oldest) senders.
+        recent_rows = session.exec(
+            scoped(select(Message.from_addr, Message.from_name, Message.subject, Message.date))
+            .where(Message.category == cat).order_by(Message.date.desc()).limit(4)
+        ).all()
+        recent = [{"email": addr, "name": decode_mime_words(nm) or addr,
+                   "subject": decode_mime_words(subj) or "(no subject)",
+                   "date": dt.isoformat() if dt else None}
+                  for addr, nm, subj, dt in recent_rows]
         out[cat] = {
             "count": cnt,
             "latest": latest.isoformat() if latest else None,
             "senders": senders,
+            "recent": recent,
             "distinct": distinct_total,   # total unique senders (frontend computes "+N")
         }
+    return out
+
+
+@router.get("/plus-aliases")
+def plus_aliases(session: Session = Depends(get_session)) -> list[dict]:
+    """Detect sub-addresses (you+tag@domain) you've received mail on, and who's
+    been emailing each — so you can see which service leaked/shared your address."""
+    # Map each account's (localpart, domain) so we only match your own addresses.
+    acct_parts: dict[tuple[str, str], int] = {}
+    for a in session.exec(select(Account)):
+        email = (a.email or "").lower()
+        if "@" in email:
+            lp, dom = email.split("@", 1)
+            acct_parts[(lp, dom)] = a.id
+
+    groups: dict[str, dict] = {}
+    rows = session.exec(select(Message.to_addrs, Message.cc_addrs, Message.from_addr,
+                               Message.from_name, Message.date))
+    for to_addrs, cc_addrs, from_addr, from_name, date in rows:
+        for raw in [*(to_addrs or []), *(cc_addrs or [])]:
+            addr = (raw or "").strip().lower()
+            if "@" not in addr or "+" not in addr.split("@", 1)[0]:
+                continue
+            localpart, domain = addr.split("@", 1)
+            base, tag = localpart.split("+", 1)
+            if not tag or (base, domain) not in acct_parts:
+                continue
+            alias = f"{base}+{tag}@{domain}"
+            g = groups.setdefault(alias, {
+                "alias": alias, "tag": tag, "account_id": acct_parts[(base, domain)],
+                "count": 0, "senders": {}, "last_seen": None,
+            })
+            g["count"] += 1
+            sender = (from_addr or "").lower()
+            if sender:
+                s = g["senders"].setdefault(sender, {"email": sender,
+                                                     "name": decode_mime_words(from_name) or sender, "count": 0})
+                s["count"] += 1
+            iso = date.isoformat() if date else None
+            if iso and (g["last_seen"] is None or iso > g["last_seen"]):
+                g["last_seen"] = iso
+
+    out = []
+    for g in groups.values():
+        senders = sorted(g["senders"].values(), key=lambda s: s["count"], reverse=True)
+        out.append({**g, "senders": senders[:6], "distinct_senders": len(g["senders"])})
+    out.sort(key=lambda g: (g["last_seen"] or ""), reverse=True)
     return out
 
 
@@ -371,18 +433,27 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
 
     auth = {"status": msg.auth_status or "none"}
     if msg.body_fetched:
-        html, text_body = msg.body_html, msg.body_text
+        from app.core.atrest import decrypt_field
+        html, text_body = decrypt_field(msg.body_html), decrypt_field(msg.body_text)
         # Backfill (one raw fetch) for mail cached before attachments/auth existed.
         if (msg.has_attachments and not msg.attachments) or not msg.auth_status:
             account = session.get(Account, msg.account_id)
             folder = session.get(Folder, msg.folder_id)
             try:
-                _h, _t, _u, _e, atts, a = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+                _h, _t, _u, _e, atts, a, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
                 if atts and not msg.attachments:
                     msg.attachments = atts
                 msg.auth_status = a.get("status", "none")
                 auth = a
                 session.add(msg)
+                # Re-index now that we've read attachment text (backfill for old mail).
+                if att_text:
+                    try:
+                        index_message_fts(session, msg.id, subject=msg.subject, from_addr=msg.from_addr,
+                                          from_name=msg.from_name, snippet=msg.snippet,
+                                          body=(text_body[:20000] + " " + att_text))
+                    except Exception:
+                        pass
                 session.commit()
                 session.refresh(msg)
             except Exception:
@@ -390,9 +461,22 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
     else:
         account = session.get(Account, msg.account_id)
         folder = session.get(Folder, msg.folder_id)
-        html, text_body, unsub, events, atts, auth = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
-        # Cache so re-opening is instant.
-        msg.body_html, msg.body_text, msg.body_fetched, msg.unsubscribe = html, text_body, True, unsub
+        try:
+            html, text_body, unsub, events, atts, auth, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+        except Exception as exc:
+            # Don't let one malformed/huge message break the whole open — return a
+            # readable placeholder instead of failing the fetch.
+            log.warning("body fetch failed for message %s: %s", msg.id, exc)
+            base = _to_out(msg)
+            return MessageDetail(**base.model_dump(),
+                                 html=f'<p style="color:#888">Couldn\'t load this message body ({type(exc).__name__}). It\'s still on the server — try again or open it in webmail.</p>',
+                                 text="", cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe or "",
+                                 attachments=[], auth={"status": msg.auth_status or "none"}, warnings=[])
+        # Cache so re-opening is instant. Optionally seal the bodies at rest
+        # (FTS is indexed below from the in-memory plaintext, so search still works).
+        from app.core.atrest import encrypt_field
+        msg.body_html, msg.body_text = encrypt_field(html), encrypt_field(text_body)
+        msg.body_fetched, msg.unsubscribe = True, unsub
         msg.attachments = atts
         msg.auth_status = auth.get("status", "none")
         if events:
@@ -407,10 +491,11 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
             elif methods & {"REQUEST", "CANCEL"}:
                 msg.category = "invitations"
         session.add(msg)
-        # Index the body for full-text search now that we have it.
+        # Index the body + any extracted attachment text for full-text search.
         try:
+            fts_body = (text_body[:20000] + " " + att_text) if att_text else text_body[:20000]
             index_message_fts(session, msg.id, subject=msg.subject, from_addr=msg.from_addr,
-                              from_name=msg.from_name, snippet=msg.snippet, body=text_body[:20000])
+                              from_name=msg.from_name, snippet=msg.snippet, body=fts_body)
         except Exception:
             pass
         session.commit()
@@ -427,10 +512,33 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
             session.commit()
             session.refresh(msg)
 
+    try:
+        from app.sync.authcheck import spoof_warnings
+        warnings = spoof_warnings(msg.from_addr, msg.from_name, html)
+    except Exception:
+        warnings = []
+
+    # OpenPGP: detect signed/encrypted bodies; verify or decrypt with the user's
+    # keys. A decrypted body replaces the (ciphertext) view.
+    pgp_info = None
+    try:
+        from app.sync.pgp import analyze as _pgp_analyze
+        row = session.get(Setting, 1)
+        blob = dict(row.data) if row and row.data else {}
+        probe = text_body or (html or "")
+        if "BEGIN PGP" in probe:
+            pgp_info = _pgp_analyze("", probe, blob)
+            if pgp_info.get("decrypted"):
+                text_body = pgp_info["decrypted"]
+                html = ""  # show the decrypted plaintext, not the armored ciphertext
+    except Exception:
+        pgp_info = None
+
     base = _to_out(msg)
     return MessageDetail(**base.model_dump(), html=html, text=text_body,
                          cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe,
-                         attachments=list(msg.attachments or []), auth=auth)
+                         attachments=list(msg.attachments or []), auth=auth, warnings=warnings,
+                         pgp=pgp_info)
 
 
 def _attachment_size(att: dict) -> int:
@@ -505,8 +613,8 @@ def _brand_domain(html: str, sender_addr: str) -> str:
     return counts.most_common(1)[0][0] if counts else ""
 
 
-def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, str, list, list, dict]:
-    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth)."""
+def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, str, list, list, dict, str]:
+    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth, attachment_text)."""
     import mailparser
 
     from app.providers.pool import pool
@@ -515,7 +623,7 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
 
     raw = pool.fetch_raw(account, folder.path, uid)
     if not raw:
-        return "", "", "", [], [], {"status": "none"}
+        return "", "", "", [], [], {"status": "none"}, ""
     parsed = mailparser.parse_from_bytes(raw)
     html = "\n".join(parsed.text_html) if parsed.text_html else ""
     text_body = "\n".join(parsed.text_plain) if parsed.text_plain else ""
@@ -532,12 +640,37 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
         atts = _attachment_meta(parsed)
     except Exception:
         atts = []
+    # Pull searchable text out of supported attachments (docs, code, text) so a
+    # full-text search can match words that only appear inside a file.
+    att_text = _extract_attachment_text(parsed)
     try:
         from_addr = parsed.from_[0][1] if parsed.from_ else ""
         auth = check_auth(raw, from_addr)
     except Exception:
         auth = {"status": "none"}
-    return html, text_body, unsub, events, atts, auth
+    return html, text_body, unsub, events, atts, auth, att_text
+
+
+def _extract_attachment_text(parsed) -> str:
+    import base64
+
+    from app.sync.extract import extract_attachment_text
+    chunks: list[str] = []
+    for a in (parsed.attachments or []):
+        try:
+            payload = a.get("payload") or ""
+            cte = (a.get("content_transfer_encoding") or "").lower()
+            data = base64.b64decode(payload) if cte == "base64" else (
+                payload.encode("utf-8", "ignore") if isinstance(payload, str) else bytes(payload))
+            txt = extract_attachment_text(a.get("filename") or "",
+                                          a.get("mail_content_type") or "", data)
+            if txt:
+                chunks.append(txt)
+        except Exception:
+            continue
+        if sum(len(c) for c in chunks) > 60_000:
+            break
+    return " ".join(chunks)[:60_000]
 
 
 @router.get("/{message_id}/attachments/{index}")
@@ -549,7 +682,17 @@ async def download_attachment(message_id: int, index: int,
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     account = session.get(Account, msg.account_id)
     folder = session.get(Folder, msg.folder_id)
-    data, filename, ctype = await run_in_threadpool(_attachment_bytes, account, folder, msg.uid, index)
+    try:
+        data, filename, ctype = await run_in_threadpool(_attachment_bytes, account, folder, msg.uid, index)
+    except Exception as exc:
+        detail = str(exc)
+        log.warning("attachment fetch failed for message %s/%s: %s", message_id, index, detail)
+        if "password" in detail.lower() or "authenticationfailed" in detail.lower() or "login" in detail.lower():
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                                f"Can't reach {account.email if account else 'this account'} — it has no saved/valid "
+                                "password. Re-add the account in Settings → Accounts.") from exc
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Couldn't download the attachment from the server ({type(exc).__name__}).") from exc
     if data is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found")
     from urllib.parse import quote
@@ -660,6 +803,28 @@ def set_flag(message_id: int, body: BoolValue, session: Session = Depends(get_se
     if msg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     msg.is_flagged = body.value
+    session.add(msg)
+    session.commit()
+    session.refresh(msg)
+    return _to_out(msg)
+
+
+@router.post("/{message_id}/pin", response_model=MessageOut)
+def set_pin(message_id: int, body: BoolValue, session: Session = Depends(get_session)) -> MessageOut:
+    msg = session.get(Message, message_id)
+    if msg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    msg.pinned = body.value
+    # Persist durably (survives re-sync) keyed by Message-ID.
+    if msg.message_id:
+        state = session.exec(
+            select(MessageState).where(MessageState.account_id == msg.account_id,
+                                       MessageState.message_id == msg.message_id)
+        ).first()
+        if state is None:
+            state = MessageState(account_id=msg.account_id, message_id=msg.message_id)
+            session.add(state)
+        state.is_pinned = body.value
     session.add(msg)
     session.commit()
     session.refresh(msg)

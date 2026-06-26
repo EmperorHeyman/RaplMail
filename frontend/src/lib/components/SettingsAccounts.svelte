@@ -1,6 +1,31 @@
 <script>
+  import { onMount, onDestroy } from "svelte";
   import { app, loadAccountsAndFolders, notify } from "../store.svelte.js";
   import { accounts as api } from "../api.js";
+  import { relativeTime } from "../time.js";
+
+  // --- per-account health dashboard ----------------------------------------
+  let health = $state({});   // keyed by account id
+  let healthTimer;
+  async function refreshHealth() {
+    try {
+      const rows = await api.health();
+      const m = {};
+      for (const r of rows) m[r.id] = r;
+      health = m;
+    } catch {}
+  }
+  onMount(() => { refreshHealth(); healthTimer = setInterval(refreshHealth, 5000); });
+  onDestroy(() => clearInterval(healthTimer));
+
+  const STATUS = {
+    ok:       { dot: "#3fb950", text: "Connected" },
+    syncing:  { dot: "#3b82f6", text: "Syncing…" },
+    error:    { dot: "#f85149", text: "Error" },
+    idle:     { dot: "#8b949e", text: "Idle" },
+    disabled: { dot: "#6e7681", text: "Disabled" },
+  };
+  const stMeta = (s) => STATUS[s] || STATUS.idle;
 
   // Add-account wizard state.
   let step = $state("email");   // "email" | "config"
@@ -80,6 +105,35 @@
     notify("Account removed");
   }
 
+  async function triggerSync(a) {
+    try { await api.sync(a.id); notify(`Syncing ${a.email}…`); setTimeout(refreshHealth, 600); }
+    catch (e) { notify(e.message, "error"); }
+  }
+
+  // Re-enter the password for a password account (fixes "no saved password").
+  async function reconnect(a) {
+    const pw = prompt(`Enter the password for ${a.email}:`);
+    if (!pw) return;
+    try {
+      await api.reconnect(a.id, pw);
+      notify("Reconnected ✓ — syncing");
+      setTimeout(refreshHealth, 800);
+    } catch (e) { notify(e.message, "error"); }
+  }
+
+  // --- send-as identities / aliases ----------------------------------------
+  let idEdit = $state(null);     // account id whose identity editor is open
+  let idText = $state("");
+  function openIdentities(a) {
+    idEdit = idEdit === a.id ? null : a.id;
+    if (idEdit) idText = (a.aliases || []).join("\n");
+  }
+  async function saveAliases(a) {
+    const aliases = idText.split("\n").map((s) => s.trim()).filter(Boolean);
+    try { await api.update(a.id, { aliases }); await loadAccountsAndFolders(); idEdit = null; notify("Identities saved"); }
+    catch (e) { notify(e.message, "error"); }
+  }
+
   async function setColor(a, color) { await api.update(a.id, { color }); await loadAccountsAndFolders(); }
   async function rename(a, name) { await api.update(a.id, { display_name: name }); await loadAccountsAndFolders(); }
 
@@ -89,15 +143,45 @@
 <div class="wrap">
   <div class="accounts">
     {#each app.accounts as a}
+      {@const h = health[a.id]}
+      {@const st = stMeta(h?.status)}
       <div class="acct-card">
         <input class="colorpick" type="color" value={a.color} title="Account color"
           onchange={(e) => setColor(a, e.currentTarget.value)} />
         <div class="info">
           <input class="namei" value={a.display_name} onchange={(e) => rename(a, e.currentTarget.value)} />
           <span>{a.email} · {a.provider.toUpperCase()}</span>
+          {#if h}
+            <div class="health">
+              <span class="st" title={st.text}><span class="sdot" style="background:{st.dot}"></span>{st.text}</span>
+              {#if h.idle_active}<span class="tag idle" title="Live push connection (IMAP IDLE) is active">⚡ live</span>{/if}
+              <span class="meta">{h.messages.toLocaleString()} msgs · {h.folders} folders</span>
+              {#if h.last_sync}<span class="meta">synced {relativeTime(h.last_sync)}</span>{/if}
+            </div>
+            {#if h.last_error}
+              <span class="herr" title={h.last_error}>⚠ {h.last_error.slice(0, 80)}{h.last_error.length > 80 ? "…" : ""}</span>
+            {/if}
+          {/if}
         </div>
+        <button class="btn ghost" onclick={() => openIdentities(a)} title="Send-as identities">
+          Identities{a.aliases?.length ? ` (${a.aliases.length})` : ""}
+        </button>
+        {#if a.provider === "imap"}
+          <button class="btn ghost" onclick={() => reconnect(a)} title="Re-enter / fix the password for this account">Reconnect</button>
+        {/if}
+        <button class="btn ghost" onclick={() => triggerSync(a)} disabled={h?.status === "syncing"} title="Sync now">↻</button>
         <button class="btn ghost danger" onclick={() => remove(a)}>Remove</button>
       </div>
+      {#if idEdit === a.id}
+        <div class="idedit">
+          <p class="muted">One identity per line — a plain address or <code>Name &lt;addr@host&gt;</code>. The server sends as it only if it recognizes the address. Your primary address ({a.email}) is always available.</p>
+          <textarea bind:value={idText} rows="3" placeholder={"Sales <sales@" + (a.email.split("@")[1] || "company.com") + ">\nme+side@" + (a.email.split("@")[1] || "company.com")}></textarea>
+          <div class="idactions">
+            <button class="btn primary" onclick={() => saveAliases(a)}>Save identities</button>
+            <button class="btn ghost" onclick={() => (idEdit = null)}>Cancel</button>
+          </div>
+        </div>
+      {/if}
     {/each}
     {#if app.accounts.length === 0}
       <p class="muted">No accounts yet. Add your first below — just type your email.</p>
@@ -200,6 +284,17 @@
   .info .namei { border: none; background: transparent; padding: 0; font-weight: 700; color: var(--text); }
   .info .namei:focus { border: none; }
   .info span { color: var(--muted); font-size: 12px; }
+  .health { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-top: 5px; }
+  .health .st { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text); font-weight: 550; }
+  .sdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .health .meta { font-size: 11px; color: var(--faint); }
+  .tag.idle { font-size: 10px; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--accent); font-weight: 600; }
+  .herr { display: block; margin-top: 4px; font-size: 11px; color: var(--danger); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .idedit { margin: -4px 0 4px; padding: 14px 16px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius); display: flex; flex-direction: column; gap: 10px; }
+  .idedit .muted { font-size: 12px; margin: 0; }
+  .idedit code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
+  .idedit textarea { width: 100%; resize: vertical; font-family: var(--mono, monospace); font-size: 13px; }
+  .idactions { display: flex; gap: 8px; }
   h3 { margin: 0 0 6px; }
   .lead { color: var(--muted); margin: 0 0 14px; }
   .email-row { display: flex; gap: 10px; }

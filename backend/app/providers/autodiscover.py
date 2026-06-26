@@ -111,17 +111,53 @@ def _apply(d: Discovered, cfg: dict, *, source: str, confident: bool) -> None:
 
 
 # --- 2. MX-based detection ---------------------------------------------------
+# A custom domain (e.g. rapl-group.eu) usually has its mail hosted by a known
+# provider; the MX records reveal which. We match MX hostnames to a config so
+# "vanity" domains on Seznam/Google/M365/etc. resolve to the right IMAP/SMTP.
+_MX_RULES: list[tuple[tuple[str, ...], dict]] = [
+    (("protection.outlook.com", "mail.protection.outlook", "outlook.com"),
+     dict(provider="m365", auth="oauth", **_imap("outlook.office365.com"),
+          **_smtp("smtp.office365.com", 587, True),
+          note="Hosted on Microsoft 365 — sign in with Microsoft.")),
+    (("aspmx.l.google.com", "googlemail.com", "google.com", "psmtp.com"),
+     dict(provider="gmail", auth="oauth", **_imap("imap.gmail.com"),
+          **_smtp("smtp.gmail.com", 587, True),
+          note="Hosted on Google Workspace — sign in with Google.")),
+    (("seznam.cz",),
+     dict(**_imap("imap.seznam.cz"), **_smtp("smtp.seznam.cz", 465),
+          note="Hosted on Seznam — use your Seznam password (enable IMAP in Seznam settings).")),
+    (("centrum.cz", "atlas.cz"),
+     dict(**_imap("imap.centrum.cz"), **_smtp("smtp.centrum.cz", 465),
+          note="Hosted on Centrum.")),
+    (("icloud.com", "mail.me.com", "apple.com"),
+     dict(**_imap("imap.mail.me.com"), **_smtp("smtp.mail.me.com", 587, True),
+          note="Hosted on iCloud — requires an app-specific password.")),
+    (("messagingengine.com", "fastmail.com"),
+     dict(**_imap("imap.fastmail.com"), **_smtp("smtp.fastmail.com", 465),
+          note="Hosted on Fastmail — use an app password.")),
+    (("zoho.com", "zoho.eu", "zohomail"),
+     dict(**_imap("imap.zoho.com"), **_smtp("smtp.zoho.com", 465),
+          note="Hosted on Zoho.")),
+    (("yahoodns.net", "yahoo.com"),
+     dict(**_imap("imap.mail.yahoo.com"), **_smtp("smtp.mail.yahoo.com", 465),
+          note="Hosted on Yahoo — requires an app password.")),
+    (("mailgun.org", "pphosted.com", "mimecast.com"),  # gateways — fall through unless nothing else
+     dict()),
+]
+
+
 def _detect_by_mx(domain: str) -> dict | None:
     hosts = _mx_hosts(domain)
-    joined = " ".join(hosts)
-    if "protection.outlook.com" in joined or "mail.protection.outlook" in joined:
-        return dict(provider="m365", auth="oauth", **_imap("outlook.office365.com"),
-                    **_smtp("smtp.office365.com", 587, True),
-                    note="This domain is hosted on Microsoft 365 — sign in with Microsoft.")
-    if any(h.endswith("google.com") or h.endswith("googlemail.com") or "aspmx.l.google" in h for h in hosts):
-        return dict(provider="gmail", auth="oauth", **_imap("imap.gmail.com"),
-                    **_smtp("smtp.gmail.com", 587, True),
-                    note="This domain is hosted on Google Workspace — sign in with Google.")
+    if not hosts:
+        return None
+    for keys, cfg in _MX_RULES:
+        if not cfg:
+            continue
+        for h in hosts:
+            if any(k in h for k in keys):
+                out = dict(cfg)
+                out.setdefault("confident", True)
+                return out
     return None
 
 

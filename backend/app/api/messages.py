@@ -338,10 +338,12 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
     cats = session.exec(scoped(select(Message.category, func.count(), func.max(Message.date)))
                         .group_by(Message.category)).all()
     for cat, cnt, latest in cats:
+        # Order senders by their MOST RECENT message (not total count) so the
+        # collapsed chips match the newest-first messages shown when expanded.
         sender_rows = session.exec(
             scoped(select(Message.from_addr, func.max(Message.from_name), func.count()))
             .where(Message.category == cat).group_by(Message.from_addr)
-            .order_by(func.count().desc()).limit(8)
+            .order_by(func.max(Message.date).desc()).limit(8)
         ).all()
         distinct_total = session.exec(
             scoped(select(func.count(distinct(Message.from_addr)))).where(Message.category == cat)

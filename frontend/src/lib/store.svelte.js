@@ -260,7 +260,8 @@ export function isTauri() {
 /** Open a compose surface honoring the user's setting (docked panel vs separate window). */
 export async function openCompose(seed = {}) {
   if (app.settings.composeMode === "window") {
-    try { sessionStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
+    // localStorage (not sessionStorage) so the seed is readable in the new window.
+    try { localStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
     const url = `${location.pathname}${location.search}#compose`;
     if (isTauri()) {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");

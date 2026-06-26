@@ -64,10 +64,26 @@ jobs:
             npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
           fi
 
-      - name: Upload artifacts
+      - name: Upload artifacts (every run)
         uses: actions/upload-artifact@v4
         with:
           name: raplmail-macos
           path: |
             frontend/src-tauri/target/release/bundle/dmg/*.dmg
-            frontend/src-tauri/target/release/bundle/macos/*.app
+            frontend/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            frontend/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+
+      # When triggered by a version tag (e.g. `git tag v0.1.0 && git push --tags`),
+      # attach the build to a GitHub Release for that tag (creating it if needed).
+      - name: Publish to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: |
+            frontend/src-tauri/target/release/bundle/dmg/*.dmg
+            frontend/src-tauri/target/release/bundle/macos/*.app.tar.gz
+            frontend/src-tauri/target/release/bundle/macos/*.app.tar.gz.sig
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

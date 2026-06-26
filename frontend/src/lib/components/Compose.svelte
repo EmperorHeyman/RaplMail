@@ -23,6 +23,8 @@
   let fileInput;
   let dragPos = $state(null);
   let dragging = false, ox = 0, oy = 0;
+  let panelEl;
+  let panelW = $state(null), panelH = $state(null);  // preserve manual resize across re-renders
   let sigs = $state([]);
   let signatureId = $state("none"); // "none" | <signature id>
 
@@ -100,7 +102,10 @@
 
   onMount(async () => {
     if (standalone) {
-      try { c = { ...c, ...JSON.parse(sessionStorage.getItem("raplmail.compose.seed") || "{}") }; } catch {}
+      try {
+        c = { ...c, ...JSON.parse(localStorage.getItem("raplmail.compose.seed") || "{}") };
+        localStorage.removeItem("raplmail.compose.seed");   // consume it so it doesn't leak
+      } catch {}
       if (app.accounts.length === 0) await loadAccountsAndFolders();
     } else {
       c = { ...c, ...(app.composing || {}) };
@@ -347,7 +352,7 @@
   async function popOut() {
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
                    in_reply_to: c.in_reply_to, account_id: accountId, attachments };
-    try { sessionStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
+    try { localStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
     const url = `${location.pathname}${location.search}#compose`;
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
@@ -374,10 +379,19 @@
     dragPos = { x: Math.max(0, Math.min(window.innerWidth - 200, e.clientX - ox)), y: Math.max(0, Math.min(window.innerHeight - 80, e.clientY - oy)) };
   }
 
+  // Keep the manually-resized size (CSS `resize` writes inline w/h) so a re-render
+  // from dragging doesn't reset the box to its default size.
+  $effect(() => {
+    if (standalone || !panelEl) return;
+    const ro = new ResizeObserver(() => { panelW = panelEl.offsetWidth; panelH = panelEl.offsetHeight; });
+    ro.observe(panelEl);
+    return () => ro.disconnect();
+  });
   const dockStyle = $derived(
     standalone ? "" :
-    dragPos ? `left:${dragPos.x}px; top:${dragPos.y}px; right:auto; bottom:auto;` :
-    app.settings.composePosition === "bottom-left" ? "left:18px; right:auto;" : "right:18px;"
+    (dragPos ? `left:${dragPos.x}px; top:${dragPos.y}px; right:auto; bottom:auto;` :
+     app.settings.composePosition === "bottom-left" ? "left:18px; right:auto;" : "right:18px;")
+    + (panelW ? ` width:${panelW}px; height:${panelH}px;` : "")
   );
 
   const TOOLS = [
@@ -389,7 +403,7 @@
   ];
 </script>
 
-<div class="panel" class:standalone style={dockStyle}>
+<div class="panel" class:standalone style={dockStyle} bind:this={panelEl}>
   <header onpointerdown={onHeaderDown}>
     <span>New message</span>
     <div class="hbtns" onpointerdown={(e) => e.stopPropagation()}>

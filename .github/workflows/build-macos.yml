@@ -56,16 +56,12 @@ jobs:
         # TAURI_SIGNING_PRIVATE_KEY repo secret, set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
         # (empty if the key has no password), and drop the --config override below.
         run: |
-          # Ad-hoc sign ("-") so the .app has a valid (if unverified) signature.
-          # Without ANY signature an arm64 Mac reports the app as "damaged"; ad-hoc
-          # signing downgrades that to the normal "unidentified developer" prompt the
-          # user can bypass (right-click -> Open, or `xattr -cr RaplMail.app`).
           if printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | grep -q "untrusted comment"; then
             echo "Signing key present — building signed updater artifacts."
-            npx tauri build --config '{"bundle":{"macOS":{"signingIdentity":"-"}}}'
+            npx tauri build
           else
             echo "No valid signing key secret — building .dmg without updater artifacts."
-            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false,"macOS":{"signingIdentity":"-"}}}'
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
           fi
 
       - name: Upload artifacts (every run)

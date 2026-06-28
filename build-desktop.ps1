@@ -69,17 +69,39 @@ else {
   Write-Host "Version: $new (unchanged)" -ForegroundColor Yellow
 }
 
+# Kill any running app / sidecar first. A leftover backend process — including
+# the PyInstaller onefile CHILD, which is named "raplmail-backend-<triple>" —
+# holds an open handle on the bundled sidecar exe. If it's locked when we copy
+# the freshly-frozen binary over it, the OLD binary stays in place and the build
+# silently ships a stale backend (e.g. missing new endpoints). Match the prefix
+# so both the short name and the full triple-named child are killed.
+Write-Host "Stopping any running RaplMail processes..." -ForegroundColor DarkCyan
+Get-Process -ErrorAction SilentlyContinue |
+  Where-Object { $_.Name -like "raplmail*" } |
+  ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch {} }
+Start-Sleep -Seconds 2
+
 # --- 1/3 freeze backend ---------------------------------------------------
 Write-Host "[1/3] Freezing Python backend (PyInstaller)..." -ForegroundColor Cyan
 Push-Location "$root\backend"
-& .\.venv\Scripts\python.exe -m PyInstaller raplmail-backend.spec --noconfirm
+# --clean wipes PyInstaller's cache every build. Without it the incremental
+# cache can serve STALE bytecode for changed modules (e.g. an edited app/api
+# file), silently shipping a backend that lacks your latest changes.
+& .\.venv\Scripts\python.exe -m PyInstaller raplmail-backend.spec --noconfirm --clean
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "PyInstaller failed (exit $LASTEXITCODE)" }
 Pop-Location
 
 # --- 2/3 place sidecar ----------------------------------------------------
 Write-Host "[2/3] Placing sidecar binary..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force "$root\frontend\src-tauri\binaries" | Out-Null
-Copy-Item "$root\backend\dist\raplmail-backend.exe" "$root\frontend\src-tauri\binaries\raplmail-backend-$triple.exe" -Force -ErrorAction Stop
+$sidecarSrc = "$root\backend\dist\raplmail-backend.exe"
+$sidecarDst = "$root\frontend\src-tauri\binaries\raplmail-backend-$triple.exe"
+$placed = $false
+for ($i = 1; $i -le 8; $i++) {
+  try { Copy-Item $sidecarSrc $sidecarDst -Force -ErrorAction Stop; $placed = $true; break }
+  catch { Write-Host "  sidecar locked, retrying ($i)..." -ForegroundColor Yellow; Start-Sleep -Seconds 2 }
+}
+if (-not $placed) { throw "Could not replace the sidecar binary (locked). Close RaplMail and retry." }
 
 # --- 3/3 build app --------------------------------------------------------
 # Updater signing: tauri.conf has createUpdaterArtifacts=true, so the build needs

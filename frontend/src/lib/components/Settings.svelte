@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from "svelte";
   import { app } from "../store.svelte.js";
   import SettingsAccounts from "./SettingsAccounts.svelte";
   import SettingsRules from "./SettingsRules.svelte";
@@ -30,6 +31,12 @@
     { id: "calendar", label: "Calendar & Contacts", icon: icons.calendar || icons.general, kw: "calendar contacts caldav carddav events sync nextcloud fastmail icloud seznam radicale subscribe add calendar" },
     { id: "general", label: "General", icon: icons.general, kw: "smart inbox notifications desktop notification snooze presence quick action quick-action buttons row buttons hover backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement" },
   ];
+
+  let appVersion = $state("");
+  onMount(async () => {
+    try { const { getVersion } = await import("@tauri-apps/api/app"); appVersion = await getVersion(); }
+    catch { appVersion = "dev"; }
+  });
 
   let query = $state("");
   // Normalize so punctuation/hyphens don't matter: "quick-action" matches
@@ -80,7 +87,7 @@
     {:else if tab === "shortcuts"}<SettingsShortcuts />
     {:else}<SettingsGeneral />{/if}
     <footer class="madeby">
-      Made by <a href="https://rapl-group.eu/" target="_blank" rel="noreferrer">RAPL Group</a>
+      RaplMail <span class="ver">v{appVersion}</span> · Made by <a href="https://rapl-group.eu/" target="_blank" rel="noreferrer">RAPL Group</a>
     </footer>
   </div>
 </section>
@@ -103,4 +110,5 @@
   .madeby { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); font-size: 12px; }
   .madeby a { color: var(--accent); text-decoration: none; }
   .madeby a:hover { text-decoration: underline; }
+  .madeby .ver { color: var(--text); font-variant-numeric: tabular-nums; }
 </style>

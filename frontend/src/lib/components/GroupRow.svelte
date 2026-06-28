@@ -40,7 +40,7 @@
       style={acctColor ? `border-color:${acctColor}` : ""}
       title="Select all" onclick={(e) => { e.stopPropagation(); onselect?.(); }}>
       {#if checked}{@html icons.done}
-      {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" loading="lazy" onerror={() => (imgFailed = true)} />
+      {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" onerror={() => (imgFailed = true)} />
       {:else}{initial}{/if}
     </button>
     <span class="body">

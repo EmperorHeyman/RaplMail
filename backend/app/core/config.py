@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import sys
 from functools import lru_cache
 from pathlib import Path
 
@@ -23,9 +24,27 @@ def _default_data_dir() -> Path:
     return Path(base) / "RaplMail"
 
 
+def _env_files() -> tuple[str, ...]:
+    """Where to look for .env, lowest -> highest priority (later wins).
+
+    Works both in dev (./.env) and in the packaged app, where the exe has no
+    working-dir .env: we read the copy baked into the bundle, and let the user
+    override it with a .env next to the exe or in the data dir without rebuilding.
+    """
+    files: list[str] = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            files.append(os.path.join(meipass, ".env"))          # baked into the bundle
+        files.append(os.path.join(os.path.dirname(sys.executable), ".env"))  # next to the exe
+    files.append(str(_default_data_dir() / ".env"))              # user-editable, post-install
+    files.append(".env")                                         # dev / current dir (wins)
+    return tuple(files)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="RAPLMAIL_", env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_prefix="RAPLMAIL_", env_file=_env_files(), env_file_encoding="utf-8", extra="ignore"
     )
 
     host: str = "127.0.0.1"

@@ -70,6 +70,10 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "account": {
         "aliases": "ALTER TABLE account ADD COLUMN aliases TEXT DEFAULT '[]'",
     },
+    "calendarevent": {
+        "source": "ALTER TABLE calendarevent ADD COLUMN source TEXT DEFAULT 'mail'",
+        "color": "ALTER TABLE calendarevent ADD COLUMN color TEXT DEFAULT ''",
+    },
 }
 
 

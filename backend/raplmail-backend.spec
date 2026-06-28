@@ -15,9 +15,21 @@ hiddenimports += [
     # OpenPGP (pgpy) — needs the stdlib `imghdr` module that was removed in
     # Python 3.13 and restored by the `standard-imghdr` backport.
     "pgpy", "imghdr",
+    # tzdata supplies the IANA timezone database used by zoneinfo to convert
+    # calendar event times (Windows has no system tz database).
+    "tzdata",
 ]
 
+import os
+
 datas = collect_data_files("certifi")
+# The timezone database is pure data — collect its files so zoneinfo can find them.
+datas += collect_data_files("tzdata")
+# Bake the local .env (OAuth client IDs, etc.) into the bundle so the packaged
+# app is configured out of the box. Users can override it with a .env next to
+# the exe or in %APPDATA%/RaplMail without rebuilding (see core/config.py).
+if os.path.exists(".env"):
+    datas += [(".env", ".")]
 
 a = Analysis(
     ["run.py"],

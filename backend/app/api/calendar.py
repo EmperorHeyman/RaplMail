@@ -33,6 +33,7 @@ class EventOut(BaseModel):
     all_day: bool
     status: str
     cancelled: bool
+    color: str = ""
 
 
 def _synth_uid(account_id: int, ev: dict) -> str:
@@ -133,12 +134,70 @@ class RsvpIn(BaseModel):
 class CalDavResult(BaseModel):
     events: int = 0
     contacts: int = 0
+    ics_events: int = 0
+    ics_removed: int = 0
     error: str = ""
+
+
+def _ics_uid(url: str, ev_uid: str) -> str:
+    """Namespace an event UID per-feed so feeds never collide with each other or
+    with mail-derived events."""
+    import hashlib
+    h = hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+    return f"ics:{h}:{ev_uid or hashlib.sha1(repr(ev_uid).encode()).hexdigest()[:8]}"
+
+
+def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[int, int]:
+    """Fetch each ICS feed, upsert its events, and delete events that are no
+    longer present in any feed (handles deletions). Each feed is {url, color}.
+    Returns (upserted, removed)."""
+    from app.sync import caldav as dav
+    from app.models import CalendarEvent
+    seen: set[str] = set()
+    upserted = 0
+    for feed in feeds:
+        url = (feed.get("url") or "").strip()
+        color = (feed.get("color") or "").strip()
+        if not url:
+            continue
+        try:
+            events = dav.fetch_ics(url)
+        except Exception:
+            continue  # one bad feed shouldn't break the rest
+        for ev in events:
+            if not ev.get("start"):
+                continue
+            uid = _ics_uid(url, ev.get("uid") or f"{ev.get('summary','')}|{ev.get('start')}")
+            seen.add(uid)
+            row = session.exec(select(CalendarEvent).where(
+                CalendarEvent.account_id == acct_id, CalendarEvent.uid == uid)).first()
+            if row is None:
+                row = CalendarEvent(account_id=acct_id, uid=uid, source="ics")
+                session.add(row)
+            row.source = "ics"
+            row.color = color
+            row.summary = ev.get("summary", "") or row.summary
+            row.location = ev.get("location", "") or row.location
+            row.description = ev.get("description", "") or row.description
+            row.organizer = ev.get("organizer", "") or row.organizer
+            row.start = ev.get("start")
+            row.end = ev.get("end")
+            row.all_day = bool(ev.get("all_day"))
+            row.cancelled = bool(ev.get("cancelled"))
+            upserted += 1
+    # Delete ICS events that vanished from the feeds (removed/expired/feed dropped).
+    removed = 0
+    for row in session.exec(select(CalendarEvent).where(CalendarEvent.source == "ics")).all():
+        if row.uid not in seen:
+            session.delete(row)
+            removed += 1
+    session.flush()
+    return upserted, removed
 
 
 @router.post("/caldav/sync", response_model=CalDavResult)
 async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
-    """Pull events (CalDAV) and contacts (CardDAV) from the configured servers."""
+    """Pull events (CalDAV), contacts (CardDAV), and ICS feed subscriptions."""
     from app.models import Contact, Setting
     row = session.get(Setting, 1)
     cfg = dict(row.data) if row and row.data else {}
@@ -146,8 +205,15 @@ async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
     card_url = (cfg.get("carddavUrl") or "").strip()
     user = cfg.get("caldavUser") or ""
     pw = cfg.get("caldavPassword") or ""
-    if not cal_url and not card_url:
-        return CalDavResult(error="No CalDAV/CardDAV URL configured.")
+    # Feeds may be legacy plain URL strings or {url, color} objects.
+    ics_feeds: list[dict] = []
+    for f in (cfg.get("icsFeeds") or []):
+        if isinstance(f, str):
+            f = {"url": f}
+        if (f.get("url") or "").strip():
+            ics_feeds.append({"url": f["url"].strip(), "color": (f.get("color") or "").strip()})
+    if not cal_url and not card_url and not ics_feeds:
+        return CalDavResult(error="No CalDAV/CardDAV URL or ICS feed configured.")
 
     from app.sync import caldav as dav
     acct_id = session.exec(select(Account.id)).first() or 0
@@ -168,6 +234,9 @@ async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
                     res.contacts += 1
                 elif c.get("name") and not existing.name:
                     existing.name = c["name"]
+        if ics_feeds:
+            res.ics_events, res.ics_removed = await run_in_threadpool(
+                _sync_ics_feeds, session, acct_id, ics_feeds)
         session.commit()
     except Exception as exc:
         res.error = str(exc)

@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref } from "./lib/store.svelte.js";
+  import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
   import CommandPalette from "./lib/components/CommandPalette.svelte";
@@ -122,6 +123,15 @@
     else if (combo === kb.compose && !isTyping(e)) { openCompose({ to: "", subject: "", html: "" }); e.preventDefault(); }
   }
 
+  // Open any external (http/https) link in the OS browser — the desktop webview
+  // doesn't navigate target=_blank anchors on its own.
+  function onDocClick(e) {
+    const a = e.target?.closest?.("a[href]");
+    if (!a) return;
+    const href = (a.getAttribute("href") || "").trim();
+    if (/^https?:\/\//i.test(href)) { e.preventDefault(); openExternal(href); }
+  }
+
   // Once unlocked, load data and open the live event stream. Settings are pulled
   // first so the default view honors Smart Inbox (avoids defaulting to All Inboxes).
   let _booted = false;
@@ -199,6 +209,7 @@
 {/if}
 <SendingIndicator />
 <svelte:window on:keydown={onGlobalKey} />
+<svelte:document on:click={onDocClick} />
 {#if !composeWindow}
   <CommandPalette />
   <ShortcutsOverlay open={shortcutsOpen} onclose={() => (shortcutsOpen = false)} />

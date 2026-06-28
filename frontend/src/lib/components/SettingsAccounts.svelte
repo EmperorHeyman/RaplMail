@@ -37,10 +37,11 @@
   let displayName = $state("");
   let advanced = $state(false);
   let msFlow = $state(null);
+  let usePassword = $state(false);   // OAuth provider, but add via an app password
 
   function reset() {
     step = "email"; email = ""; disc = null; password = ""; displayName = "";
-    advanced = false; error = ""; msFlow = null; busy = false;
+    advanced = false; error = ""; msFlow = null; busy = false; usePassword = false;
   }
 
   async function continueEmail() {
@@ -217,7 +218,7 @@
         </div>
         {#if disc.note}<p class="note">{disc.note}</p>{/if}
 
-        {#if disc.auth === "oauth"}
+        {#if disc.auth === "oauth" && !usePassword}
           <!-- OAuth providers: one button; sign-in is the test -->
           {#if disc.provider === "gmail"}
             <button class="btn primary big" onclick={connectGoogle} disabled={busy}>
@@ -241,12 +242,20 @@
               </div>
             {/if}
           {/if}
+          <button class="link appass" onclick={() => { usePassword = true; error = ''; }}>
+            Use an app password instead (no Google/Microsoft sign-in)
+          </button>
         {:else}
-          <!-- Password account -->
+          <!-- Password account (incl. OAuth providers via an app password) -->
+          {#if usePassword && disc.provider === "gmail"}
+            <p class="note">Create an app password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a> (needs 2-Step Verification on), then paste the 16-character code below — no Google verification required.</p>
+          {:else if usePassword}
+            <p class="note">Use an app password from your provider (not your normal login password).</p>
+          {/if}
           <label class="fld">Your name (optional)
             <input bind:value={displayName} placeholder="Jan Novák" />
           </label>
-          <label class="fld">Password{disc.note?.includes("app") ? " (app password)" : ""}
+          <label class="fld">Password{(usePassword || disc.note?.includes("app")) ? " (app password)" : ""}
             <input type="password" bind:value={password}
               onkeydown={(e) => e.key === "Enter" && testAndAdd()} autofocus />
           </label>
@@ -310,6 +319,8 @@
   .grid label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); }
   .btn.big { width: 100%; justify-content: center; margin-top: 4px; }
   .link { color: var(--accent); font-size: 13px; }
+  .link.appass { display: block; margin-top: 12px; text-align: center; }
+  .note a { color: var(--accent); }
   .error { color: var(--danger); font-size: 13px; margin-top: 12px; }
   .muted { color: var(--muted); }
   .device ol { line-height: 2; }

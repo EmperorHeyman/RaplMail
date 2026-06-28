@@ -12,7 +12,8 @@
 param(
   [ValidateSet("patch", "minor", "major")] [string]$Bump = "patch",
   [string]$Version = "",
-  [switch]$NoBump
+  [switch]$NoBump,
+  [switch]$Sign   # also produce signed updater artifacts (needs the signing key)
 )
 
 # NOTE: "Continue", not "Stop" -- PyInstaller/npx write progress to stderr, and
@@ -82,21 +83,24 @@ Copy-Item "$root\backend\dist\raplmail-backend.exe" "$root\frontend\src-tauri\bi
 
 # --- 3/3 build app --------------------------------------------------------
 # Updater signing: tauri.conf has createUpdaterArtifacts=true, so the build needs
-# the signing key. Load it from the gitignored key file; if missing, build
-# without updater artifacts instead of failing.
+# the signing key. By default we skip updater artifacts (no key/password prompt);
+# pass -Sign to produce signed updater artifacts from the gitignored key file.
 Write-Host "[3/3] Building Tauri app + installers..." -ForegroundColor Cyan
 Push-Location "$root\frontend"
 try {
   $keyPath = "$root\frontend\src-tauri\.tauri-updater.key"
-  if (Test-Path $keyPath) {
-    $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content -Raw $keyPath
+  if ($Sign -and (Test-Path $keyPath)) {
+    # Signed updater artifacts. The key was generated with an empty password.
+    Write-Host "  (signing updater artifacts)" -ForegroundColor DarkCyan
+    $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -Raw $keyPath).Trim()
     $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
     & npx tauri build
   }
   else {
-    Write-Host "  (no signing key found - building without updater artifacts)" -ForegroundColor DarkYellow
+    # Default: just build the installers, no updater signing (no password prompts).
+    if ($Sign) { Write-Host "  (-Sign given but no key at $keyPath; building unsigned)" -ForegroundColor DarkYellow }
     $cfg = Join-Path $env:TEMP "raplmail-noupdater.json"
-    '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding utf8 $cfg
+    '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding ascii $cfg
     & npx tauri build --config $cfg
   }
   if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit $LASTEXITCODE)" }

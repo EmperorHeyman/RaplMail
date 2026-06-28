@@ -123,7 +123,15 @@
         onchange={(e) => saveSettings({ emailAdaptColors: e.currentTarget.checked })} />
       <div>
         <b>Adapt email colors to theme</b>
-        <span>Recolors light-background emails to match a dark theme so dark text stays readable (images keep their real colors). Turn off to always show emails on a white reading pane.</span>
+        <span>In a dark theme, renders plain text emails on a dark pane with light text so they're easy on the eyes. Branded / custom-styled emails keep the sender's own design untouched. Turn off to always show emails on a white reading pane.</span>
+      </div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.alwaysOriginalHtml}
+        onchange={(e) => saveSettings({ alwaysOriginalHtml: e.currentTarget.checked })} />
+      <div>
+        <b>Always show original HTML</b>
+        <span>Render every email exactly as the sender designed it — no theme adaptation or injected CSS (same as the per-message "Original styling" toggle, applied to all mail).</span>
       </div>
     </label>
     <label class="check">
@@ -131,7 +139,7 @@
         onchange={(e) => saveSettings({ collapseQuotes: e.currentTarget.checked })} />
       <div>
         <b>Collapse quoted replies</b>
-        <span>Hide the nested "On … wrote:" history behind a "Show quoted" toggle so you see just the new text.</span>
+        <span>Show the new message plus the most-recent quoted reply, with older "On … wrote:" history behind a "Show earlier messages" toggle. Turn off to always show the full thread.</span>
       </div>
     </label>
     <label class="check">

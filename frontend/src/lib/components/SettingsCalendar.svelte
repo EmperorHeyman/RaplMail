@@ -1,21 +1,63 @@
 <script>
-  import { app, saveSettings, notify } from "../store.svelte.js";
+  import { app, saveSettings, notify, normalizeFeeds, CAL_PALETTE } from "../store.svelte.js";
   import { calendar as calApi } from "../api.js";
   import { icons } from "../icons.js";
 
+  // Each subscribed feed is { url, color }. Edited as a list with a color swatch.
+  let feeds = $state(normalizeFeeds(app.settings.icsFeeds));
+  function persist() {
+    saveSettings({ icsFeeds: feeds.filter((f) => (f.url || "").trim()) });
+  }
+  function addFeed() {
+    feeds = [...feeds, { url: "", color: CAL_PALETTE[feeds.length % CAL_PALETTE.length] }];
+  }
+  function removeFeed(i) { feeds = feeds.filter((_, j) => j !== i); persist(); }
+  function setUrl(i, v) { feeds[i].url = v.trim(); feeds = [...feeds]; persist(); }
+  function setColor(i, v) { feeds[i].color = v; feeds = [...feeds]; persist(); }
+
   let davSyncing = $state(false);
   async function syncDav() {
+    persist();
     davSyncing = true;
     try {
       const r = await calApi.caldavSync();
-      if (r.error) notify(r.error, "error");
-      else notify(`Synced ${r.events} event(s), ${r.contacts} contact(s)`);
+      if (r.error) { notify(r.error, "error"); return; }
+      const bits = [];
+      if (r.events) bits.push(`${r.events} CalDAV`);
+      if (r.ics_events) bits.push(`${r.ics_events} from feeds`);
+      if (r.contacts) bits.push(`${r.contacts} contact(s)`);
+      const removed = r.ics_removed ? `, removed ${r.ics_removed} stale` : "";
+      notify(`Synced ${bits.join(", ") || "0 events"}${removed}`);
     } catch (e) { notify(e.message, "error"); }
     finally { davSyncing = false; }
   }
 </script>
 
 <div class="wrap">
+  <section class="card">
+    <h3>Subscribed calendars (iCal / ICS)</h3>
+    <p class="hint">Paste iCal feed URLs — one per line — and RaplMail pulls their events into your calendar.
+      Works with Google's "Secret address in iCal format", Outlook published calendars, any <code>.ics</code> or
+      <code>webcal://</code> link. Duplicates are merged by event ID and events removed from a feed are deleted on the
+      next sync. Read-only.</p>
+    <div class="feeds">
+      {#each feeds as feed, i (i)}
+        <div class="feedrow">
+          <input class="swatch" type="color" value={feed.color} title="Calendar color"
+            oninput={(e) => setColor(i, e.currentTarget.value)} />
+          <input class="url" value={feed.url} placeholder="https://…/basic.ics  or  webcal://…"
+            onchange={(e) => setUrl(i, e.currentTarget.value)} />
+          <button class="rm" title="Remove feed" onclick={() => removeFeed(i)}>{@html icons.trash}</button>
+        </div>
+      {/each}
+      {#if feeds.length === 0}<p class="hint" style="margin:0">No feeds yet — add one below.</p>{/if}
+    </div>
+    <div class="rowbtns">
+      <button class="btn" onclick={addFeed}>＋ Add feed</button>
+      <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? "Syncing…" : "Sync now"}</button>
+    </div>
+  </section>
+
   <section class="card">
     <h3>Calendar &amp; contacts (CalDAV / CardDAV)</h3>
     <p class="hint">Add an external calendar/address book by CalDAV/CardDAV (Nextcloud, Fastmail, iCloud, Seznam,
@@ -69,5 +111,17 @@
   .fieldrow > span { width: 110px; flex: none; color: var(--muted); font-size: 13px; }
   .fieldrow input { flex: 1; }
   .rowbtns { display: flex; gap: 12px; margin-top: 8px; }
+  textarea { width: 100%; resize: vertical; font: 12px/1.5 ui-monospace, monospace;
+    background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 10px; margin-bottom: 10px; }
+  textarea:focus { border-color: var(--accent); outline: none; }
   .tips { margin: 0 0 8px; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 1.5; }
+  .feeds { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+  .feedrow { display: flex; align-items: center; gap: 8px; }
+  .feedrow .url { flex: 1; }
+  .swatch { flex: none; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: 8px; background: none; cursor: pointer; }
+  .swatch::-webkit-color-swatch-wrapper { padding: 3px; }
+  .swatch::-webkit-color-swatch { border: none; border-radius: 5px; }
+  .rm { flex: none; width: 32px; height: 32px; border-radius: 8px; color: var(--muted); border: 1px solid var(--border); display: grid; place-items: center; }
+  .rm:hover { color: var(--danger); border-color: var(--danger); }
 </style>

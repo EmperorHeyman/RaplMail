@@ -133,6 +133,15 @@ export async function revealPath(path) {
   try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("reveal_path", { path }); } catch {}
 }
 
+// Open an http(s)/mailto URL in the OS default browser (links inside emails).
+export async function openExternal(url) {
+  if (!url) return;
+  if (isTauri()) {
+    try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("open_url", { url }); return; } catch {}
+  }
+  try { window.open(url, "_blank", "noreferrer"); } catch {}
+}
+
 export const unfurl = (url) => api.get(`/unfurl?url=${encodeURIComponent(url)}`);
 
 // Absolute base URL of the backend (e.g. http://127.0.0.1:8765), once resolved.

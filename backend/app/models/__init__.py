@@ -240,6 +240,8 @@ class CalendarEvent(SQLModel, table=True):
     method: str = ""                                # REQUEST | CANCEL | REPLY | PUBLISH
     status: str = "needsAction"                     # needsAction|accepted|declined|tentative
     cancelled: bool = False
+    source: str = Field(default="mail", index=True)  # "mail" | "ics" | "caldav"
+    color: str = ""                                  # per-feed display color (hex), if any
     created_at: datetime = Field(default_factory=utcnow)
 
     __table_args__ = (UniqueConstraint("account_id", "uid", name="uq_event_account_uid"),)

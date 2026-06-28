@@ -44,15 +44,46 @@ const _QUOTE_MARKERS = [
   /(?:^|>)\s*[Dd]ne\b.{3,120}?\bnapsal(?:\(a\))?:\s*(?:<|$)/i,
 ];
 export function splitQuoted(html) {
-  if (!html) return { main: "", quoted: "" };
+  if (!html) return { main: "", recent: "", earlier: "" };
   let idx = -1;
   for (const re of _QUOTE_MARKERS) {
     const m = re.exec(html);
     if (m && (idx === -1 || m.index < idx)) idx = m.index;
   }
-  // Need a meaningful amount of "new" text above the quote to bother collapsing.
-  if (idx < 40) return { main: html, quoted: "" };
-  return { main: html.slice(0, idx), quoted: html.slice(idx) };
+  if (idx < 0) return { main: html, recent: "", earlier: "" };
+  // Only collapse if there's meaningful NEW (visible) text above the quote. A
+  // forward has ~no new text above the original, so collapsing would hide the
+  // whole message — measure stripped text, not the raw HTML offset (tags inflate it).
+  const visibleAbove = html.slice(0, idx).replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/gi, " ").trim();
+  if (visibleAbove.length < 25) return { main: html, recent: "", earlier: "" };
+  // main      = the new text the sender just wrote
+  // recent    = the single most-recent quoted reply (shown by default)
+  // earlier   = the deeper/older history below it (revealed on demand)
+  const main = html.slice(0, idx);
+  const { recent, earlier } = _splitQuoteLevels(html.slice(idx));
+  return { main, recent, earlier };
+}
+
+// Within the quoted region, peel off the OLDER history so the reader shows only
+// the most-recent reply by default. Reply clients nest each older message in
+// another <blockquote>, so a blockquote that sits inside another blockquote is
+// older history — we lift those out into `earlier`. Clients that don't nest
+// (Outlook divs, plain "-----Original Message-----") degrade gracefully: the
+// whole quote is treated as `recent` and no "show earlier" button appears.
+function _splitQuoteLevels(quotedHtml) {
+  try {
+    const doc = new DOMParser().parseFromString(quotedHtml, "text/html");
+    const nested = [...doc.querySelectorAll("blockquote")].filter((bq) => {
+      const anc = bq.parentElement?.closest("blockquote");
+      return anc && !anc.parentElement?.closest("blockquote"); // exactly nesting depth 2
+    });
+    if (!nested.length) return { recent: quotedHtml, earlier: "" };
+    let earlier = "";
+    for (const bq of nested) { earlier += bq.outerHTML; bq.remove(); }
+    return { recent: doc.body.innerHTML, earlier };
+  } catch {
+    return { recent: quotedHtml, earlier: "" };
+  }
 }
 
 // --- code-block syntax highlighting ---------------------------------------
@@ -128,33 +159,101 @@ export function isDarkColor(c) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
 }
 
-function currentBg() {
+function themeVar(name, fallback) {
   try {
-    return getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#0e1014";
-  } catch { return "#0e1014"; }
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  } catch { return fallback; }
+}
+function currentBg() { return themeVar("--bg", "#0e1014"); }
+
+const _PLAIN_BG = /^(?:#fff(?:fff)?|#ffffffff|white|transparent|none|inherit|initial|unset)$/i;
+
+/**
+ * Does this email bring its own visual theme (background colors / background
+ * images on a wrapper)? Branded newsletters and HTML-designed mail do; a plain
+ * typed reply does not. We use this to decide whether dark-mode adaptation is
+ * safe — we only re-theme PLAIN mail and never touch a sender's own design.
+ */
+function emailHasOwnTheme(html) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const el of doc.querySelectorAll("[bgcolor],[background],[style]")) {
+      if (el.getAttribute("background")) return true; // background-image attribute
+      const bg = (el.getAttribute("bgcolor") || "").trim();
+      if (bg && !_PLAIN_BG.test(bg)) return true;
+      const style = (el.getAttribute("style") || "").toLowerCase();
+      const m = style.match(/background(?:-color)?\s*:\s*([^;]+)/);
+      if (m) {
+        const v = m[1].trim();
+        if (v && !_PLAIN_BG.test(v)) return true; // a real color, gradient, or url()
+      }
+    }
+    return false;
+  } catch { return false; }
+}
+
+/**
+ * Recolor only the DARK inline text colors in a plain email to a light theme
+ * color, so dark-on-dark text stays readable. Light/colored text and everything
+ * else (links, borders, images) is left untouched.
+ */
+function darkenPlainBody(html, lightText) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const el of doc.querySelectorAll("font[color]")) {
+      if (isDarkColor(el.getAttribute("color"))) el.removeAttribute("color");
+    }
+    for (const el of doc.querySelectorAll("[style]")) {
+      const style = el.getAttribute("style");
+      // `(^|;)\s*color` deliberately won't match `background-color` / `border-color`.
+      const next = style.replace(/(^|;)(\s*)color\s*:\s*([^;]+)/gi,
+        (full, sep, ws, val) => (isDarkColor(val) ? `${sep}${ws}color:${lightText}` : full));
+      if (next !== style) el.setAttribute("style", next);
+    }
+    return doc.body.innerHTML;
+  } catch { return html; }
 }
 
 /**
  * Wrap a message body in a sandboxed HTML document for the iframe.
- * Emails are authored for a white background, so we always render on a light
- * pane (guaranteeing readable text). When the app theme is dark AND the user's
- * "Adapt email colors" setting is on, we invert the whole document to match the
- * dark UI, re-inverting media so photos/logos keep their real colors.
+ *
+ * Emails are authored for a white background. In a dark theme, with "Adapt email
+ * colors" on, we *smart-adapt*: PLAIN mail (no styling of its own) is rendered on
+ * a true dark pane with light text — easy on the eyes — while branded / custom-
+ * styled mail is left exactly as the sender designed it on a white reading pane,
+ * so its colors are never mangled. No whole-document inversion.
  */
 export function emailDoc(bodyHtml, { raw = false } = {}) {
   // raw = show the email exactly as the sender designed it: no theme adaptation,
   // no injected custom CSS (just the white pane it was authored for).
   const adapt = !raw && app?.settings?.emailAdaptColors !== false; // default ON
-  const invert = adapt && isDarkColor(currentBg());
-  const filter = invert
-    ? `html{filter:invert(1) hue-rotate(180deg);}
-       img,picture,video,svg,canvas,iframe,embed,object,[style*="background-image"],[background]{filter:invert(1) hue-rotate(180deg);}`
-    : "";
+  const dark = adapt && isDarkColor(currentBg()) && !emailHasOwnTheme(bodyHtml);
   // Opt-in: let the user's custom CSS also style email bodies (default off — emails untouched).
   const userCss = !raw && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
   // Syntax-highlight code blocks (default ON) — developer-friendly reading of pasted code.
   const highlight = !raw && app?.settings?.highlightCode !== false;
-  const body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
+  let body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
+
+  let pageCss;
+  if (dark) {
+    const bg = currentBg();
+    const text = themeVar("--text", "#e6e6e6");
+    const muted = themeVar("--muted", "#9aa0a6");
+    const border = themeVar("--border", "#33363d");
+    const link = themeVar("--accent", "#5b8def");
+    body = darkenPlainBody(body, text);
+    pageCss =
+      `html{background:${bg};}` +
+      `body{font:14px/1.6 system-ui,sans-serif;color:${text};background:${bg};margin:16px;}` +
+      `a{color:${link};} img{max-width:100%;height:auto;}` +
+      `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}`;
+  } else {
+    pageCss =
+      `html{background:#fff;}` +
+      `body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;margin:16px;}` +
+      `a{color:#1a56db;} img{max-width:100%;height:auto;}` +
+      `blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}`;
+  }
   const codeCss = highlight
     ? `pre.rapl-code{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;padding:12px 14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
        pre.rapl-code .hl-k{color:#cf222e;font-weight:600;} pre.rapl-code .hl-s{color:#0a3069;}
@@ -162,11 +261,8 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
        pre.rapl-code .hl-l{color:#8250df;}`
     : "";
   return `<!doctype html><html><head><meta charset="utf-8">
-    <style>html{background:#fff;}
-    body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;margin:16px;}
-    a{color:#1a56db;} img{max-width:100%;height:auto;} blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}
+    <style>${pageCss}
     ${codeCss}
-    ${filter}
     ${userCss}</style>
     </head><body>${body}</body></html>`;
 }

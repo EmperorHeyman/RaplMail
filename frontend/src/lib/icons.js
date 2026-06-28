@@ -32,6 +32,9 @@ export const icons = {
   // Brand
   brand: line('<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="m3 7.5 9 6 9-6"/>'),
 
+  // Home / dashboard
+  home: line('<path d="M3.5 11 12 4l8.5 7"/><path d="M5.5 9.5V19a1 1 0 0 0 1 1H10v-5h4v5h3.5a1 1 0 0 0 1-1V9.5"/>'),
+
   // Folder roles
   inbox: line(
     '<path d="M12 3v9m0 0 3.5-3.5M12 12 8.5 8.5"/>' +

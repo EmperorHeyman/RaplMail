@@ -115,6 +115,16 @@ fn reveal_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
     app.opener().reveal_item_in_dir(path).map_err(|e| e.to_string())
 }
 
+/// Open a URL in the user's default browser (links inside emails).
+#[tauri::command]
+fn open_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    let u = url.trim();
+    if !(u.starts_with("http://") || u.starts_with("https://") || u.starts_with("mailto:")) {
+        return Err("refused: only http(s)/mailto URLs".into());
+    }
+    app.opener().open_url(u, None::<&str>).map_err(|e| e.to_string())
+}
+
 /// Show an unread-count badge on the taskbar/dock icon (None clears it).
 #[tauri::command]
 fn set_unread_badge(app: tauri::AppHandle, count: i64) {
@@ -178,7 +188,7 @@ fn main() {
         .manage(CloseToTray(AtomicBool::new(true)))
         .invoke_handler(tauri::generate_handler![
             backend_config, set_unread_badge, save_attachment, open_attachment, reveal_path,
-            set_close_to_tray
+            open_url, set_close_to_tray
         ])
         // Closing the window hides to the tray (so IMAP IDLE + notifications keep
         // running in the background) unless the user explicitly chose Quit.

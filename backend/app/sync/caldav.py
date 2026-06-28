@@ -93,6 +93,20 @@ def fetch_events(url: str, user: str = "", password: str = "") -> list[dict]:
     return events
 
 
+def fetch_ics(url: str) -> list[dict]:
+    """Fetch a plain iCal/ICS subscription feed (e.g. a Google 'Secret address in
+    iCal format' URL) and parse its VEVENTs. webcal:// is treated as https://."""
+    if url.lower().startswith("webcal://"):
+        url = "https://" + url[len("webcal://"):]
+    req = urllib.request.Request(url, headers={"User-Agent": "RaplMail/1.0"})
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
+        text = resp.read().decode("utf-8", "ignore")
+    return parse_events(text)
+
+
 def fetch_contacts(url: str, user: str = "", password: str = "") -> list[dict]:
     xml_text = _report(url, user, password, _ADDR_QUERY)
     contacts: list[dict] = []

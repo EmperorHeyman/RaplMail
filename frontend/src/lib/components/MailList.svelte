@@ -1,6 +1,7 @@
 <script>
   import { flip } from "svelte/animate";
-  import { fly } from "svelte/transition";
+  import { fly, slide } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
   import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -43,9 +44,30 @@
   async function loadCategory(cat) {
     if (smartCatMsgs[cat]) return;
     try {
-      const msgs = await messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit: 100 });
+      const msgs = await messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit: 500 });
       smartCatMsgs = { ...smartCatMsgs, [cat]: msgs };
     } catch {}
+  }
+
+  // Expanded groups can hold hundreds of mails; render a window and grow it as
+  // the user scrolls to the bottom, so opening a big group stays snappy.
+  const CHUNK = 12;
+  let catShown = $state({});               // key -> rows currently rendered
+  const shownFor = (key) => catShown[key] ?? CHUNK;
+  function bumpShown(key) { catShown = { ...catShown, [key]: shownFor(key) + CHUNK }; }
+  // Svelte action: when the sentinel scrolls into view, render the next chunk.
+  function loadMore(node, key) {
+    let io;
+    const start = () => {
+      io?.disconnect();
+      io = new IntersectionObserver(
+        (entries) => { if (entries.some((e) => e.isIntersecting)) bumpShown(key); },
+        { root: rowsEl || null, rootMargin: "240px 0px" }
+      );
+      io.observe(node);
+    };
+    start();
+    return { destroy() { io?.disconnect(); } };
   }
 
   const NOTIF = new Set(["updates", "social", "newsletters"]);
@@ -233,6 +255,17 @@
     if (name) saveCurrentSearch(name.trim());
   }
 
+  // Pull keyboard focus back to the list. Opening a message loads the reader
+  // iframe, which (in the desktop webview) grabs focus — after which shortcuts
+  // like `e` land in the iframe and appear dead until you click the list again.
+  function refocusList() {
+    queueMicrotask(() => {
+      const ae = document.activeElement;
+      if (ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement || ae?.isContentEditable) return;
+      rowsEl?.focus?.({ preventScroll: true });
+    });
+  }
+
   async function open(message, index) {
     // In selection mode, a row click adds/removes from the selection instead of opening.
     if (selectedIds.length > 0) { toggleSelect(message, index); return; }
@@ -243,6 +276,7 @@
       message.is_seen = true;
       messagesApi.setSeen(message.id, true).catch(() => {});
     }
+    refocusList();
   }
 
   function onKey(e) {
@@ -274,6 +308,7 @@
           queueMicrotask(() => { const nx = items[focusIndex]; if (nx?.kind === "msg") open(nx.msg, focusIndex); });
         }
       } else if (it.gtype !== "category") doneGroup(it);
+      refocusList();
       e.preventDefault();
     }
   }
@@ -393,7 +428,7 @@
     </div>
   {/if}
 
-  <div class="rows" bind:this={rowsEl}>
+  <div class="rows" bind:this={rowsEl} tabindex="-1">
     {#if app.loading && app.messages.length === 0}
       {#each Array(6) as _}
         <div class="skel"><div class="sk-av"></div><div class="sk-lines"><div class="sk-l"></div><div class="sk-l short"></div></div></div>
@@ -430,20 +465,28 @@
               onSender={(email) => searchAddress(email)}
             />
             {#if expandedKeys.has(item.key)}
-              {#if smartCatMsgs[item.key]}
-                {#each visibleIn(smartCatMsgs[item.key]) as m (m.id)}
-                  <div class="bundled">
-                    <MessageRow message={m} selected={app.selectedMessageId === m.id}
-                      checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                      onselect={(e) => toggleSelect(m, i, e)}
-                      onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
-                      onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
-                      onmenu={(e) => openCtx(e, m)} />
-                  </div>
-                {/each}
-              {:else}
-                <div class="bundled muted" style="padding:10px 22px">Loading…</div>
-              {/if}
+              <div class="catbody" transition:slide={{ duration: 160, easing: cubicOut }}>
+                {#if smartCatMsgs[item.key]}
+                  {@const loaded = visibleIn(smartCatMsgs[item.key])}
+                  {#each loaded.slice(0, shownFor(item.key)) as m (m.id)}
+                    <div class="bundled">
+                      <MessageRow message={m} selected={app.selectedMessageId === m.id}
+                        checked={isChecked(m.id)} selecting={selectedIds.length > 0}
+                        onselect={(e) => toggleSelect(m, i, e)}
+                        onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
+                        onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
+                        onmenu={(e) => openCtx(e, m)} />
+                    </div>
+                  {/each}
+                  {#if loaded.length > shownFor(item.key)}
+                    <div class="bundled loadmore" use:loadMore={item.key}>
+                      <span class="spin">{@html icons.sync}</span> Loading {loaded.length - shownFor(item.key)} more…
+                    </div>
+                  {/if}
+                {:else}
+                  <div class="bundled muted" style="padding:10px 22px">Loading…</div>
+                {/if}
+              </div>
             {/if}
           {:else}
             <GroupRow
@@ -455,16 +498,26 @@
               onselect={() => selectGroup(item)}
             />
             {#if item.gtype === "bundle" && expandedKeys.has(item.key)}
-              {#each visibleIn(item.msgs) as m (m.id)}
-                <div class="bundled">
-                  <MessageRow message={m} selected={app.selectedMessageId === m.id}
-                    checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                    onselect={(e) => toggleSelect(m, i, e)}
-                    onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
-                    onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
-                    onmenu={(e) => openCtx(e, m)} />
-                </div>
-              {/each}
+              <div class="catbody" transition:slide={{ duration: 160, easing: cubicOut }}>
+                {#if item.msgs.length}
+                  {@const loaded = visibleIn(item.msgs)}
+                  {#each loaded.slice(0, shownFor(item.key)) as m (m.id)}
+                    <div class="bundled">
+                      <MessageRow message={m} selected={app.selectedMessageId === m.id}
+                        checked={isChecked(m.id)} selecting={selectedIds.length > 0}
+                        onselect={(e) => toggleSelect(m, i, e)}
+                        onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
+                        onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
+                        onmenu={(e) => openCtx(e, m)} />
+                    </div>
+                  {/each}
+                  {#if loaded.length > shownFor(item.key)}
+                    <div class="bundled loadmore" use:loadMore={item.key}>
+                      <span class="spin">{@html icons.sync}</span> Loading {loaded.length - shownFor(item.key)} more…
+                    </div>
+                  {/if}
+                {/if}
+              </div>
             {/if}
           {/if}
         </div>
@@ -518,7 +571,12 @@
   .slider .lbl { font-size: 12px; color: var(--muted); min-width: 64px; }
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
+  .rows:focus { outline: none; }
+  .catbody { overflow: hidden; }
   .bundled { padding-left: 22px; background: var(--surface); box-shadow: inset 2px 0 0 var(--surface-3); }
+  .loadmore { display: flex; align-items: center; gap: 8px; padding: 11px 22px; color: var(--muted); font-size: 12px; }
+  .loadmore .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .ctxmenu { position: fixed; z-index: 300; min-width: 200px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
   .ctxmenu > button, .ctx-sub { text-align: left; padding: 8px 11px; border-radius: 6px; font-size: 13px; color: var(--text); }

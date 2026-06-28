@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import { app } from "../store.svelte.js";
   import { calendar } from "../api.js";
   import { icons } from "../icons.js";
 
@@ -21,9 +22,22 @@
     catch { events = []; }
     finally { loading = false; }
   }
+  // "Sync" pulls BOTH mail-derived invites AND any configured calendar
+  // subscriptions (ICS feeds / CalDAV) — otherwise a subscription added in
+  // Settings would never show up here.
   async function scan() {
     scanning = true;
-    try { await calendar.scan(150); await load(); } catch {} finally { scanning = false; }
+    const davConfigured = (app.settings.icsFeeds?.length > 0)
+      || !!app.settings.caldavUrl || !!app.settings.carddavUrl;
+    try {
+      await Promise.all([
+        calendar.scan(150).catch(() => {}),
+        davConfigured ? calendar.caldavSync().catch(() => {}) : Promise.resolve(),
+      ]);
+    } finally {
+      await load();
+      scanning = false;
+    }
   }
   onMount(async () => { await load(); scan(); });
 
@@ -43,13 +57,26 @@
   const sameDay = (a, b) => a && b && a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   const isToday = (d) => sameDay(d, new Date());
   const inMonth = (d) => d.getMonth() === cursor.getMonth();
+  const dayKey = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  // True if a (possibly multi-day) event covers `day`. All-day DTEND is exclusive.
+  function coversDay(e, day) {
+    if (!e.start) return false;
+    const s = new Date(e.start);
+    if (!e.end) return sameDay(s, day);
+    let end = new Date(e.end);
+    if (e.all_day) end = new Date(end.getTime() - 1); // exclusive end -> last covered day
+    const d = dayKey(day);
+    return d >= dayKey(s) && d <= dayKey(end);
+  }
+  const isMultiDay = (e) => e.all_day || (e.end && dayKey(new Date(e.start)) !== dayKey(new Date(e.end)));
   function eventsOn(day) {
-    return events.filter((e) => e.start && sameDay(new Date(e.start), day))
-                 .sort((x, y) => new Date(x.start) - new Date(y.start));
+    return events.filter((e) => coversDay(e, day))
+      // Spanning / all-day bars first (like Google), then timed events by start.
+      .sort((x, y) => (isMultiDay(y) - isMultiDay(x)) || (new Date(x.start) - new Date(y.start)));
   }
   const dayEvents = $derived(selected ? eventsOn(selected) : []);
 
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
   const fmtDayHeader = (d) => d ? d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) : "";
 
   async function setRsvp(ev, status) {
@@ -66,8 +93,8 @@
       <button class="btn ghost" onclick={next} title="Next month">›</button>
       <h2>{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</h2>
     </div>
-    <button class="btn" onclick={scan} disabled={scanning}>
-      {@html icons.sync} {scanning ? "Scanning invites…" : "Sync invites"}
+    <button class="btn" onclick={scan} disabled={scanning} title="Pull mail invites and refresh calendar subscriptions">
+      {@html icons.sync} {scanning ? "Syncing…" : "Sync"}
     </button>
   </header>
 
@@ -83,7 +110,8 @@
               <span class="num">{day.getDate()}</span>
               <span class="evs">
                 {#each evs.slice(0, 3) as e}
-                  <span class="pill" class:cancelled={e.cancelled} class:accepted={e.status === "accepted"} class:declined={e.status === "declined"}>
+                  <span class="pill" class:span={isMultiDay(e)} class:cancelled={e.cancelled} class:declined={e.status === "declined"}
+                    style={e.color ? `--evc:${e.color}` : ""}>
                     {#if !e.all_day}<b>{fmtTime(e.start)}</b> {/if}{e.summary || "(untitled)"}
                   </span>
                 {/each}
@@ -101,8 +129,8 @@
         <p class="empty">No events. {#if loading}Loading…{/if}</p>
       {:else}
         {#each dayEvents as e}
-          <div class="event" class:cancelled={e.cancelled}>
-            <div class="time">{e.all_day ? "All day" : `${fmtTime(e.start)}${e.end ? " – " + fmtTime(e.end) : ""}`}</div>
+          <div class="event" class:cancelled={e.cancelled} style={e.color ? `--evc:${e.color}` : ""}>
+            <div class="time"><span class="dot"></span>{e.all_day ? "All day" : `${fmtTime(e.start)}${e.end ? " – " + fmtTime(e.end) : ""}`}</div>
             <div class="title">{e.summary || "(untitled)"}{#if e.cancelled} <span class="cx">Cancelled</span>{/if}</div>
             {#if e.location}<div class="meta">{@html icons.inbox} {e.location}</div>{/if}
             {#if e.organizer}<div class="meta">{@html icons.accounts} {e.organizer}</div>{/if}
@@ -138,19 +166,22 @@
   .cell.sel { box-shadow: inset 0 0 0 2px var(--accent); }
   .num { font-size: 12px; width: 22px; height: 22px; display: grid; place-items: center; font-weight: 600; }
   .evs { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-  .pill { font-size: 11px; background: var(--surface-2); border-left: 3px solid var(--accent); padding: 1px 5px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pill.accepted { border-left-color: var(--done); }
-  .pill.declined { border-left-color: var(--danger); opacity: 0.6; }
+  .pill { --evc: var(--accent); font-size: 11px; background: var(--surface-2); border-left: 3px solid var(--evc); padding: 1px 5px; border-radius: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* Multi-day / all-day events read as a solid colored bar, like Google. */
+  .pill.span { background: color-mix(in srgb, var(--evc) 80%, transparent); border-left: none; color: #fff; font-weight: 600; }
+  .pill.declined { opacity: 0.55; }
   .pill.cancelled { text-decoration: line-through; opacity: 0.5; }
-  .pill b { font-weight: 600; }
+  .pill b { font-weight: 600; color: var(--evc); }
+  .pill.span b { color: inherit; }
   .more { font-size: 10px; color: var(--muted); padding-left: 4px; }
 
   .agenda { border-left: 1px solid var(--border); padding: 16px; overflow-y: auto; background: var(--surface); }
   .agenda h3 { margin: 0 0 12px; font-size: 15px; }
   .agenda .empty { color: var(--muted); font-size: 13px; }
-  .event { padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .event { --evc: var(--accent); padding: 10px 0; border-bottom: 1px solid var(--border); }
   .event.cancelled { opacity: 0.6; }
-  .event .time { font-size: 12px; color: var(--accent); font-weight: 600; }
+  .event .time { font-size: 12px; color: var(--evc); font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .event .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--evc); flex: none; }
   .event .title { font-weight: 600; margin: 2px 0; }
   .event .cx { font-size: 11px; color: var(--danger); font-weight: 600; }
   .event .meta { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 6px; margin-top: 2px; }

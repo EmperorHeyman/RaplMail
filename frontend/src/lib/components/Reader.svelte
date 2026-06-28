@@ -1,6 +1,6 @@
 <script>
   import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, saveAttachment, revealPath, unfurl, ai } from "../api.js";
+  import { messages as messagesApi, openAttachment, saveAttachment, revealPath, openExternal, unfurl, ai } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted } from "../email.js";
   import ThreadView from "./ThreadView.svelte";
@@ -77,13 +77,18 @@
     detail ? sanitizeTrackers(detail.html || "", app.settings.blockTrackers && !loadImages)
            : { html: "", blocked: 0, urls: [] }
   );
-  // Collapse quoted reply history unless the user expands it (or the setting is off).
-  const quoteSplit = $derived(detail ? splitQuoted(processed.html || "") : { main: "", quoted: "" });
-  const collapsing = $derived(app.settings.collapseQuotes !== false && !!quoteSplit.quoted && !showQuoted);
-  const bodyHtml = $derived(
-    collapsing ? quoteSplit.main
-               : (processed.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail?.text || "")}</pre>`)
-  );
+  // Show the new message + the most-recent quoted reply by default; older history
+  // (quoteSplit.earlier) stays behind a "Show earlier messages" toggle.
+  const quoteSplit = $derived(detail ? splitQuoted(processed.html || "") : { main: "", recent: "", earlier: "" });
+  const hasQuote = $derived(!!(quoteSplit.recent || quoteSplit.earlier));
+  const hasEarlier = $derived(!!quoteSplit.earlier);
+  const collapseOn = $derived(app.settings.collapseQuotes !== false);
+  const bodyHtml = $derived.by(() => {
+    const fallback = processed.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail?.text || "")}</pre>`;
+    if (!detail) return "";
+    if (!hasQuote || !collapseOn || showQuoted) return fallback; // full message, exact original nesting
+    return quoteSplit.main + quoteSplit.recent;                  // new text + most-recent reply only
+  });
   // Rich link unfurl (opt-in): preview the first content link in the body.
   let unfurlData = $state(null);
   const _UF_SKIP = /(google|gstatic|googleapis|doubleclick|fonts\.|w3\.org|schema\.org|list-manage|mailchimp|sendgrid|sparkpost|facebook|fbcdn|twitter|x\.com|linkedin|youtube|cdn|unsubscribe|\/track|\/click|\/wf\/|beacon|pixel|\.(?:png|jpg|jpeg|gif|svg|css|js)(?:\?|$))/i;
@@ -103,8 +108,28 @@
   });
 
   const srcdoc = $derived(
-    detail ? emailDoc(bodyHtml, { raw: showOriginal }) : ""
+    detail ? emailDoc(bodyHtml, { raw: showOriginal || app.settings.alwaysOriginalHtml === true }) : ""
   );
+
+  // Links inside the sandboxed email iframe don't navigate on their own in the
+  // desktop shell — intercept clicks and open them in the real browser (mailto
+  // opens a compose). Re-wired on every iframe load (each message reload).
+  let frame;
+  function wireFrameLinks() {
+    let doc;
+    try { doc = frame?.contentDocument; } catch { doc = null; }
+    if (!doc) return;
+    doc.addEventListener("click", (e) => {
+      const a = e.target?.closest?.("a[href]");
+      if (!a) return;
+      const href = (a.getAttribute("href") || "").trim();
+      if (/^https?:\/\//i.test(href)) { e.preventDefault(); openExternal(href); }
+      else if (href.toLowerCase().startsWith("mailto:")) {
+        e.preventDefault();
+        openCompose({ to: href.slice(7).split("?")[0], subject: "", html: "", account_id: detail?.account_id });
+      }
+    }, true);
+  }
   const adaptOn = $derived(app.settings.emailAdaptColors !== false);
 
   const myAddr = $derived(app.accounts.find((a) => a.id === detail?.account_id)?.email || "");
@@ -389,10 +414,10 @@
     {/if}
     {#if detail.html}
       <div class="viewbar">
-        {#if quoteSplit.quoted && app.settings.collapseQuotes !== false}
-          <button class="vtoggle" class:on={showQuoted} title="Show / hide the quoted reply history"
+        {#if hasEarlier && collapseOn}
+          <button class="vtoggle" class:on={showQuoted} title="Show / hide the earlier quoted messages"
             onclick={() => (showQuoted = !showQuoted)}>
-            ••• {showQuoted ? "Hide quoted" : "Show quoted"}
+            ••• {showQuoted ? "Hide earlier" : "Show earlier messages"}
           </button>
         {/if}
         <button class="vtoggle" class:on={showOriginal} title="Show the email with its own original colors & CSS"
@@ -411,7 +436,8 @@
         </span>
       </a>
     {/if}
-    <iframe title="message" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
+    <iframe title="message" bind:this={frame} onload={wireFrameLinks}
+      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
   {/if}
 </section>
 

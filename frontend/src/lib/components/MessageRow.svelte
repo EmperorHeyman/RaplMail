@@ -69,6 +69,10 @@
 
   function onPointerDown(e) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
+    // Don't start a swipe (and don't capture the pointer) when pressing a button
+    // — pointer capture would steal the click from it, so "Done"/select/snooze
+    // would silently open the mail instead of running their action.
+    if (e.target?.closest?.("button")) return;
     dragging = true;
     startX = e.clientX;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -112,7 +116,7 @@
       title="Select" onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
-        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" loading="lazy" onerror={onAvatarError} />
+        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" onerror={onAvatarError} />
         {:else}{initial}{/if}
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>

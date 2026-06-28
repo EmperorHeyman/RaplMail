@@ -629,6 +629,12 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
     parsed = mailparser.parse_from_bytes(raw)
     html = "\n".join(parsed.text_html) if parsed.text_html else ""
     text_body = "\n".join(parsed.text_plain) if parsed.text_plain else ""
+    # Inline images are referenced as `cid:...`, which a webview can't resolve —
+    # rewrite them to data: URIs so logos/snapshots render inline.
+    try:
+        html = _embed_inline_images(html, parsed)
+    except Exception:
+        pass
     unsub = ""
     for k, v in (parsed.headers or {}).items():
         if k.lower() == "list-unsubscribe":
@@ -651,6 +657,42 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
     except Exception:
         auth = {"status": "none"}
     return html, text_body, unsub, events, atts, auth, att_text
+
+
+def _embed_inline_images(html: str, parsed) -> str:
+    """Rewrite `src="cid:..."` references to data: URIs using the message's inline
+    image parts, so they render in the sandboxed reader iframe (which can't resolve
+    cid:). Large images (>6 MB) are left as-is to avoid bloating the cached body."""
+    import base64
+    import re
+
+    if not html or "cid:" not in html.lower():
+        return html
+    cid_map: dict[str, str] = {}
+    for a in (parsed.attachments or []):
+        cid = (a.get("content-id") or a.get("content_id") or "").strip().strip("<>").strip()
+        ctype = (a.get("mail_content_type") or "").lower()
+        if not cid or not ctype.startswith("image/"):
+            continue
+        try:
+            payload = a.get("payload") or ""
+            cte = (a.get("content_transfer_encoding") or "").lower()
+            data = base64.b64decode(payload) if cte == "base64" else (
+                payload.encode("utf-8", "ignore") if isinstance(payload, str) else bytes(payload))
+        except Exception:
+            continue
+        if not data or len(data) > 6_000_000:
+            continue
+        cid_map[cid.lower()] = f"data:{ctype};base64,{base64.b64encode(data).decode('ascii')}"
+    if not cid_map:
+        return html
+
+    def repl(m: "re.Match") -> str:
+        q, ref = m.group(1), m.group(2).strip().lower()
+        uri = cid_map.get(ref) or cid_map.get(ref.split("@")[0])
+        return f"src={q}{uri}{q}" if uri else m.group(0)
+
+    return re.sub(r"""src=(["'])\s*cid:([^"']+)\1""", repl, html, flags=re.IGNORECASE)
 
 
 def _extract_attachment_text(parsed) -> str:

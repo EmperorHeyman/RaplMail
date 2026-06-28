@@ -1,6 +1,17 @@
 // Central reactive app state using Svelte 5 runes.
 import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain } from "./api.js";
 
+// Distinct, legible colors auto-assigned to calendar feeds by order.
+export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
+// Normalize icsFeeds (legacy plain-URL strings or {url,color} objects) into a
+// stable [{ url, color }] list, filling missing colors from the palette.
+export function normalizeFeeds(feeds) {
+  return (feeds || [])
+    .map((f) => (typeof f === "string" ? { url: f } : { ...f }))
+    .map((f, i) => ({ url: (f.url || "").trim(), color: f.color || CAL_PALETTE[i % CAL_PALETTE.length] }))
+    .filter((f) => f.url);
+}
+
 // --- persisted UI settings -------------------------------------------------
 const SETTINGS_KEY = "raplmail.settings";
 function loadSettings() {
@@ -34,6 +45,7 @@ const DEFAULT_SETTINGS = {
   listWidth: 400,
   themeMode: "manual",           // "manual" | "auto" (day/night)
   emailAdaptColors: true,        // invert light-authored email HTML to match a dark theme
+  alwaysOriginalHtml: false,     // always render emails in their original HTML (no theming)
   customCssInEmails: false,      // also apply custom CSS inside email bodies (off = emails untouched)
   smartGroupPlacement: "afterN", // where category groups sit: "top" | "afterN" | "bottom"
   smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
@@ -63,6 +75,7 @@ const DEFAULT_SETTINGS = {
   carddavUrl: "",                // CardDAV collection URL (contacts)
   caldavUser: "",                // CalDAV/CardDAV username
   caldavPassword: "",            // CalDAV/CardDAV password
+  icsFeeds: [],                  // subscribed iCal feeds: [{ url, color }] (read-only)
   scheduleLaterHours: 3,         // "Later today" = now + this many hours
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
@@ -651,6 +664,10 @@ export function openMessageById(id) {
   app.view = "mail";
   app.threadKey = null;
   app.selectedMessageId = id;
+  // Opening a message marks it read (matches clicking it in the list).
+  const m = app.messages.find((x) => x.id === id);
+  if (m) m.is_seen = true;
+  messages.setSeen(id, true).catch(() => {});
 }
 
 export async function refreshMessages({ background = false } = {}) {

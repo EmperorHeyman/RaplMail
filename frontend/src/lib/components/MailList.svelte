@@ -156,6 +156,24 @@
     try { await messagesApi.bulk(ids, "done"); refreshMessages({ background: true }); }
     catch (e) { notify("Couldn't update", "error"); refreshMessages({ background: true }); }
   }
+
+  // Mark an entire Smart Inbox category done (every mail in it, not just the
+  // loaded window). Used by the card's "Done all" button and the `e` shortcut.
+  async function doneCategory(item) {
+    try {
+      let list = smartCatMsgs[item.key];
+      if (!list) list = await messagesApi.list({ ...smartScope(), category: item.category, include_done: false, limit: 5000 });
+      const ids = list.map((m) => m.id);
+      if (!ids.length) return;
+      const idset = new Set(ids);
+      app.messages = app.messages.filter((m) => !idset.has(m.id));   // optimistic
+      hiddenDone = new Set([...hiddenDone, ...ids]);
+      const s = new Set(expandedKeys); s.delete(item.key); expandedKeys = s;  // collapse
+      await messagesApi.bulk(ids, "done");
+      notify(`${ids.length} marked done`);
+      refreshMessages({ background: true });   // also refreshes the group counts
+    } catch { notify("Couldn't mark group done", "error"); refreshMessages({ background: true }); }
+  }
   function toggleExpand(key) {
     const s = new Set(expandedKeys);
     s.has(key) ? s.delete(key) : s.add(key);
@@ -307,7 +325,8 @@
         if (doneNow && app.settings.openNextOnDone && selectedIds.length === 0) {
           queueMicrotask(() => { const nx = items[focusIndex]; if (nx?.kind === "msg") open(nx.msg, focusIndex); });
         }
-      } else if (it.gtype !== "category") doneGroup(it);
+      } else if (it.gtype === "category") doneCategory(it);
+      else doneGroup(it);
       refocusList();
       e.preventDefault();
     }
@@ -463,6 +482,7 @@
               focused={i === focusIndex} expanded={expandedKeys.has(item.key)}
               onToggle={() => { focusIndex = i; activate(item); }}
               onSender={(email) => searchAddress(email)}
+              onDoneAll={() => { focusIndex = i; doneCategory(item); }}
             />
             {#if expandedKeys.has(item.key)}
               <div class="catbody" transition:slide={{ duration: 160, easing: cubicOut }}>

@@ -189,6 +189,36 @@ class SecretStore:
                 self._flush()
             return Fernet(dek.encode("ascii"))
 
+    def all_secrets(self) -> dict[str, str]:
+        """Snapshot of every stored secret (requires an unlocked store). Used to
+        build an encrypted full backup."""
+        with self._lock:
+            self._require_unlocked()
+            return dict(self._cache)
+
+    def seal(self, plaintext: bytes) -> dict:
+        """Encrypt arbitrary bytes with the current master key, returning a
+        portable {version, salt, data} blob (the .rmail container)."""
+        with self._lock:
+            self._require_unlocked()
+            assert self._fernet is not None and self._salt is not None
+            return {
+                "version": 1,
+                "salt": base64.b64encode(self._salt).decode("ascii"),
+                "data": self._fernet.encrypt(plaintext).decode("ascii"),
+            }
+
+    @staticmethod
+    def open_sealed(blob: dict, password: str) -> bytes:
+        """Decrypt a {salt, data} blob produced by seal() with the password that
+        was active when it was sealed. Raises BadPasswordError on a wrong password."""
+        try:
+            salt = base64.b64decode(blob["salt"])
+            fernet = Fernet(_derive_key(password, salt))
+            return fernet.decrypt(blob["data"].encode("ascii"))
+        except (InvalidToken, KeyError, ValueError) as exc:
+            raise BadPasswordError("wrong password or corrupt backup file") from exc
+
     def _require_unlocked(self) -> None:
         if self._fernet is None:
             raise LockedError("secret store is locked")

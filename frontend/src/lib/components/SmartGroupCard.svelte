@@ -1,17 +1,22 @@
 <script>
+  import { icons } from "../icons.js";
   let { label, icon, count = 0, senders = [], more = 0, expanded = false, focused = false,
-        onToggle, onSender } = $props();
+        onToggle, onSender, onDoneAll } = $props();
   const initial = (s) => (s || "?").trim()[0]?.toUpperCase() || "?";
 </script>
 
 <div class="sg" class:focused class:open={expanded}>
-  <button class="sg-head" onclick={onToggle}>
-    <span class="ic">{@html icon}</span>
-    <span class="lbl">{label}</span>
-    <span class="count">{count.toLocaleString()}</span>
-    <span class="chev" aria-hidden="true">⌄</span>
-    <span class="state">{expanded ? "Hide" : "Show"}</span>
-  </button>
+  <div class="sg-row">
+    <button class="sg-head" onclick={onToggle}>
+      <span class="ic">{@html icon}</span>
+      <span class="lbl">{label}</span>
+      <span class="count">{count.toLocaleString()}</span>
+      <span class="chev" aria-hidden="true">⌄</span>
+      <span class="state">{expanded ? "Hide" : "Show"}</span>
+    </button>
+    <button class="doneall" title="Mark this whole group done (e)"
+      onclick={(e) => { e.stopPropagation(); onDoneAll?.(); }}>{@html icons.done} Done all</button>
+  </div>
   {#if !expanded && senders.length}
     <!-- Compact sender chips with counts (matches the Settings preview). -->
     <div class="chips">
@@ -32,7 +37,14 @@
   .sg.focused { box-shadow: inset 3px 0 0 var(--accent); }
   /* Open state: tint the whole card + accent bar so it's obvious it's expanded. */
   .sg.open { background: color-mix(in srgb, var(--accent) 9%, transparent); box-shadow: inset 3px 0 0 var(--accent); border-radius: var(--radius-sm); }
-  .sg-head { display: flex; align-items: center; gap: 9px; width: 100%; padding: 4px 2px; }
+  .sg-row { display: flex; align-items: center; gap: 8px; }
+  .sg-head { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; padding: 4px 2px; }
+  /* Hidden until you hover the card (or it's focused), like the row actions. */
+  .doneall { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
+    padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted);
+    opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s, border-color 0.12s; }
+  .sg:hover .doneall, .sg.focused .doneall { opacity: 1; }
+  .doneall:hover { background: var(--done); border-color: var(--done); color: #06231a; }
   .sg-head:hover .lbl { color: var(--text); }
   .sg-head:hover .chev { border-color: var(--accent); color: var(--accent); }
   .ic { font-size: 15px; width: 20px; text-align: center; }

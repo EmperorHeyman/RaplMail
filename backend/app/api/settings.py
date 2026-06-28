@@ -11,13 +11,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 
 from app.api.deps import verify_token
 from app.core.db import get_session
-from app.models import Rule, SenderCategory, Setting, Signature
+from app.models import Account, Rule, SenderCategory, Setting, Signature
 
 router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(verify_token)])
 
@@ -85,6 +85,14 @@ class ImportResult(BaseModel):
 
 @router.post("/import", response_model=ImportResult)
 def import_bundle(bundle: dict, session: Session = Depends(get_session)) -> ImportResult:
+    res = _apply_config(session, bundle)
+    session.commit()
+    return res
+
+
+def _apply_config(session: Session, bundle: dict) -> ImportResult:
+    """Restore the re-syncable config (settings, rules, signatures, sender tags).
+    Does NOT commit — the caller commits. Shared by /import and /import-full."""
     res = ImportResult(settings=False, rules=0, signatures=0, sender_categories=0)
 
     if isinstance(bundle.get("settings"), dict):
@@ -134,5 +142,97 @@ def import_bundle(bundle: dict, session: Session = Depends(get_session)) -> Impo
             row.category = c.get("category", row.category)
         res.sender_categories += 1
 
+    return res
+
+
+_FULL_VERSION = 1
+_ACCT_FIELDS = ("email", "display_name", "provider", "imap_host", "imap_port",
+                "smtp_host", "smtp_port", "use_oauth", "secret_key", "color",
+                "enabled", "aliases")
+
+
+@router.get("/export-full")
+def export_full(session: Session = Depends(get_session)) -> dict:
+    """Encrypted full backup (.rmail): everything from /export PLUS accounts and
+    their credentials, sealed with the master password. Requires an unlocked vault."""
+    import json as _json
+
+    from app.core.security import get_secret_store
+
+    store = get_secret_store()
+    if not store.is_unlocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault before exporting.")
+
+    accounts, secrets = [], {}
+    for a in session.exec(select(Account)):
+        prov = a.provider.value if hasattr(a.provider, "value") else a.provider
+        accounts.append({**{k: getattr(a, k) for k in _ACCT_FIELDS if k != "provider"}, "provider": prov})
+        if a.secret_key:
+            cred = store.get(a.secret_key)
+            if cred is not None:
+                secrets[a.secret_key] = cred
+
+    bundle = export_bundle(session)
+    bundle.update(kind="rmail-full", full_version=_FULL_VERSION, accounts=accounts, secrets=secrets)
+    sealed = store.seal(_json.dumps(bundle, default=str).encode("utf-8"))
+    sealed["kind"] = "rmail-full"
+    return sealed
+
+
+class ImportFullIn(BaseModel):
+    blob: dict
+    password: str
+
+
+class ImportFullResult(ImportResult):
+    accounts: int = 0
+
+
+@router.post("/import-full", response_model=ImportFullResult)
+def import_full(body: ImportFullIn, request: Request,
+                session: Session = Depends(get_session)) -> ImportFullResult:
+    """Restore an encrypted .rmail backup: config, accounts, and credentials.
+    Requires an unlocked vault (so restored credentials are re-sealed locally)."""
+    import json as _json
+
+    from app.core.security import BadPasswordError, get_secret_store
+
+    store = get_secret_store()
+    if not store.is_unlocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Set/unlock your master password first.")
+    try:
+        raw = store.open_sealed(body.blob, body.password)
+    except BadPasswordError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    try:
+        bundle = _json.loads(raw.decode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "corrupt backup file") from exc
+
+    base = _apply_config(session, bundle)
+    res = ImportFullResult(**base.model_dump(), accounts=0)
+
+    # Credentials first, so accounts that reference them are immediately usable.
+    for key, cred in (bundle.get("secrets") or {}).items():
+        try:
+            store.set(key, cred)
+        except Exception:
+            continue
+    existing = {a.email.lower() for a in session.exec(select(Account))}
+    for a in bundle.get("accounts") or []:
+        email = (a.get("email") or "").lower().strip()
+        if not email or email in existing:
+            continue
+        try:
+            session.add(Account(**{k: a[k] for k in _ACCT_FIELDS if k in a}))
+            existing.add(email)
+            res.accounts += 1
+        except Exception:
+            continue
     session.commit()
+    # Connect the freshly-added accounts: discover folders + pull mail.
+    try:
+        request.app.state.sync.request_sync()
+    except Exception:
+        pass
     return res

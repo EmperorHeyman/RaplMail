@@ -157,6 +157,8 @@ export const appSettings = {
   put: (data) => api.put("/settings", { data }),
   export: () => api.get("/settings/export"),
   import: (bundle) => api.post("/settings/import", bundle),
+  exportFull: () => api.get("/settings/export-full"),
+  importFull: (blob, password) => api.post("/settings/import-full", { blob, password }),
 };
 
 export const ai = {

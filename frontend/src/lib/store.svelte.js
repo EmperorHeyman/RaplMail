@@ -266,6 +266,17 @@ export async function importConfig(bundle) {
   return res;
 }
 
+// Full encrypted backup (.rmail) — includes accounts + credentials.
+export async function exportFullBackup() {
+  return appSettings.exportFull();
+}
+export async function importFullBackup(blob, password) {
+  const res = await appSettings.importFull(blob, password);
+  await initSettings();
+  try { await loadAccountsAndFolders(); } catch {}
+  return res;
+}
+
 export function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }

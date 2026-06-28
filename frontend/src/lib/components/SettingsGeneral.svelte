@@ -1,5 +1,5 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, checkForUpdates, setAutostart, setCloseToTray } from "../store.svelte.js";
+  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray } from "../store.svelte.js";
   import { vault, backendBase } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
@@ -76,6 +76,43 @@
       } catch { notify("Import failed — invalid file", "error"); }
     }
     e.currentTarget.value = "";
+  }
+
+  // Full encrypted backup (.rmail): config + accounts + passwords, sealed with
+  // the master password.
+  let rmailFile;
+  let backingUp = $state(false);
+  async function doExportFull() {
+    backingUp = true;
+    try {
+      const blob = await exportFullBackup();
+      const file = new Blob([JSON.stringify(blob)], { type: "application/octet-stream" });
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `raplmail-backup-${new Date().toISOString().slice(0, 10)}.rmail`;
+      a.click();
+      URL.revokeObjectURL(url);
+      notify("Encrypted backup saved (.rmail)");
+    } catch (err) {
+      notify(err?.message?.includes("vault") ? "Unlock your vault first" : "Backup failed", "error");
+    } finally { backingUp = false; }
+  }
+  async function doImportFull(e) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = "";
+    if (!file) return;
+    let blob;
+    try { blob = JSON.parse(await file.text()); }
+    catch { notify("Not a valid .rmail file", "error"); return; }
+    const pw = prompt("Enter the master password from the machine this backup was made on:");
+    if (!pw) return;
+    try {
+      const r = await importFullBackup(blob, pw);
+      notify(`Restored: ${r.accounts} account(s) · settings ${r.settings ? "✓" : "–"} · ${r.rules} rules · ${r.signatures} signatures. Syncing…`);
+    } catch (err) {
+      notify(err?.status === 400 ? "Wrong password or corrupt backup" : (err?.message || "Restore failed"), "error");
+    }
   }
 
   let notifPerm = $state("default");
@@ -314,9 +351,17 @@
 
   <section class="card">
     <h3>Backup &amp; migrate</h3>
-    <p class="hint">Export your settings, rules, signatures and sender tags to a file, then import them on another install (e.g. dev → prod). Emails aren't included — they re-sync from your mail server once you connect the accounts there.</p>
+    <p class="hint"><b>Full backup (.rmail)</b> — the easy one. Includes <b>everything</b>: your accounts, passwords,
+      calendars, rules, signatures and settings, all encrypted with your master password. Move the file to another
+      computer, install RaplMail, set the <b>same master password</b>, and import — you're fully set up, no re-adding accounts.</p>
     <div class="rowbtns">
-      <button class="btn primary" onclick={doExport}>{@html icons.sent} Export config</button>
+      <button class="btn primary" onclick={doExportFull} disabled={backingUp}>{@html icons.lock} {backingUp ? "Backing up…" : "Export full backup (.rmail)"}</button>
+      <button class="btn" onclick={() => rmailFile.click()}>Restore from .rmail…</button>
+      <input bind:this={rmailFile} type="file" accept=".rmail,application/octet-stream" hidden onchange={doImportFull} />
+    </div>
+    <p class="hint" style="margin-top:14px">Or a lighter <b>config-only</b> export (settings, rules, signatures, sender tags — no accounts or passwords) as plain JSON.</p>
+    <div class="rowbtns">
+      <button class="btn" onclick={doExport}>{@html icons.sent} Export config</button>
       <button class="btn" onclick={() => importFile.click()}>Import config…</button>
       <input bind:this={importFile} type="file" accept="application/json,.json" hidden onchange={doImport} />
     </div>

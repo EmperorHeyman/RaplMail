@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender } from "../store.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
@@ -120,7 +120,9 @@
         {:else}{initial}{/if}
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>
-      {#if message.auth_status === "fail"}
+      {#if isTrustedSender(message.from_addr)}
+        <span class="shield ok" title="You marked this sender safe">{@html icons.shieldCheck}</span>
+      {:else if message.auth_status === "fail"}
         <span class="shield bad" title="Failed sender authentication — possible spoof">{@html icons.shieldAlert}</span>
       {:else if message.auth_status === "pass"}
         <span class="shield ok" title="Sender authenticated (SPF/DKIM/DMARC)">{@html icons.shieldCheck}</span>

@@ -48,6 +48,8 @@ class SendIn(BaseModel):
     pgp_sign: bool = False
     pgp_encrypt: bool = False
     request_receipt: bool = False   # embed a read-receipt tracking pixel
+    calendar_ics: str = ""          # iMIP: text/calendar payload (METHOD below)
+    calendar_method: str = "REQUEST"
 
 
 @router.post("/send", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_unlocked_store)])
@@ -164,6 +166,8 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
         references=body.references, inline_images=inline_images,
         attachments=[{"filename": a.filename, "content_type": a.content_type,
                       "data": base64.b64decode(a.data_b64)} for a in body.attachments],
+        calendar_ics=getattr(body, "calendar_ics", "") or "",
+        calendar_method=getattr(body, "calendar_method", "REQUEST") or "REQUEST",
     )
     # OpenPGP: sign and/or encrypt the body inline (ASCII-armored). Encryption
     # needs a stored public key for every recipient.

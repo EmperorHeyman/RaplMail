@@ -159,6 +159,62 @@ export function isDarkColor(c) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5;
 }
 
+/** Relative luminance 0..1 of a CSS color (NaN if unparseable). */
+function _lum(c) {
+  c = (c || "").trim().toLowerCase();
+  if (c === "white" || c === "#fff" || c === "#ffffff") return 1;
+  let r, g, b;
+  if (c[0] === "#") {
+    let h = c.slice(1);
+    if (h.length === 3) h = h.split("").map((x) => x + x).join("");
+    r = parseInt(h.slice(0, 2), 16); g = parseInt(h.slice(2, 4), 16); b = parseInt(h.slice(4, 6), 16);
+  } else {
+    const m = c.match(/(\d+)[,\s]+(\d+)[,\s]+(\d+)/);
+    if (!m) return NaN;
+    r = +m[1]; g = +m[2]; b = +m[3];
+  }
+  if ([r, g, b].some((v) => Number.isNaN(v))) return NaN;
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+/**
+ * Force a dark reading surface for ANY email: rewrite near-white backgrounds to
+ * the theme's dark background and dark text to light, while leaving saturated
+ * brand colors alone. This is the "Dark" email mode — guarantees no white pane.
+ */
+function recolorForDark(html, bg, text) {
+  const LIGHT = 0.82;   // luminance above this = "basically white/very light"
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const el of doc.querySelectorAll("[bgcolor]")) {
+      const l = _lum(el.getAttribute("bgcolor"));
+      if (!Number.isNaN(l) && l >= LIGHT) el.setAttribute("bgcolor", bg);
+    }
+    for (const el of doc.querySelectorAll("font[color]")) {
+      if (isDarkColor(el.getAttribute("color"))) el.removeAttribute("color");
+    }
+    for (const el of doc.querySelectorAll("[style]")) {
+      let style = el.getAttribute("style");
+      // Darken near-white backgrounds.
+      style = style.replace(/background(-color)?\s*:\s*([^;]+)/gi, (full, _suf, val) => {
+        const l = _lum(val.trim());
+        return (!Number.isNaN(l) && l >= LIGHT) ? `background${_suf || ""}:${bg}` : full;
+      });
+      // Recolor dark text to light (won't touch background-color / border-color).
+      style = style.replace(/(^|;)(\s*)color\s*:\s*([^;]+)/gi,
+        (full, sep, ws, val) => (isDarkColor(val) ? `${sep}${ws}color:${text}` : full));
+      el.setAttribute("style", style);
+    }
+    return doc.body.innerHTML;
+  } catch { return html; }
+}
+
+const _URL_RE = /\b(https?:\/\/[^\s<>"')]+)/gi;
+/** Turn a plain-text body into safe HTML with clickable links. */
+export function autoLink(text) {
+  return escapeHtml(text || "").replace(_URL_RE, (u) => `<a href="${u}" target="_blank" rel="noreferrer">${u}</a>`);
+}
+
 function themeVar(name, fallback) {
   try {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
@@ -224,14 +280,23 @@ function darkenPlainBody(html, lightText) {
  * so its colors are never mangled. No whole-document inversion.
  */
 export function emailDoc(bodyHtml, { raw = false } = {}) {
-  // raw = show the email exactly as the sender designed it: no theme adaptation,
-  // no injected custom CSS (just the white pane it was authored for).
-  const adapt = !raw && app?.settings?.emailAdaptColors !== false; // default ON
-  const dark = adapt && isDarkColor(currentBg()) && !emailHasOwnTheme(bodyHtml);
+  // raw = per-message "show original" toggle: exact sender design, white pane.
+  // Otherwise the email appearance mode decides:
+  //   "original" — as the sender designed it (white pane)
+  //   "adaptive" — dark pane for plain mail, leave branded mail on white (default)
+  //   "dark"     — force a dark pane for ALL mail (no white, ever)
+  const s = app?.settings || {};
+  let mode = s.emailTheme;
+  if (!mode) mode = s.alwaysOriginalHtml ? "original" : (s.emailAdaptColors === false ? "original" : "adaptive");
+  if (raw) mode = "original";
+  const themeIsDark = isDarkColor(currentBg());
+  const force = mode === "dark" && themeIsDark;                       // recolor everything
+  const dark = force || (mode === "adaptive" && themeIsDark && !emailHasOwnTheme(bodyHtml));
+  const original = mode === "original";
   // Opt-in: let the user's custom CSS also style email bodies (default off — emails untouched).
-  const userCss = !raw && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
+  const userCss = !original && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
   // Syntax-highlight code blocks (default ON) — developer-friendly reading of pasted code.
-  const highlight = !raw && app?.settings?.highlightCode !== false;
+  const highlight = !original && app?.settings?.highlightCode !== false;
   let body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
 
   let pageCss;
@@ -241,7 +306,9 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
     const muted = themeVar("--muted", "#9aa0a6");
     const border = themeVar("--border", "#33363d");
     const link = themeVar("--accent", "#5b8def");
-    body = darkenPlainBody(body, text);
+    // "Dark" mode forcibly recolors near-white backgrounds too; "adaptive" only
+    // recolors dark text on the (already plain) body.
+    body = force ? recolorForDark(body, bg, text) : darkenPlainBody(body, text);
     pageCss =
       `html{background:${bg};}` +
       `body{font:14px/1.6 system-ui,sans-serif;color:${text};background:${bg};margin:16px;}` +

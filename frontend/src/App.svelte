@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -95,6 +95,12 @@
       syncAllAccounts();
       return;
     }
+    // Ctrl/Cmd+N → new message, from anywhere (even while typing in a field).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
+      e.preventDefault();
+      openCompose({ to: "", subject: "", html: "" });
+      return;
+    }
     const combo = keyCombo(e);
     if (!combo) return;
 
@@ -138,7 +144,7 @@
   $effect(() => {
     if (app.vault.unlocked && !_booted) {
       _booted = true;
-      (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); })();
+      (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();
       recategorizeOnce();
     }

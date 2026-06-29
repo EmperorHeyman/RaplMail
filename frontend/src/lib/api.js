@@ -174,6 +174,7 @@ export const calendar = {
   scan: (limit = 100) => api.post(`/calendar/scan?limit=${limit}`),
   rsvp: (id, status) => api.post(`/calendar/${id}/rsvp`, { status }),
   caldavSync: () => api.post("/calendar/caldav/sync", {}),
+  create: (ev) => api.post("/calendar/create", ev),
 };
 
 // --- domain helpers --------------------------------------------------------

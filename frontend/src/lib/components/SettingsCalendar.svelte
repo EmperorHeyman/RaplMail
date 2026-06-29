@@ -15,6 +15,18 @@
   function setUrl(i, v) { feeds[i].url = v.trim(); feeds = [...feeds]; persist(); }
   function setColor(i, v) { feeds[i].color = v; feeds = [...feeds]; persist(); }
 
+  // Reminders: combinable lead times (minutes before the event).
+  const REMINDER_OPTS = [
+    { m: 0, t: "At start" }, { m: 5, t: "5 min" }, { m: 10, t: "10 min" },
+    { m: 30, t: "30 min" }, { m: 60, t: "1 hour" }, { m: 1440, t: "1 day" }, { m: 10080, t: "1 week" },
+  ];
+  const reminders = () => app.settings.calendarReminders || [];
+  function toggleReminder(m) {
+    const cur = reminders();
+    const next = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m].sort((a, b) => a - b);
+    saveSettings({ calendarReminders: next });
+  }
+
   let davSyncing = $state(false);
   async function syncDav() {
     persist();
@@ -56,6 +68,26 @@
       <button class="btn" onclick={addFeed}>＋ Add feed</button>
       <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? "Syncing…" : "Sync now"}</button>
     </div>
+  </section>
+
+  <section class="card">
+    <h3>Reminders &amp; auto-sync</h3>
+    <p class="hint">Desktop reminders before an event starts — pick any combination (e.g. 10 minutes <i>and</i> 1 day <i>and</i> 1 week). Respects Quiet hours.</p>
+    <div class="chips remind">
+      {#each REMINDER_OPTS as o}
+        <button class="rchip" class:on={reminders().includes(o.m)} onclick={() => toggleReminder(o.m)}>{o.t}</button>
+      {/each}
+    </div>
+    {#if reminders().length === 0}<p class="hint" style="margin:8px 0 0">No reminders — you won't be notified about events.</p>{/if}
+    <label class="fieldrow" style="margin-top:14px"><span>Auto-sync every</span>
+      <select value={app.settings.icsSyncMinutes ?? 30} onchange={(e) => saveSettings({ icsSyncMinutes: Number(e.currentTarget.value) })}>
+        <option value={15}>15 minutes</option>
+        <option value={30}>30 minutes</option>
+        <option value={60}>1 hour</option>
+        <option value={180}>3 hours</option>
+      </select>
+    </label>
+    <p class="hint" style="margin:6px 0 0">Subscribed calendars (and the “Sync” button on the Calendar) refresh automatically while RaplMail is open. The Calendar's <b>Sync</b> button pulls feeds + mail invites on demand.</p>
   </section>
 
   <section class="card">
@@ -124,4 +156,8 @@
   .swatch::-webkit-color-swatch { border: none; border-radius: 5px; }
   .rm { flex: none; width: 32px; height: 32px; border-radius: 8px; color: var(--muted); border: 1px solid var(--border); display: grid; place-items: center; }
   .rm:hover { color: var(--danger); border-color: var(--danger); }
+  .chips.remind { display: flex; flex-wrap: wrap; gap: 7px; }
+  .rchip { font-size: 12px; font-weight: 600; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
+  .rchip:hover { color: var(--text); border-color: var(--accent); }
+  .rchip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 </style>

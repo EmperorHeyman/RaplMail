@@ -1,8 +1,8 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip } from "../store.svelte.js";
+  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, revealPath, openExternal, unfurl, ai } from "../api.js";
   import { icons } from "../icons.js";
-  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted } from "../email.js";
+  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
   import ThreadView from "./ThreadView.svelte";
 
   const threadMode = $derived(!!app.threadKey && app.settings.threading);
@@ -84,7 +84,7 @@
   const hasEarlier = $derived(!!quoteSplit.earlier);
   const collapseOn = $derived(app.settings.collapseQuotes !== false);
   const bodyHtml = $derived.by(() => {
-    const fallback = processed.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail?.text || "")}</pre>`;
+    const fallback = processed.html || `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit">${autoLink(detail?.text || "")}</pre>`;
     if (!detail) return "";
     if (!hasQuote || !collapseOn || showQuoted) return fallback; // full message, exact original nesting
     return quoteSplit.main + quoteSplit.recent;                  // new text + most-recent reply only
@@ -108,7 +108,7 @@
   });
 
   const srcdoc = $derived(
-    detail ? emailDoc(bodyHtml, { raw: showOriginal || app.settings.alwaysOriginalHtml === true }) : ""
+    detail ? emailDoc(bodyHtml, { raw: showOriginal }) : ""
   );
 
   // Links inside the sandboxed email iframe don't navigate on their own in the
@@ -129,8 +129,20 @@
         openCompose({ to: href.slice(7).split("?")[0], subject: "", html: "", account_id: detail?.account_id });
       }
     }, true);
+    // Keep Ctrl/Cmd+N working even when focus is inside the email iframe.
+    doc.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
+        e.preventDefault();
+        openCompose({ to: "", subject: "", html: "" });
+      }
+    }, true);
   }
-  const adaptOn = $derived(app.settings.emailAdaptColors !== false);
+  const emailMode = $derived(
+    app.settings.emailTheme ||
+    (app.settings.alwaysOriginalHtml ? "original" : (app.settings.emailAdaptColors === false ? "original" : "adaptive"))
+  );
+  // Reply/Forward/Done bar position: top (in the header) or bottom (sticky footer).
+  const actionsBottom = $derived(app.settings.readerActionsPos === "bottom");
 
   const myAddr = $derived(app.accounts.find((a) => a.id === detail?.account_id)?.email || "");
 
@@ -305,19 +317,7 @@
           </button>
         {/if}
       </div>
-      <div class="actions">
-        {#each readerBtns as b}
-          <button class="btn {b.cls || ''}" onclick={b.run}>{@html b.icon} {b.label}</button>
-        {/each}
-        {#if aiOn}
-          <button class="btn ai" onclick={catchMeUp} disabled={summarizing} title="Summarize this thread with AI">
-            {@html icons.bolt} {summarizing ? "Summarizing…" : "Catch me up"}
-          </button>
-          <button class="btn ai" onclick={smartReply} disabled={drafting} title="Draft a reply with AI">
-            {@html icons.reply} {drafting ? "Drafting…" : "AI reply"}
-          </button>
-        {/if}
-      </div>
+      {#if !actionsBottom}{@render actionsBar()}{/if}
     </header>
     {#if summary}
       <div class="ai-summary">
@@ -344,9 +344,15 @@
         </div>
       </div>
     {/if}
-    {#if detail.warnings?.length}
+    {#if isTrustedSender(detail.from_addr)}
+      <div class="auth-bar ok">{@html icons.shieldCheck} <b>Marked safe</b>
+        <span class="auth-detail">You trust {detail.from_addr}</span>
+        <button class="trust" title="Remove the safe mark" onclick={() => untrustSender(detail.from_addr)}>Undo</button>
+      </div>
+    {:else if detail.warnings?.length}
       <div class="auth-bar bad">{@html icons.shieldAlert}
         <span>{detail.warnings.join(" · ")}</span>
+        <button class="trust" title="Trust this sender — show a green check, no more warnings" onclick={() => trustSender(detail.from_addr)}>{@html icons.done} Mark safe</button>
       </div>
     {/if}
     {#if detail.pgp?.type === "encrypted"}
@@ -362,7 +368,7 @@
     {/if}
     {#if detail.auth?.status === "fail"}
       <div class="auth-bar bad">{@html icons.shieldAlert} <b>Failed authentication — this message may be spoofed.</b> <span class="auth-detail">{detail.auth.detail}</span></div>
-    {:else if detail.auth?.status === "pass"}
+    {:else if detail.auth?.status === "pass" && !isTrustedSender(detail.from_addr)}
       <div class="auth-bar ok">{@html icons.shieldCheck} Sender authenticated <span class="auth-detail">{detail.auth.detail}</span></div>
     {/if}
     {#if app.selectedKind === "screener"}
@@ -420,9 +426,9 @@
             ••• {showQuoted ? "Hide earlier" : "Show earlier messages"}
           </button>
         {/if}
-        <button class="vtoggle" class:on={showOriginal} title="Show the email with its own original colors & CSS"
+        <button class="vtoggle" class:on={showOriginal} title="Toggle between the sender's original styling and your theme"
           onclick={() => (showOriginal = !showOriginal)}>
-          {@html icons.palette} {showOriginal ? "Original styling" : (adaptOn ? "Adapted to theme" : "Reading view")}
+          {@html icons.palette} {showOriginal ? "Original styling" : (emailMode === "original" ? "Original styling" : emailMode === "dark" ? "Dark" : "Adapted to theme")}
         </button>
       </div>
     {/if}
@@ -438,8 +444,25 @@
     {/if}
     <iframe title="message" bind:this={frame} onload={wireFrameLinks}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
+    {#if actionsBottom}{@render actionsBar()}{/if}
   {/if}
 </section>
+
+{#snippet actionsBar()}
+  <div class="actions" class:bottom={actionsBottom}>
+    {#each readerBtns as b}
+      <button class="btn {b.cls || ''}" onclick={b.run}>{@html b.icon} {b.label}</button>
+    {/each}
+    {#if aiOn}
+      <button class="btn ai" onclick={catchMeUp} disabled={summarizing} title="Summarize this thread with AI">
+        {@html icons.bolt} {summarizing ? "Summarizing…" : "Catch me up"}
+      </button>
+      <button class="btn ai" onclick={smartReply} disabled={drafting} title="Draft a reply with AI">
+        {@html icons.reply} {drafting ? "Drafting…" : "AI reply"}
+      </button>
+    {/if}
+  </div>
+{/snippet}
 
 <style>
   .reader { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
@@ -466,6 +489,10 @@
   .menu button { text-align: left; padding: 8px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
   .menu button:hover { background: var(--accent); color: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  /* Bottom mode: a sticky, right-aligned action bar pinned to the foot of the reader. */
+  .actions.bottom { margin-top: 0; position: sticky; bottom: 0; z-index: 5; justify-content: flex-end;
+    padding: 10px 18px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px);
+    border-top: 1px solid var(--border); }
   .btn.ai { color: var(--accent); }
   .ai-summary { margin: 0 22px 4px; padding: 12px 14px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: var(--radius); }
   .ai-head { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--accent); margin-bottom: 6px; }
@@ -484,6 +511,8 @@
   .auth-bar.bad { background: rgba(229,72,77,0.12); color: var(--danger); }
   .auth-bar.ok { background: rgba(46,160,67,0.10); color: var(--done); }
   .auth-bar .auth-detail { color: var(--muted); font-size: 12px; margin-left: auto; }
+  .auth-bar .trust { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; color: inherit; }
+  .auth-bar .trust:hover { background: var(--surface-2); }
   .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: rgba(91,141,239,0.1); border-bottom: 1px solid var(--border); font-size: 13px; }
   .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
   .screener-bar .no { color: var(--danger); font-weight: 600; }

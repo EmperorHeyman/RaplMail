@@ -2,7 +2,7 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
@@ -373,6 +373,7 @@
     <button onclick={() => ctxRun((m) => open(m, focusIndex))}>Open</button>
     <button onclick={() => ctxRun((m) => pinMessage(m))}>{@html icons.pin} {ctx.msg.pinned ? "Unpin" : "Pin to top"}</button>
     <button onclick={() => ctxRun((m) => toggleVip(m.from_addr))}>{@html icons.star} {isVip(ctx.msg.from_addr) ? "Remove VIP" : "Mark sender VIP"}</button>
+    <button onclick={() => ctxRun((m) => toggleTrusted(m.from_addr))}>{@html icons.shieldCheck} {isTrustedSender(ctx.msg.from_addr) ? "Unmark safe" : "Mark sender safe"}</button>
     <button onclick={() => ctxRun((m) => markDone(m, !m.is_done))}>{#if !ctx.msg.is_done}{@html icons.done} {/if}{ctx.msg.is_done ? "Mark not done" : "Mark done"}</button>
     <button onclick={() => ctxRun(toggleSeen)}>{ctx.msg.is_seen ? "Mark unread" : "Mark read"}</button>
     <button onclick={() => ctxRun(toggleFlag)}>{#if !ctx.msg.is_flagged}{@html icons.flag} {/if}{ctx.msg.is_flagged ? "Unflag" : "Flag"}</button>

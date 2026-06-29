@@ -1,5 +1,5 @@
 // Central reactive app state using Svelte 5 runes.
-import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain } from "./api.js";
+import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi } from "./api.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
 export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
@@ -75,7 +75,12 @@ const DEFAULT_SETTINGS = {
   carddavUrl: "",                // CardDAV collection URL (contacts)
   caldavUser: "",                // CalDAV/CardDAV username
   caldavPassword: "",            // CalDAV/CardDAV password
+  readerActionsPos: "top",       // Reply/Forward/Done bar: "top" | "bottom"
+  emailTheme: "",                // email body rendering: "" (auto) | "adaptive" | "dark" | "original"
+  trustedSenders: [],            // addresses the user marked OK (suppresses spoof warnings)
   icsFeeds: [],                  // subscribed iCal feeds: [{ url, color }] (read-only)
+  calendarReminders: [10],       // lead times (minutes) for event reminders; combinable
+  icsSyncMinutes: 30,            // auto-refresh subscribed calendars this often
   scheduleLaterHours: 3,         // "Later today" = now + this many hours
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
@@ -626,6 +631,77 @@ export function toggleVip(addrOrMsg) {
   const has = list.some((x) => (x || "").toLowerCase().trim() === a);
   saveSettings({ vipSenders: has ? list.filter((x) => (x || "").toLowerCase().trim() !== a) : [...list, a] });
   notify(has ? "Removed from VIP" : "Marked as VIP ⭐");
+}
+
+// Senders the user has marked trusted — suppresses the spoof/lookalike warning.
+export function isTrustedSender(addr) {
+  return (app.settings.trustedSenders || []).includes((addr || "").toLowerCase().trim());
+}
+export function trustSender(addr) {
+  const a = (addr || "").toLowerCase().trim();
+  if (!a || isTrustedSender(a)) return;
+  saveSettings({ trustedSenders: [...(app.settings.trustedSenders || []), a] });
+  notify("Marked safe — this sender now shows a green check ✓");
+}
+export function untrustSender(addr) {
+  const a = (addr || "").toLowerCase().trim();
+  if (!a) return;
+  saveSettings({ trustedSenders: (app.settings.trustedSenders || []).filter((x) => x !== a) });
+  notify("Removed “safe” mark");
+}
+export function toggleTrusted(addr) {
+  isTrustedSender(addr) ? untrustSender(addr) : trustSender(addr);
+}
+
+// --- calendar background services: reminders + auto-sync of subscriptions ---
+let _calEvents = [];
+const _firedReminders = new Set();
+let _calTimers = null;
+
+export async function syncCalendarFeeds() {
+  const s = app.settings;
+  const has = (s.icsFeeds?.length > 0) || !!s.caldavUrl || !!s.carddavUrl;
+  if (has) { try { await calendarApi.caldavSync(); } catch {} }
+}
+async function _loadUpcomingEvents() {
+  const start = new Date();
+  const end = new Date(start.getTime() + 9 * 86400000);  // next ~9 days
+  try { _calEvents = (await calendarApi.list(start.toISOString(), end.toISOString())) || []; } catch {}
+}
+function _remindLabel(min) {
+  if (min <= 0) return "now";
+  if (min < 60) return `in ${min} min`;
+  if (min < 1440) return `in ${Math.round(min / 60)} h`;
+  if (min < 10080) return `in ${Math.round(min / 1440)} day(s)`;
+  return `in ${Math.round(min / 10080)} week(s)`;
+}
+function _checkReminders() {
+  const offsets = app.settings.calendarReminders || [];
+  if (!offsets.length || inQuietHours()) return;
+  const now = Date.now();
+  for (const e of _calEvents) {
+    if (!e.start || e.cancelled) continue;
+    const t = new Date(e.start).getTime();
+    for (const min of offsets) {
+      const due = t - min * 60000;
+      const key = `${e.id}:${min}`;
+      // Fire once when we cross the lead time (60s check cadence → 90s window).
+      if (now >= due && now < due + 90000 && !_firedReminders.has(key)) {
+        _firedReminders.add(key);
+        sendNative(e.summary || "Event", `Starts ${_remindLabel(min)}${e.location ? " · " + e.location : ""}`);
+      }
+    }
+  }
+}
+export function startCalendarServices() {
+  if (_calTimers) return;
+  _loadUpcomingEvents();
+  const feedMs = Math.max(5, app.settings.icsSyncMinutes || 30) * 60000;
+  _calTimers = [
+    setInterval(_checkReminders, 60000),                                   // reminders: every minute
+    setInterval(_loadUpcomingEvents, 5 * 60000),                           // refresh window: every 5 min
+    setInterval(() => syncCalendarFeeds().then(_loadUpcomingEvents), feedMs), // auto-sync feeds
+  ];
 }
 
 export async function pinMessage(message, value) {

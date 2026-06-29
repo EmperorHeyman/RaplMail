@@ -53,6 +53,10 @@ class OutgoingMessage:
     inline_images: list[dict] = field(default_factory=list)
     # Regular attachments: {"filename", "content_type", "data": bytes}
     attachments: list[dict] = field(default_factory=list)
+    # iMIP: an iCalendar payload sent as a text/calendar part with this METHOD,
+    # so Gmail/Outlook show an interactive RSVP and add it to the calendar.
+    calendar_ics: str = ""
+    calendar_method: str = "REQUEST"
 
 
 class MailProvider(Protocol):

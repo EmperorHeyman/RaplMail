@@ -1,6 +1,12 @@
 <script>
   import { app, saveSettings, applyTheme, THEME_TOKENS, LIGHT_THEME, notify } from "../store.svelte.js";
 
+  // Effective email appearance mode (migrates the old two booleans).
+  const emailMode = $derived(
+    app.settings.emailTheme ||
+    (app.settings.alwaysOriginalHtml ? "original" : (app.settings.emailAdaptColors === false ? "original" : "adaptive"))
+  );
+
   const LABELS = {
     "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
     "--surface-3": "Surface 3", "--border": "Border", "--text": "Text",
@@ -118,22 +124,29 @@
       <input type="range" min="0" max="22" value={app.settings.radius} oninput={(e) => setRadius(e.currentTarget.value)} />
       <span class="val">{app.settings.radius}px</span>
     </label>
-    <label class="check">
-      <input type="checkbox" checked={app.settings.emailAdaptColors !== false}
-        onchange={(e) => saveSettings({ emailAdaptColors: e.currentTarget.checked })} />
-      <div>
-        <b>Adapt email colors to theme</b>
-        <span>In a dark theme, renders plain text emails on a dark pane with light text so they're easy on the eyes. Branded / custom-styled emails keep the sender's own design untouched. Turn off to always show emails on a white reading pane.</span>
+    <div class="field">
+      <b>Email appearance</b>
+      <span class="fhint">How email bodies are rendered in a dark theme.</span>
+      <div class="seg">
+        {#each [
+          { v: "dark", t: "Dark", d: "Force a dark background on every email — no white, ever." },
+          { v: "adaptive", t: "Adaptive", d: "Dark pane for plain mail; branded mail keeps its own design." },
+          { v: "original", t: "Original", d: "Show every email exactly as the sender designed it (white)." },
+        ] as o}
+          <button class="segbtn" class:on={emailMode === o.v} title={o.d}
+            onclick={() => saveSettings({ emailTheme: o.v })}>{o.t}</button>
+        {/each}
       </div>
-    </label>
-    <label class="check">
-      <input type="checkbox" checked={!!app.settings.alwaysOriginalHtml}
-        onchange={(e) => saveSettings({ alwaysOriginalHtml: e.currentTarget.checked })} />
-      <div>
-        <b>Always show original HTML</b>
-        <span>Render every email exactly as the sender designed it — no theme adaptation or injected CSS (same as the per-message "Original styling" toggle, applied to all mail).</span>
+      <span class="fhint">{emailMode === "dark" ? "Near-white backgrounds are recolored to your theme; saturated brand colors are kept." : emailMode === "adaptive" ? "Plain emails get a dark pane; designed emails are left untouched on white." : "No adaptation — emails render on a white reading pane as authored."}</span>
+    </div>
+    <div class="field">
+      <b>Reply / action buttons</b>
+      <span class="fhint">Where Reply · Forward · Done sit when reading a message.</span>
+      <div class="seg">
+        <button class="segbtn" class:on={(app.settings.readerActionsPos || "top") === "top"} onclick={() => saveSettings({ readerActionsPos: "top" })}>Top</button>
+        <button class="segbtn" class:on={app.settings.readerActionsPos === "bottom"} onclick={() => saveSettings({ readerActionsPos: "bottom" })}>Bottom-right</button>
       </div>
-    </label>
+    </div>
     <label class="check">
       <input type="checkbox" checked={app.settings.collapseQuotes !== false}
         onchange={(e) => saveSettings({ collapseQuotes: e.currentTarget.checked })} />
@@ -234,6 +247,13 @@
   .check input { margin-top: 3px; }
   .check div { display: flex; flex-direction: column; gap: 2px; }
   .check span { color: var(--muted); font-size: 12px; }
+  .field { display: flex; flex-direction: column; gap: 6px; padding: 14px 0 2px; }
+  .field > b { font-size: 13px; }
+  .fhint { color: var(--muted); font-size: 12px; }
+  .seg { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; width: fit-content; }
+  .segbtn { font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 999px; color: var(--muted); }
+  .segbtn:hover { color: var(--text); }
+  .segbtn.on { background: var(--accent); color: #fff; }
   .css { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
   .hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
   .docs { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }

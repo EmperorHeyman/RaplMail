@@ -48,16 +48,26 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
         root["References"] = " ".join(msg.references)
 
     text_body = msg.text or _html_to_text(msg.html)
+    cal = getattr(msg, "calendar_ics", "") or ""
 
-    if not msg.html and not msg.inline_images and not msg.attachments:
+    if not msg.html and not msg.inline_images and not msg.attachments and not cal:
         # Plain text only.
         root.set_content(text_body or "")
         return root
 
-    # alternative: text + html
+    # alternative: text + html (+ calendar)
     root.set_content(text_body or "")
     if msg.html:
         root.add_alternative(msg.html, subtype="html")
+    if cal:
+        # An iMIP text/calendar alternative with METHOD — Gmail/Outlook render an
+        # RSVP box and drop the event onto the recipient's calendar.
+        method = (getattr(msg, "calendar_method", "") or "REQUEST").upper()
+        root.add_alternative(cal, subtype="calendar", charset="utf-8")
+        cal_part = root.get_payload()[-1]
+        cal_part.set_param("method", method)
+        cal_part.set_param("component", "VEVENT")
+        del cal_part["Content-Disposition"]
         html_part = root.get_payload()[-1]
         # Attach inline images onto the html part so they live in a related group.
         for img in msg.inline_images:

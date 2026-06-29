@@ -127,8 +127,7 @@
 
 <aside class="sidebar" class:rail={collapsed}>
   <div class="brand">
-    <span class="mark">{@html icons.brand}</span>
-    {#if !collapsed}<span class="title">RaplMail</span>{/if}
+    {#if !collapsed}<span class="mark">{@html icons.brand}</span><span class="title">RaplMail</span>{/if}
     <button class="collapse" title={collapsed ? "Expand" : "Collapse sidebar"}
       onclick={() => saveSettings({ sidebarCollapsed: !collapsed })}>{collapsed ? "»" : "«"}</button>
   </div>

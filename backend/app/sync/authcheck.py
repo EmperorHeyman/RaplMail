@@ -44,9 +44,17 @@ def spoof_warnings(from_addr: str = "", from_name: str = "", html: str = "") -> 
         out.append(f"Sender domain “{from_dom}” uses non-standard characters — possible lookalike.")
 
     # 2) Display name claims a different domain/email than the actual address.
+    #    Skip false positives where the "domain" in the name is really just the
+    #    local part of the address — e.g. name "pet.regina" for pet.regina@seznam.cz
+    #    (a dotted handle that merely looks like a domain). Only flag when the name
+    #    cites a domain that is genuinely absent from the real address.
+    full_addr = (from_addr or "").lower()
     if from_name and from_dom:
         for m in _DOMAIN_IN_TEXT.finditer(from_name):
-            d = _reg_domain(m.group(1))
+            cand = m.group(1).lower()
+            if cand in full_addr:           # name echoes the real address — fine
+                continue
+            d = _reg_domain(cand)
             if "." in d and d != _reg_domain(from_dom):
                 out.append(f"Display name mentions “{d}” but the address is @{from_dom}.")
                 break

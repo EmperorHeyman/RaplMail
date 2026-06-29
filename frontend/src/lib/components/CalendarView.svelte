@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app } from "../store.svelte.js";
+  import { app, notify } from "../store.svelte.js";
   import { calendar } from "../api.js";
   import { icons } from "../icons.js";
 
@@ -40,6 +40,41 @@
     }
   }
   onMount(async () => { await load(); scan(); });
+
+  // --- new event (iMIP) ----------------------------------------------------
+  let creating = $state(false);
+  let saving = $state(false);
+  let form = $state(null);
+  const pad = (n) => String(n).padStart(2, "0");
+  function newEvent() {
+    const d = selected || new Date();
+    const h = Math.min(23, new Date().getHours() + 1);
+    form = {
+      summary: "", date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      start: `${pad(h)}:00`, end: `${pad(Math.min(23, h + 1))}:00`,
+      all_day: false, location: "", description: "",
+      account_id: app.accounts[0]?.id ?? null,
+    };
+    creating = true;
+  }
+  async function saveEvent() {
+    if (!form?.summary.trim() || !form.account_id) { notify("Add a title and pick an account", "error"); return; }
+    saving = true;
+    try {
+      const startIso = form.all_day ? `${form.date}T00:00:00` : `${form.date}T${form.start}:00`;
+      const endIso = form.all_day ? `${form.date}T00:00:00` : `${form.date}T${form.end}:00`;
+      const r = await calendar.create({
+        account_id: form.account_id, summary: form.summary.trim(),
+        start: new Date(startIso).toISOString(),
+        end: new Date(endIso).toISOString(),
+        all_day: form.all_day, location: form.location.trim(), description: form.description.trim(),
+      });
+      notify(r.sent ? "Event created — added to your calendar (accept the invite in your inbox)" : "Saved locally — invite email couldn't be sent");
+      creating = false;
+      await load();
+    } catch (e) { notify(e.message || "Couldn't create event", "error"); }
+    finally { saving = false; }
+  }
 
   function prev() { cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1); load(); }
   function next() { cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1); load(); }
@@ -93,10 +128,43 @@
       <button class="btn ghost" onclick={next} title="Next month">›</button>
       <h2>{MONTHS[cursor.getMonth()]} {cursor.getFullYear()}</h2>
     </div>
-    <button class="btn" onclick={scan} disabled={scanning} title="Pull mail invites and refresh calendar subscriptions">
-      {@html icons.sync} {scanning ? "Syncing…" : "Sync"}
-    </button>
+    <div class="hbtns">
+      <button class="btn primary" onclick={newEvent} title="Create an event (added to your Google/Outlook calendar)">＋ New event</button>
+      <button class="btn" onclick={scan} disabled={scanning} title="Pull mail invites and refresh calendar subscriptions">
+        {@html icons.sync} {scanning ? "Syncing…" : "Sync"}
+      </button>
+    </div>
   </header>
+
+  {#if creating && form}
+    <div class="modal-bg" onclick={() => (creating = false)}>
+      <div class="modal" onclick={(e) => e.stopPropagation()}>
+        <h3>New event</h3>
+        <label class="fr"><span>Title</span><input bind:value={form.summary} placeholder="Dentist" /></label>
+        <label class="fr"><span>Date</span><input type="date" bind:value={form.date} /></label>
+        {#if !form.all_day}
+          <div class="fr"><span>Time</span>
+            <div class="times"><input type="time" bind:value={form.start} /> – <input type="time" bind:value={form.end} /></div>
+          </div>
+        {/if}
+        <label class="fr"><span>All day</span><input type="checkbox" bind:checked={form.all_day} /></label>
+        <label class="fr"><span>Location</span><input bind:value={form.location} placeholder="optional" /></label>
+        <label class="fr"><span>Notes</span><textarea rows="2" bind:value={form.description} placeholder="optional"></textarea></label>
+        {#if app.accounts.length > 1}
+          <label class="fr"><span>Calendar</span>
+            <select bind:value={form.account_id}>
+              {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
+            </select>
+          </label>
+        {/if}
+        <p class="modal-hint">Sends an invite to your own inbox; your provider (Gmail/Outlook) adds it to the calendar — just click <b>Yes</b> in the email.</p>
+        <div class="modal-btns">
+          <button class="btn ghost" onclick={() => (creating = false)}>Cancel</button>
+          <button class="btn primary" onclick={saveEvent} disabled={saving}>{saving ? "Creating…" : "Create event"}</button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
   <div class="body">
     <div class="grid">
@@ -150,6 +218,16 @@
 
 <style>
   .cal { display: flex; flex-direction: column; min-width: 0; height: 100%; background: var(--bg); }
+  .hbtns { display: flex; gap: 8px; }
+  .modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: grid; place-items: center; }
+  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 22px; width: 420px; max-width: 92vw; box-shadow: var(--shadow); }
+  .modal h3 { margin: 0 0 14px; }
+  .modal .fr { display: flex; align-items: center; gap: 10px; margin: 9px 0; }
+  .modal .fr > span { width: 78px; flex: none; color: var(--muted); font-size: 13px; }
+  .modal .fr input[type=text], .modal .fr input:not([type]), .modal .fr input[type=date], .modal .fr input[type=time], .modal .fr select, .modal .fr textarea { flex: 1; }
+  .modal .times { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .modal-hint { color: var(--muted); font-size: 12px; line-height: 1.5; margin: 12px 0 6px; }
+  .modal-btns { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
   header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--border); }
   .nav { display: flex; align-items: center; gap: 8px; }
   .nav h2 { margin: 0 0 0 8px; font-size: 18px; }

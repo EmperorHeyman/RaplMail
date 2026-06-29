@@ -7,9 +7,10 @@ messages and parses their .ics). This is an email-derived calendar — no CalDAV
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import uuid
+from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -241,6 +242,97 @@ async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
     except Exception as exc:
         res.error = str(exc)
     return res
+
+
+def _ics_escape(s: str) -> str:
+    return (s or "").replace("\\", "\\\\").replace("\n", "\\n").replace(",", "\\,").replace(";", "\\;")
+
+
+def _ics_dt(dt: datetime, all_day: bool) -> str:
+    if all_day:
+        return dt.strftime("%Y%m%d")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _build_event_ics(uid, summary, start, end, all_day, location, description,
+                     organizer, attendee, method="REQUEST") -> str:
+    """A minimal iMIP VEVENT. With METHOD:REQUEST + an ATTENDEE, Gmail/Outlook add
+    it to the calendar and show an RSVP box — no API needed (RFC 6047)."""
+    end = end or (start + (timedelta(days=1) if all_day else timedelta(hours=1)))
+    now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstart = f"DTSTART;VALUE=DATE:{_ics_dt(start, True)}" if all_day else f"DTSTART:{_ics_dt(start, False)}"
+    dtend = f"DTEND;VALUE=DATE:{_ics_dt(end, True)}" if all_day else f"DTEND:{_ics_dt(end, False)}"
+    lines = [
+        "BEGIN:VCALENDAR", "PRODID:-//RaplMail//Calendar//EN", "VERSION:2.0",
+        f"METHOD:{method}", "CALSCALE:GREGORIAN", "BEGIN:VEVENT",
+        f"UID:{uid}", f"DTSTAMP:{now}", dtstart, dtend,
+        f"SUMMARY:{_ics_escape(summary)}",
+    ]
+    if location:
+        lines.append(f"LOCATION:{_ics_escape(location)}")
+    if description:
+        lines.append(f"DESCRIPTION:{_ics_escape(description)}")
+    lines += [
+        f"ORGANIZER:mailto:{organizer}",
+        f"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{attendee}",
+        "SEQUENCE:0", "STATUS:CONFIRMED", "TRANSP:OPAQUE", "END:VEVENT", "END:VCALENDAR",
+    ]
+    return "\r\n".join(lines) + "\r\n"
+
+
+class CreateEventIn(BaseModel):
+    account_id: int
+    summary: str
+    start: datetime
+    end: datetime | None = None
+    all_day: bool = False
+    location: str = ""
+    description: str = ""
+
+
+@router.post("/create")
+async def create_event(body: CreateEventIn, request: Request,
+                       session: Session = Depends(get_session)) -> dict:
+    """Create an event and push it to the user's Google/Outlook calendar via iMIP:
+    we email an .ics (METHOD:REQUEST) to their own address; their provider parses
+    it and adds the event. Also stored locally so it shows in RaplMail at once."""
+    acct = session.get(Account, body.account_id)
+    if acct is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    uid = f"raplmail-{uuid.uuid4().hex}@raplmail"
+    ics = _build_event_ics(uid, body.summary, body.start, body.end, body.all_day,
+                           body.location, body.description, acct.email, acct.email)
+    # Store locally first so it appears immediately even if SMTP is slow/offline.
+    upsert_events(session, acct.id, None, [{
+        "uid": uid, "summary": body.summary, "location": body.location,
+        "description": body.description, "start": body.start, "end": body.end,
+        "all_day": body.all_day, "status_raw": "CONFIRMED",
+    }])
+    row = session.exec(select(CalendarEvent).where(
+        CalendarEvent.account_id == acct.id, CalendarEvent.uid == uid)).first()
+    if row:
+        row.source = "local"
+        row.status = "accepted"
+    session.commit()
+
+    from html import escape as _esc
+    payload = {
+        "account_id": body.account_id, "from_addr": acct.email, "to": [acct.email],
+        "subject": f"Invitation: {body.summary}",
+        "html": f"<p>RaplMail event: <b>{_esc(body.summary)}</b></p>",
+        "calendar_ics": ics, "calendar_method": "REQUEST",
+    }
+    sent = False
+    try:
+        from app.api.compose import _deliver_blocking
+        await run_in_threadpool(_deliver_blocking, payload)
+        sent = True
+    except Exception:
+        # The local copy is already saved; the invite email just didn't go out.
+        pass
+    return {"uid": uid, "sent": sent}
 
 
 @router.post("/{event_id}/rsvp", response_model=EventOut)

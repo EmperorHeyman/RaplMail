@@ -38,6 +38,11 @@ class HeaderInfo:
     snippet: str = ""
 
 
+# Custom IMAP keyword used to mirror the local "done" state to the server, so
+# marking a message done on one device hides it on every device.
+DONE_KEYWORD = "RaplMailDone"
+
+
 @dataclass
 class OutgoingMessage:
     from_addr: str

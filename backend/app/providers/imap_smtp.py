@@ -159,6 +159,19 @@ class ImapSmtpProvider:
             ))
         return out
 
+    def fetch_flags(self, folder_path: str, uids: list[int]) -> dict[int, list[str]]:
+        """Just the FLAGS for known UIDs — used to resync read/done state that
+        changed on another device, without re-downloading whole messages."""
+        if not uids:
+            return {}
+        client = self._imap()
+        client.select_folder(folder_path, readonly=True)
+        data = client.fetch(uids, ["FLAGS"])
+        out: dict[int, list[str]] = {}
+        for uid, info in data.items():
+            out[uid] = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
+        return out
+
     def fetch_raw(self, folder_path: str, uid: int) -> bytes:
         client = self._imap()
         client.select_folder(folder_path, readonly=True)

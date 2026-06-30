@@ -53,6 +53,26 @@ class ProviderPool:
                     e.provider = None
             raise last_exc  # type: ignore[misc]
 
+    def set_keyword(self, account: Account, folder_path: str, uid: int, keyword: str, on: bool) -> None:
+        """Add/remove a custom IMAP keyword on a message (used to mirror the local
+        'done' state to the server so it syncs across devices)."""
+        from app.sync.engine import build_provider
+
+        e = self._entry(account.id)
+        with e.lock:
+            for _ in range(2):
+                if e.provider is None:
+                    e.provider = build_provider(account)
+                try:
+                    e.provider.set_flags(folder_path, uid, [keyword.encode("ascii")], add=on)
+                    return
+                except Exception:
+                    try:
+                        e.provider.close()
+                    except Exception:
+                        pass
+                    e.provider = None
+
     def keepalive(self) -> None:
         """NOOP each open connection so the server doesn't drop it (keeps opens fast)."""
         for e in list(self._entries.values()):

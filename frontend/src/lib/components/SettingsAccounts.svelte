@@ -54,6 +54,15 @@
     } catch (e) { error = e.message; } finally { busy = false; }
   }
 
+  // Override a wrong auto-detect (e.g. an M365 tenant that looks like plain IMAP).
+  function forceProvider(p) {
+    usePassword = false; msFlow = null; error = "";
+    if (p === "m365") disc = { ...disc, provider: "m365", auth: "oauth", source: "manual choice", note: "" };
+    else if (p === "gmail") disc = { ...disc, provider: "gmail", auth: "oauth", source: "manual choice", note: "" };
+    else disc = { ...disc, provider: "imap", auth: "password", source: "manual choice",
+                  imap_host: disc.imap_host || "", smtp_host: disc.smtp_host || "" };
+  }
+
   // OAuth providers — the sign-in itself is the connection test.
   async function connectGoogle() {
     busy = true; error = "";
@@ -216,6 +225,12 @@
           </div>
           <button class="link" onclick={reset}>← change</button>
         </div>
+        <div class="force">
+          <span>Wrong? Connect as:</span>
+          {#each [["m365","Microsoft 365"],["gmail","Google"],["imap","IMAP / SMTP"]] as [p, lbl]}
+            <button class="fbtn" class:on={disc.provider === p} onclick={() => forceProvider(p)}>{lbl}</button>
+          {/each}
+        </div>
         {#if disc.note}<p class="note">{disc.note}</p>{/if}
 
         {#if disc.auth === "oauth" && !usePassword}
@@ -313,6 +328,10 @@
   .prov { margin-left: 8px; font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-3); color: var(--accent); }
   .src { margin-left: 8px; font-size: 11px; color: var(--faint); }
   .note { color: var(--muted); font-size: 13px; margin: 4px 0 14px; }
+  .force { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
+  .fbtn { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
+  .fbtn:hover { color: var(--text); border-color: var(--accent); }
+  .fbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
   .fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
   .adv-toggle { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }

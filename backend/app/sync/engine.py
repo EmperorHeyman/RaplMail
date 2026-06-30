@@ -20,6 +20,7 @@ from sqlmodel import Session, select
 
 from app.core.db import get_engine, index_message_fts
 from app.core.security import get_secret_store
+from app.providers.base import DONE_KEYWORD as _DONE_KW
 from app.core.ws import WebSocketHub
 from app.models import (
     Account, Folder, FolderRole, Message, MessageState, Provider, Rule, RuleAction,
@@ -394,7 +395,47 @@ class SyncManager:
                     "subject": msg.subject or "(no subject)",
                     "date": (msg.date.isoformat() if getattr(msg, "date", None) else ""),
                 })
+        self._resync_flags(session, account, folder, provider)
         return new_count
+
+    # How many recent messages per folder to re-check FLAGS on each sync, so
+    # read/done state changed on another device propagates here too.
+    FLAG_RESYNC_WINDOW = 400
+
+    def _resync_flags(self, session: Session, account: Account, folder: Folder, provider) -> None:
+        """Pull FLAGS for recent existing messages and reconcile seen/done state
+        that may have changed on another device (e.g. the RaplMailDone keyword)."""
+        rows = session.exec(
+            select(Message).where(Message.folder_id == folder.id)
+            .order_by(Message.uid.desc()).limit(self.FLAG_RESYNC_WINDOW)
+        ).all()
+        if not rows:
+            return
+        try:
+            flagmap = provider.fetch_flags(folder.path, [r.uid for r in rows if r.uid])
+        except Exception:
+            return
+        for m in rows:
+            flags = flagmap.get(m.uid)
+            if flags is None:
+                continue
+            server_done = _DONE_KW in flags
+            if server_done != m.is_done:
+                m.is_done = server_done
+                self._set_state_done(session, account, m, server_done)
+                session.add(m)
+
+    def _set_state_done(self, session: Session, account: Account, msg: Message, done: bool) -> None:
+        if not msg.message_id:
+            return
+        state = session.exec(
+            select(MessageState).where(MessageState.account_id == account.id,
+                                       MessageState.message_id == msg.message_id)
+        ).first()
+        if state is None:
+            state = MessageState(account_id=account.id, message_id=msg.message_id)
+            session.add(state)
+        state.is_done = done
 
     def _upsert_message(self, session: Session, account: Account, folder: Folder,
                         h: HeaderInfo, overrides: dict[str, str] | None = None) -> Message | None:
@@ -418,6 +459,7 @@ class SyncManager:
             thread_id=thread_key(account.id, subject, h.uid),
             is_seen="\\Seen" in h.flags, is_flagged="\\Flagged" in h.flags,
             is_answered="\\Answered" in h.flags, has_attachments=h.has_attachments,
+            is_done=_DONE_KW in h.flags,   # cross-device "done" mirrored as an IMAP keyword
             size=h.size,
             category=category,
         )
@@ -430,15 +472,22 @@ class SyncManager:
     def _restore_state(self, session: Session, account: Account, msg: Message) -> None:
         if not msg.message_id:
             return
+        # The server keyword (set on _to_message) is authoritative for done across
+        # devices; fold it together with any local state.
+        server_done = bool(msg.is_done)
         state = session.exec(
             select(MessageState).where(MessageState.account_id == account.id,
                                        MessageState.message_id == msg.message_id)
         ).first()
         if state:
-            msg.is_done = state.is_done
+            msg.is_done = server_done or state.is_done
             msg.snooze_until = state.snooze_until
             msg.snooze_presence = getattr(state, "snooze_presence", False)
             msg.pinned = getattr(state, "is_pinned", False)
+            if server_done and not state.is_done:
+                state.is_done = True   # cache another device's "done" locally
+        elif server_done:
+            self._mark_state_done(session, account, msg)
 
     def _mark_state_done(self, session: Session, account: Account, msg: Message) -> None:
         if not msg.message_id:

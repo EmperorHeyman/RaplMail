@@ -774,6 +774,44 @@ class BoolValue(BaseModel):
     value: bool
 
 
+_bg_tasks: set = set()
+
+
+def _push_done_keyword(account: Account, folder_path: str, uid: int, done: bool) -> None:
+    """Mirror the local 'done' to the server as a custom IMAP keyword (best-effort)
+    so it syncs to other devices. Failures are swallowed — local state still holds."""
+    from app.providers.base import DONE_KEYWORD
+    from app.providers.pool import pool
+    try:
+        pool.set_keyword(account, folder_path, uid, DONE_KEYWORD, done)
+    except Exception:
+        pass
+
+
+def _push_done_keywords_bulk(targets: list[tuple], done: bool) -> None:
+    """Mirror many 'done' toggles to their servers (grouped by account+folder)."""
+    from collections import defaultdict
+
+    from app.core.db import get_engine
+    from app.providers.base import DONE_KEYWORD
+    from app.providers.pool import pool
+
+    by_folder: dict = defaultdict(list)
+    for acct_id, folder_id, uid in targets:
+        by_folder[(acct_id, folder_id)].append(uid)
+    with Session(get_engine()) as s:
+        for (acct_id, folder_id), uids in by_folder.items():
+            account = s.get(Account, acct_id)
+            folder = s.get(Folder, folder_id)
+            if not account or not folder:
+                continue
+            for uid in uids:
+                try:
+                    pool.set_keyword(account, folder.path, uid, DONE_KEYWORD, done)
+                except Exception:
+                    continue
+
+
 def _persist_state(session: Session, msg: Message, *, done: bool | None = None) -> None:
     if not msg.message_id:
         return
@@ -789,16 +827,22 @@ def _persist_state(session: Session, msg: Message, *, done: bool | None = None) 
 
 
 @router.post("/{message_id}/done", response_model=MessageOut)
-def set_done(message_id: int, body: BoolValue, session: Session = Depends(get_session)) -> MessageOut:
-    """The hero action: mark a message done so it leaves the inbox view."""
+async def set_done(message_id: int, body: BoolValue, session: Session = Depends(get_session)) -> MessageOut:
+    """The hero action: mark a message done so it leaves the inbox view. Also
+    mirrored to the server as an IMAP keyword so 'done' syncs across devices."""
     msg = session.get(Message, message_id)
     if msg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     msg.is_done = body.value
     _persist_state(session, msg, done=body.value)
+    account = session.get(Account, msg.account_id)
+    folder = session.get(Folder, msg.folder_id)
+    uid = msg.uid
     session.add(msg)
     session.commit()
     session.refresh(msg)
+    if account and folder and uid:
+        await run_in_threadpool(_push_done_keyword, account, folder.path, uid, body.value)
     return _to_out(msg)
 
 
@@ -899,7 +943,16 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
             elif a == "unflag": m.is_flagged = False
             elif a == "snooze": m.snooze_until = until; _persist_snooze(session, m, until)
             session.add(m)
+        # Collect (account, folder, uid) for done/undone to mirror as IMAP keywords.
+        done_targets = None
+        if a in ("done", "undone"):
+            done_targets = [(m.account_id, m.folder_id, m.uid) for m in msgs if m.uid and m.message_id]
         session.commit()
+        if done_targets:
+            import asyncio
+            task = asyncio.create_task(run_in_threadpool(_push_done_keywords_bulk, done_targets, a == "done"))
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
         return {"updated": len(msgs)}
 
     if a in ("archive", "delete"):

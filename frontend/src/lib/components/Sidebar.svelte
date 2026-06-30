@@ -1,8 +1,15 @@
 <script>
   import { flip } from "svelte/animate";
-  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue } from "../store.svelte.js";
-  import { accounts as accountsApi, folders as foldersApi } from "../api.js";
+  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent } from "../store.svelte.js";
+  import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
+
+  // Failed/queued action details (so you can see *what* failed and why).
+  let queueOpen = $state(false);
+  let queueList = $state([]);
+  async function loadQueue() { try { queueList = await messagesApi.queueItems(); } catch {} }
+  async function toggleQueue() { queueOpen = !queueOpen; if (queueOpen) await loadQueue(); }
+  async function discardItem(id) { try { await messagesApi.queueDiscard(id); await loadQueue(); } catch {} }
 
   const ROLE_ORDER = { inbox: 0, drafts: 1, sent: 2, archive: 3, junk: 4, trash: 5, other: 6 };
   const CORE = new Set(["inbox", "sent"]);
@@ -42,6 +49,7 @@
       items.push({ id: "unified", icon: icons.unified, label: "All Inboxes", active: app.selectedKind === "unified" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedInbox(); } });
     if (s.screener)
       items.push({ id: "screener", icon: icons.screener, label: "Screener", active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
+    items.push({ id: "allsent", icon: icons.sent, label: "All Sent", active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } });
     items.push({ id: "snoozed", icon: icons.snooze, label: "Snoozed", active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } });
     items.push({ id: "calendar", icon: icons.calendar, label: "Calendar", active: app.view === "calendar", run: () => { app.view = "calendar"; } });
     items.push({ id: "scheduled", icon: icons.clock, label: "Scheduled", active: app.view === "scheduled", run: () => { app.view = "scheduled"; } });
@@ -151,7 +159,27 @@
   {#if (app.queuePending > 0 || app.queueFailed > 0) && !collapsed}
     <div class="queue">
       {#if app.queuePending > 0}<span><span class="spin">⏳</span> {app.queuePending} action{app.queuePending === 1 ? "" : "s"} syncing…</span>{/if}
-      {#if app.queueFailed > 0}<span class="failed">⚠ {app.queueFailed} failed <button onclick={retryQueue}>Retry</button></span>{/if}
+      {#if app.queueFailed > 0}
+        <span class="failed">⚠ {app.queueFailed} failed
+          <button onclick={toggleQueue}>{queueOpen ? "Hide" : "Details"}</button>
+          <button onclick={retryQueue}>Retry</button>
+        </span>
+      {/if}
+      {#if queueOpen}
+        <div class="qitems">
+          {#each queueList as q (q.id)}
+            <div class="qitem">
+              <div class="qsum">{q.summary}</div>
+              {#if q.last_error}<div class="qerr">{q.last_error}</div>{/if}
+              <div class="qmeta">
+                <span>{q.status}{q.attempts ? ` · ${q.attempts} tries` : ""}</span>
+                <button onclick={() => discardItem(q.id)}>Discard</button>
+              </div>
+            </div>
+          {/each}
+          {#if queueList.length === 0}<div class="qitem muted">Nothing queued.</div>{/if}
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -283,6 +311,13 @@
   .ws-switch button.active { background: var(--accent); color: #fff; }
   .syncing { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent); padding: 2px 6px; }
   .queue { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); padding: 2px 6px; }
+  .qitems { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; max-height: 220px; overflow-y: auto; }
+  .qitem { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 7px 9px; }
+  .qitem.muted { color: var(--muted); }
+  .qsum { font-size: 11px; color: var(--text); font-weight: 600; word-break: break-word; }
+  .qerr { font-size: 10px; color: var(--danger); margin-top: 3px; word-break: break-word; line-height: 1.4; }
+  .qmeta { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 10px; color: var(--faint); }
+  .qmeta button { color: var(--accent); font-weight: 600; }
   .queue .failed { color: var(--warning); }
   .queue .failed button { color: var(--accent); font-weight: 600; margin-left: 4px; }
   .spin { display: inline-block; animation: spin 1s linear infinite; }

@@ -299,6 +299,43 @@ def queue_retry(session: Session = Depends(get_session)) -> dict:
     return {"retrying": n}
 
 
+class QueueItem(BaseModel):
+    id: int
+    kind: str
+    status: str
+    attempts: int
+    last_error: str
+    summary: str
+
+
+@router.get("/queue/items", response_model=list[QueueItem])
+def queue_items(session: Session = Depends(get_session)) -> list[QueueItem]:
+    """The actual queued/failed actions, with their error and a human summary —
+    so the UI can show *what* failed and *why* (e.g. a send that SMTP rejected)."""
+    out: list[QueueItem] = []
+    for a in session.exec(select(ActionQueue).order_by(ActionQueue.created_at.desc())):
+        p = a.payload or {}
+        if a.kind == "send":
+            to = ", ".join(p.get("to", []) or [])
+            summary = f"Send “{p.get('subject') or '(no subject)'}” → {to or '?'}"
+        elif a.kind in ("archive", "delete"):
+            summary = f"{a.kind.title()} {len(p.get('ids', []) or [])} message(s)"
+        else:
+            summary = a.kind
+        out.append(QueueItem(id=a.id, kind=a.kind, status=a.status, attempts=a.attempts,
+                             last_error=a.last_error or "", summary=summary))
+    return out
+
+
+@router.delete("/queue/{item_id}")
+def queue_discard(item_id: int, session: Session = Depends(get_session)) -> dict:
+    a = session.get(ActionQueue, item_id)
+    if a:
+        session.delete(a)
+        session.commit()
+    return {"discarded": bool(a)}
+
+
 @router.get("/category-counts")
 def category_counts(role: FolderRole | None = None, folder_id: int | None = None,
                     session: Session = Depends(get_session)) -> dict[str, int]:

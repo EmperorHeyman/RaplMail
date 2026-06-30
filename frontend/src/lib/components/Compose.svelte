@@ -267,6 +267,7 @@
   function send() {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (c.subject.trim() === "" && !confirm("Send this message without a subject?")) return;
     if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Send anyway?")) return;
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", in_reply_to: c.in_reply_to, account_id: accountId, attachments };
     clearDraft();
@@ -276,6 +277,7 @@
   async function sendLater(iso, label) {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (c.subject.trim() === "" && !confirm("Schedule this message without a subject?")) return;
     if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Schedule anyway?")) return;
     laterMenu = false;
     try {
@@ -333,10 +335,13 @@
   }
 
   function onEditorKey(e) {
-    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); send(); return; }
     if (e.key === "Tab" || e.key === " ") {
       if (tryExpand()) e.preventDefault();
     }
+  }
+  // Ctrl/Cmd+Enter sends from anywhere in the compose window (To, Subject, body…).
+  function onComposeKey(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); send(); }
   }
   function onDrop(e) {
     e.preventDefault();
@@ -403,7 +408,7 @@
   ];
 </script>
 
-<div class="panel" class:standalone style={dockStyle} bind:this={panelEl}>
+<div class="panel" class:standalone style={dockStyle} bind:this={panelEl} onkeydown={onComposeKey}>
   <header onpointerdown={onHeaderDown}>
     <span>New message</span>
     <div class="hbtns" onpointerdown={(e) => e.stopPropagation()}>

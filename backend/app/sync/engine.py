@@ -203,10 +203,9 @@ class SyncManager:
 
     async def _loop(self) -> None:
         while not self._stopping.is_set():
-            try:
-                await self.sync_all()
-            except Exception:
-                log.exception("sync_all failed")
+            # Outgoing first: flush queued sends/moves BEFORE the (potentially slow)
+            # mailbox sync, so a send that fell back to the queue goes out promptly
+            # instead of waiting behind a full sync.
             try:
                 await self._process_scheduled()
             except Exception:
@@ -215,6 +214,10 @@ class SyncManager:
                 await self._process_action_queue()
             except Exception:
                 log.exception("action queue processing failed")
+            try:
+                await self.sync_all()
+            except Exception:
+                log.exception("sync_all failed")
             try:
                 from app.providers.pool import pool
                 await asyncio.get_running_loop().run_in_executor(self._executor, pool.keepalive)

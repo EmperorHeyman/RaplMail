@@ -199,8 +199,10 @@ export function applyTheme() {
 
 async function doSend(payload) {
   try {
-    await compose.send(payload);
-    notify("Sent ✓");
+    const r = await compose.send(payload);
+    if (r && r.queued) notify("Couldn't reach the server — queued, will retry. See Settings/sidebar for details.", "error");
+    else notify("Sent ✓");
+    refreshQueue();
   } catch (e) {
     notify("Send failed: " + e.message, "error");
   }
@@ -410,6 +412,17 @@ export function selectUnifiedInbox() {
   app.selectedFolderId = null;
   app.selectedAccountId = null;
   app.selectedFolderRole = "inbox";
+  app.selectedMessageId = null;
+  app.search = "";
+  app.category = null;
+  refreshMessages();
+}
+
+export function selectUnifiedSent() {
+  app.selectedKind = "sent";
+  app.selectedFolderId = null;
+  app.selectedAccountId = null;
+  app.selectedFolderRole = "sent";
   app.selectedMessageId = null;
   app.search = "";
   app.category = null;
@@ -794,6 +807,8 @@ export async function refreshMessages({ background = false } = {}) {
     } else if (app.selectedKind === "unified") {
       params = { role: "inbox", include_done: app.showDone };
       if (app.settings.screener) params.screener = "exclude";  // hide first-time senders
+    } else if (app.selectedKind === "sent") {
+      params = { role: "sent", include_done: true };
     } else {
       params = { folder_id: app.selectedFolderId ?? undefined, include_done: app.showDone };
       if (app.settings.screener && app.selectedFolderRole === "inbox") params.screener = "exclude";

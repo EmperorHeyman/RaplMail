@@ -238,6 +238,8 @@ export const messages = {
   setSenderCategory: (email, category) => api.post("/messages/sender-category", { email, category }),
   queueStatus: () => api.get("/messages/queue"),
   queueRetry: () => api.post("/messages/queue/retry"),
+  queueItems: () => api.get("/messages/queue/items"),
+  queueDiscard: (id) => api.del(`/messages/queue/${id}`),
 };
 
 export const rules = {

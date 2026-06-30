@@ -217,10 +217,13 @@ class ImapSmtpProvider:
         raw = mime.as_bytes()
         recipients = [*message.to, *message.cc, *message.bcc]
         context = ssl.create_default_context()
+        # A 30s timeout so a stalled SMTP server fails fast with a clear error
+        # instead of hanging the send (which previously looked like "stuck for
+        # minutes" before the queue retried it).
         if self._smtp_port == 465:
-            server = smtplib.SMTP_SSL(self._smtp_host, self._smtp_port, context=context)
+            server = smtplib.SMTP_SSL(self._smtp_host, self._smtp_port, context=context, timeout=30)
         else:
-            server = smtplib.SMTP(self._smtp_host, self._smtp_port)
+            server = smtplib.SMTP(self._smtp_host, self._smtp_port, timeout=30)
             server.ehlo()
             server.starttls(context=context)
             server.ehlo()

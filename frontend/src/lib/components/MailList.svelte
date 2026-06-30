@@ -336,6 +336,7 @@
     app.search ? `Search: "${app.search}"` :
     app.selectedKind === "smart" ? "Smart Inbox" :
     app.selectedKind === "unified" ? "All Inboxes" :
+    app.selectedKind === "sent" ? "All Sent" :
     app.selectedKind === "snoozed" ? "Snoozed" :
     app.selectedKind === "screener" ? "Screener" :
     app.selectedKind === "papertrail" ? "Paper Trail" :

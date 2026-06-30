@@ -31,6 +31,12 @@ MS_SMTP_HOST = "smtp.office365.com"
 
 # --- Gmail -------------------------------------------------------------------
 GOOGLE_SCOPES = ["https://mail.google.com/"]
+# Calendar write access (create/update/delete events) + email claim for display.
+GCAL_SCOPES = [
+    "https://www.googleapis.com/auth/calendar.events",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
 GMAIL_IMAP_HOST = "imap.gmail.com"
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -111,7 +117,7 @@ def ms_access_token(cache_blob: str) -> tuple[str, str]:
 # ----------------------------------------------------------------------------
 # Google (installed-app / loopback OAuth)
 # ----------------------------------------------------------------------------
-def google_run_installed_flow() -> tuple[str, dict]:
+def google_run_installed_flow(scopes: list[str] | None = None) -> tuple[str, dict]:
     """Open a browser, run the loopback OAuth flow, return (email, token bundle).
 
     Blocks until the user authorizes. Call from a worker thread.
@@ -130,7 +136,7 @@ def google_run_installed_flow() -> tuple[str, dict]:
             "redirect_uris": ["http://localhost"],
         }
     }
-    flow = InstalledAppFlow.from_client_config(client_config, scopes=GOOGLE_SCOPES)
+    flow = InstalledAppFlow.from_client_config(client_config, scopes=scopes or GOOGLE_SCOPES)
     creds = flow.run_local_server(port=0, prompt="consent")
     bundle = {
         "refresh_token": creds.refresh_token,

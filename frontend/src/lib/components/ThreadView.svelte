@@ -40,7 +40,17 @@
   function reply() {
     const last = list[list.length - 1];
     if (!last) return;
-    openCompose({ to: last.from_addr, subject: subject.startsWith("Re:") ? subject : `Re: ${subject}`, account_id: last.account_id });
+    const re = /^re:/i.test(subject) ? subject : `Re: ${subject}`;
+    // Quote the latest message so the reply carries thread context (and thread
+    // correctly at the recipient via in_reply_to). Body is preloaded on open.
+    const body = bodies[last.id];
+    const orig = body ? (body.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(body.text || "")}</pre>`)
+                      : `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(last.snippet || "")}</pre>`;
+    const who = last.from_name ? `${last.from_name} <${last.from_addr || ""}>` : (last.from_addr || "");
+    const quote = `<br><br><div style="color:#888">On ${escapeHtml(fmt(last.date))}, ${escapeHtml(who)} wrote:</div>` +
+      `<blockquote style="margin:0 0 0 8px;padding-left:10px;border-left:2px solid #888;color:#888">${orig}</blockquote>`;
+    openCompose({ to: last.from_addr, subject: re, in_reply_to: last.message_id || "",
+                  account_id: last.account_id, html: quote });
   }
   async function doneAll() {
     const ids = list.map((m) => m.id);

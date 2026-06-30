@@ -13,6 +13,7 @@
   import SettingsAliases from "./SettingsAliases.svelte";
   import SettingsPgp from "./SettingsPgp.svelte";
   import SettingsCalendar from "./SettingsCalendar.svelte";
+  import SettingsRaplDesk from "./SettingsRaplDesk.svelte";
   import { icons } from "../icons.js";
 
   let tab = $state(app.settingsTab || "accounts");
@@ -29,6 +30,7 @@
     { id: "appearance", label: "Appearance", icon: icons.palette, kw: "theme color colour preset dark light css radius corner rounded avatar logo favicon relative time notifications email adapt customize layout font style vscode" },
     { id: "shortcuts", label: "Shortcuts", icon: icons.keyboard, kw: "keyboard shortcuts keybindings keys hotkeys palette" },
     { id: "calendar", label: "Calendar & Contacts", icon: icons.calendar || icons.general, kw: "calendar contacts caldav carddav events sync nextcloud fastmail icloud seznam radicale subscribe add calendar" },
+    { id: "rapldesk", label: "RAPL Desk", icon: icons.receipt || icons.general, kw: "rapldesk tickets ticketing api key support helpdesk instance" },
     { id: "general", label: "General", icon: icons.general, kw: "smart inbox notifications desktop notification snooze presence quick action quick-action buttons row buttons hover backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement" },
   ];
 
@@ -81,6 +83,7 @@
     {:else if tab === "aliases"}<SettingsAliases />
     {:else if tab === "pgp"}<SettingsPgp />
     {:else if tab === "calendar"}<SettingsCalendar />
+    {:else if tab === "rapldesk"}<SettingsRaplDesk />
     {:else if tab === "signature"}<SettingsSignature />
     {:else if tab === "snippets"}<SettingsSnippets />
     {:else if tab === "appearance"}<SettingsAppearance />

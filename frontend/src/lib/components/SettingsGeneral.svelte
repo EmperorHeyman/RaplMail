@@ -317,9 +317,10 @@
       </label>
 
       <p class="hint" style="margin-top:14px">Where the groups sit</p>
+      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "dateSections") === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections (Spark-style)</b> — Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "timeline"} onchange={() => setPlacement("timeline")} /> <span>Float by activity (group rises with its newest mail; newer mail pushes it down)</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "top"} onchange={() => setPlacement("top")} /> <span>Always at the top</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "afterN") === "afterN"} onchange={() => setPlacement("afterN")} /> <span>After
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "afterN"} onchange={() => setPlacement("afterN")} /> <span>After
         <select value={app.settings.smartGroupsAfter ?? 3} onchange={(e) => saveSettings({ smartGroupsAfter: Number(e.currentTarget.value) })} onclick={(e) => e.stopPropagation()}>
           <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
         </select>

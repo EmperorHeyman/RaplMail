@@ -64,8 +64,27 @@
     return escapeHtml(text).replace(/\n/g, "<br>");
   }
 
-  const preview = $derived(recipients.length
-    ? { to: recipients[0].email, subject: fill(subjectTpl, recipients[0]), body: fill(bodyTpl, recipients[0]) }
+  // Variables actually referenced in the templates.
+  const usedVars = $derived.by(() => {
+    const set = new Set();
+    const re = /\{\{\s*([\w.-]+)\s*\}\}/g;
+    for (const tpl of [subjectTpl, bodyTpl]) { let m; while ((m = re.exec(tpl || ""))) set.add(m[1].toLowerCase()); }
+    return [...set];
+  });
+  // Referenced placeholders with no matching CSV column — these render empty for
+  // EVERYONE (e.g. a typo'd {{naem}}). Surfaced so it's not discovered post-send.
+  const missingVars = $derived(usedVars.filter((v) => v !== "email" && !vars.includes(v)));
+  // How many recipients have a blank value for a referenced (and existing) column.
+  const rowsMissingData = $derived(
+    recipients.filter((r) => usedVars.some((v) => vars.includes(v) && !String(r[v] ?? "").trim())).length
+  );
+
+  // Preview is steppable across all recipients (not just row #1), so what every
+  // recipient actually receives is inspectable before sending.
+  let previewIdx = $state(0);
+  const previewRow = $derived(recipients.length ? recipients[Math.min(previewIdx, recipients.length - 1)] : null);
+  const preview = $derived(previewRow
+    ? { to: previewRow.email, subject: fill(subjectTpl, previewRow), body: fill(bodyTpl, previewRow) }
     : null);
 
   function close() { if (!sending) app.mailMergeOpen = false; }
@@ -133,9 +152,24 @@
           <b>{recipients.length}</b> recipient{recipients.length === 1 ? "" : "s"}
           {#if vars.length}· columns: {#each vars as v}<code class="vchip">{'{{'}{v}{'}}'}</code>{/each}{/if}
         </div>
+        {#if missingVars.length}
+          <div class="mm-warn">⚠ No column for {#each missingVars as v}<code>{'{{'}{v}{'}}'}</code> {/each}— these render empty for every recipient.</div>
+        {/if}
+        {#if rowsMissingData}
+          <div class="mm-warn">⚠ {rowsMissingData} recipient{rowsMissingData === 1 ? "" : "s"} have a blank value for a column you use — they'll get gaps (e.g. "Hi ,").</div>
+        {/if}
         {#if preview}
           <div class="preview">
-            <div class="pv-h">Preview · {preview.to}</div>
+            <div class="pv-h">
+              <span>Preview · {preview.to}</span>
+              {#if recipients.length > 1}
+                <span class="pv-nav">
+                  <button onclick={() => (previewIdx = (previewIdx - 1 + recipients.length) % recipients.length)} title="Previous recipient">‹</button>
+                  {Math.min(previewIdx, recipients.length - 1) + 1}/{recipients.length}
+                  <button onclick={() => (previewIdx = (previewIdx + 1) % recipients.length)} title="Next recipient">›</button>
+                </span>
+              {/if}
+            </div>
             <div class="pv-s">{preview.subject || "(no subject)"}</div>
             <div class="pv-b">{preview.body}</div>
           </div>
@@ -173,7 +207,12 @@
   .status { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
   .vchip { color: var(--accent); }
   .preview { border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-  .pv-h { background: var(--surface-2); padding: 5px 10px; font-size: 11px; color: var(--muted); }
+  .pv-h { background: var(--surface-2); padding: 5px 10px; font-size: 11px; color: var(--muted); display: flex; align-items: center; justify-content: space-between; }
+  .pv-nav { display: inline-flex; align-items: center; gap: 6px; }
+  .pv-nav button { padding: 0 6px; border-radius: 4px; font-size: 14px; line-height: 1; }
+  .pv-nav button:hover { background: var(--surface-3); }
+  .mm-warn { font-size: 12px; color: var(--warning); }
+  .mm-warn code { background: var(--surface-2); padding: 0 4px; border-radius: 4px; }
   .pv-s { padding: 6px 10px 2px; font-weight: 600; font-size: 13px; }
   .pv-b { padding: 2px 10px 10px; font-size: 13px; color: var(--text); white-space: pre-wrap; max-height: 160px; overflow: auto; }
   footer { display: flex; align-items: center; justify-content: flex-end; gap: 10px; padding: 12px 18px; border-top: 1px solid var(--border); }

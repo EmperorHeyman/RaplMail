@@ -13,7 +13,7 @@ import contextlib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import accounts, ai, avatars, calendar, compose, contacts, folders, messages, metrics, rules, settings as settings_api, signatures, track, unfurl, vault
+from app.api import accounts, ai, avatars, calendar, compose, contacts, folders, messages, metrics, rapldesk, rules, settings as settings_api, signatures, track, unfurl, vault
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.ws import hub
@@ -64,6 +64,7 @@ app.include_router(settings_api.router)
 app.include_router(unfurl.router)
 app.include_router(metrics.router)
 app.include_router(ai.router)
+app.include_router(rapldesk.router)
 app.include_router(track.router)
 app.include_router(track.pixel_router)
 

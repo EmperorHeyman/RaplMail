@@ -160,6 +160,16 @@
       notify("Server settings saved — try sending again");
     } catch (e) { notify(e.message, "error"); }
   }
+  // Re-run provider detection (MX/known-host) for this account's domain and fill
+  // the form — fixes a stale/guessed SMTP host (e.g. a Seznam vanity domain).
+  async function autodetectServer(a) {
+    try {
+      const d = await api.autodiscover(a.email);
+      srv = { imap_host: d.imap_host || srv.imap_host, imap_port: d.imap_port || srv.imap_port,
+              smtp_host: d.smtp_host || srv.smtp_host, smtp_port: d.smtp_port || srv.smtp_port };
+      notify(`Detected ${d.smtp_host || "?"} via ${d.source}`);
+    } catch (e) { notify(e.message, "error"); }
+  }
 
   async function setColor(a, color) { await api.update(a.id, { color }); await loadAccountsAndFolders(); }
   async function rename(a, name) { await api.update(a.id, { display_name: name }); await loadAccountsAndFolders(); }
@@ -211,6 +221,7 @@
           </div>
           <div class="idactions">
             <button class="btn primary" onclick={() => saveServer(a)}>Save server settings</button>
+            <button class="btn" onclick={() => autodetectServer(a)} title="Detect from the domain's MX records">Auto-detect</button>
             <button class="btn ghost" onclick={() => (srvEdit = null)}>Cancel</button>
           </div>
         </div>

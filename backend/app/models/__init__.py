@@ -155,6 +155,11 @@ class MutedThread(SQLModel, table=True):
     """A conversation the user muted — new mail in it is auto-archived on arrival."""
     id: int | None = Field(default=None, primary_key=True)
     thread_key: str = Field(index=True, unique=True)
+    # Lowercased sender addresses seen in the muted conversation, comma-joined.
+    # New arrivals are auto-archived only if their sender is one of these, so a
+    # shared/common subject ("Invoice", "Re: lunch?") doesn't mute strangers.
+    # Empty = legacy mute (subject-only) for back-compat.
+    participants: str = ""
     created_at: datetime = Field(default_factory=utcnow)
 
 

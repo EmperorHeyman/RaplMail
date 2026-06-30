@@ -1,6 +1,6 @@
 <script>
   import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, saveAttachment, revealPath, openExternal, unfurl, ai } from "../api.js";
+  import { messages as messagesApi, openAttachment, saveAttachment, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
   import ThreadView from "./ThreadView.svelte";
@@ -61,7 +61,7 @@
   }
   function useDraft(text) {
     if (!detail) return;
-    const html = `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>`;
+    const html = `<p>${escapeHtml(text).replace(/\n/g, "<br>")}</p>` + quotedOriginal();
     openCompose({ to: detail.from_addr, subject: reSubject(),
                   in_reply_to: detail.message_id || "", account_id: detail.account_id, html });
     aiDraft = null;
@@ -145,28 +145,53 @@
   const actionsBottom = $derived(app.settings.readerActionsPos === "bottom");
 
   const myAddr = $derived(app.accounts.find((a) => a.id === detail?.account_id)?.email || "");
+  // All of my identities for this account (primary + aliases), so Reply-All
+  // never Cc's me when the mail was addressed to one of my aliases.
+  function myIdentities() {
+    const acct = app.accounts.find((a) => a.id === detail?.account_id);
+    if (!acct) return [];
+    const ids = [acct.email, ...(acct.aliases || [])];
+    return ids.map((x) => (x || "").toLowerCase().trim()).filter(Boolean);
+  }
 
-  // Everyone on the thread except me and the original sender (for Reply All Cc).
+  // Everyone on the thread except me (any identity) and the original sender.
   function replyAllCc() {
     if (!detail) return [];
     const all = [...(detail.to_addrs || []), ...(detail.cc_addrs || [])];
-    const seen = new Set([myAddr.toLowerCase(), (detail.from_addr || "").toLowerCase()]);
+    const seen = new Set([...myIdentities(), (detail.from_addr || "").toLowerCase()]);
     const out = [];
-    for (const a of all) { const k = (a || "").toLowerCase(); if (k && !seen.has(k)) { seen.add(k); out.push(a); } }
+    for (const a of all) {
+      // to_addrs/cc_addrs entries may be "Name <addr>" — compare on the address.
+      const k = (a || "").toLowerCase();
+      const addr = (k.match(/<([^>]+)>/)?.[1] || k).trim();
+      if (addr && !seen.has(addr)) { seen.add(addr); out.push(a); }
+    }
     return out;
   }
   const reSubject = () => (/^re:/i.test(detail.subject || "") ? detail.subject : `Re: ${detail.subject || "(no subject)"}`);
 
+  // Build the quoted original ("On <date>, <name> wrote:") so replies carry the
+  // thread context the recipient expects. Mirrors the forward quote style; the
+  // composer puts the cursor above this block so you type your reply on top.
+  function quotedOriginal() {
+    const orig = detail.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
+    const who = detail.from_name ? `${detail.from_name} <${detail.from_addr || ""}>` : (detail.from_addr || "");
+    return `<br><br><div class="rapl-quote" style="color:#888">` +
+      `On ${escapeHtml(fmtDate(detail.date))}, ${escapeHtml(who)} wrote:</div>` +
+      `<blockquote style="margin:0 0 0 8px;padding-left:10px;border-left:2px solid #888;color:#888">${orig}</blockquote>`;
+  }
+
   function reply() {
     if (!detail) return;
-    openCompose({ to: detail.from_addr, subject: reSubject(), in_reply_to: detail.message_id || "", account_id: detail.account_id });
+    openCompose({ to: detail.from_addr, subject: reSubject(), in_reply_to: detail.message_id || "",
+                  account_id: detail.account_id, html: quotedOriginal() });
   }
   function replyAll() {
     if (!detail) return;
     openCompose({ to: detail.from_addr, cc: replyAllCc().join(", "), subject: reSubject(),
-                  in_reply_to: detail.message_id || "", account_id: detail.account_id });
+                  in_reply_to: detail.message_id || "", account_id: detail.account_id, html: quotedOriginal() });
   }
-  function forward() {
+  async function forward() {
     if (!detail) return;
     const subj = /^fwd:/i.test(detail.subject || "") ? detail.subject : `Fwd: ${detail.subject || "(no subject)"}`;
     const orig = detail.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
@@ -176,7 +201,15 @@
       `Date: ${escapeHtml(fmtDate(detail.date))}<br>` +
       `Subject: ${escapeHtml(detail.subject || "")}<br>` +
       `To: ${escapeHtml((detail.to_addrs || []).join(", "))}</div><br>${orig}`;
-    openCompose({ subject: subj, html: quote, account_id: detail.account_id });
+    // Carry the original (non-inline) attachments — a forward without them is
+    // surprising. Inline images already live in the quoted HTML.
+    const atts = (detail.attachments || []).filter((a) => !a.inline);
+    let attachments = [];
+    if (atts.length) {
+      try { attachments = await Promise.all(atts.map((a) => fetchAttachmentForCompose(detail.id, a))); }
+      catch { notify("Couldn't attach the forwarded files — they may need re-attaching", "error"); }
+    }
+    openCompose({ subject: subj, html: quote, account_id: detail.account_id, attachments });
   }
   function toggleFlag() {
     if (!detail) return;

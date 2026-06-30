@@ -51,7 +51,12 @@ class SettingsIn(BaseModel):
 
 @router.put("")
 def put_settings(body: SettingsIn, session: Session = Depends(get_session)) -> dict:
-    _set_blob(session, body.data)
+    # Merge (not replace): preserve backend-owned keys the frontend doesn't send
+    # (e.g. raplDesk instances, googleCalendarEmail), so a UI settings save can't
+    # wipe them.
+    merged = _get_blob(session)
+    merged.update(body.data)
+    _set_blob(session, merged)
     return {"ok": True}
 
 

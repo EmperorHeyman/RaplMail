@@ -70,6 +70,12 @@ def _thread_text(session: Session, thread_id: str, fallback_id: int | None) -> t
         m = session.get(Message, fallback_id)
         if m:
             msgs = [m]
+    # thread_id is account-scoped by construction ("<account_id>|<subject>"), but
+    # keep the transcript to a single account defensively so a future thread-key
+    # scheme can't leak one mailbox's content into another's AI prompt.
+    if msgs:
+        acct = msgs[0].account_id
+        msgs = [m for m in msgs if m.account_id == acct]
     msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0)
     subject = msgs[0].subject if msgs else ""
     lines = []

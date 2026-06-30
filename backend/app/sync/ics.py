@@ -61,14 +61,21 @@ def _parse_dt(val: str, params: dict, default_tz=None) -> tuple[datetime | None,
     if params.get("VALUE") == "DATE" or re.fullmatch(r"\d{8}", val):
         try:
             d = datetime.strptime(val[:8], "%Y%m%d")
-            return d.replace(tzinfo=timezone.utc), True
+            # All-day dates are floating (no zone). Anchor at NOON UTC, not
+            # midnight, so converting to the viewer's local zone for display can't
+            # slip the event onto the previous/next day (the midnight-UTC bug).
+            return d.replace(hour=12, tzinfo=timezone.utc), True
         except ValueError:
             return None, False
     try:
         if val.endswith("Z"):
             return datetime.strptime(val, "%Y%m%dT%H%M%SZ").replace(tzinfo=timezone.utc), False
         naive = datetime.strptime(val[:15], "%Y%m%dT%H%M%S")
-        tz = _zone(params.get("TZID")) or default_tz or timezone.utc
+        # Floating time (no TZID, no Z) means "local to the viewer". RaplMail's
+        # backend runs on the user's own machine, so the machine's local zone IS
+        # the viewer's — use it instead of mislabeling the time as UTC.
+        local_tz = datetime.now().astimezone().tzinfo
+        tz = _zone(params.get("TZID")) or default_tz or local_tz
         return naive.replace(tzinfo=tz), False
     except ValueError:
         return None, False

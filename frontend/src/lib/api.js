@@ -99,6 +99,18 @@ function blobToBase64(blob) {
   });
 }
 
+// Fetch an attachment and return it in the shape Compose expects, so a forward
+// can re-attach the original files instead of dropping them.
+export async function fetchAttachmentForCompose(messageId, att) {
+  const blob = await fetchAttachment(messageId, att.index);
+  return {
+    filename: att.filename || "attachment",
+    content_type: att.content_type || att.mail_content_type || blob.type || "application/octet-stream",
+    data_b64: await blobToBase64(blob),
+    size: blob.size,
+  };
+}
+
 // Open an attachment with the OS default app. In the Tauri shell we must write
 // the bytes to disk via Rust and open the path (blob: URLs don't reach the OS).
 // In a browser we open a blob URL in a new tab.
@@ -175,6 +187,17 @@ export const calendar = {
   rsvp: (id, status) => api.post(`/calendar/${id}/rsvp`, { status }),
   caldavSync: () => api.post("/calendar/caldav/sync", {}),
   create: (ev) => api.post("/calendar/create", ev),
+  googleStatus: () => api.get("/calendar/google/status"),
+  googleConnect: () => api.post("/calendar/google/connect", {}),
+  googleDisconnect: () => api.post("/calendar/google/disconnect", {}),
+  remove: (id) => api.del(`/calendar/${id}`),
+};
+
+export const rapldesk = {
+  instances: () => api.get("/rapldesk/instances"),
+  add: (i) => api.post("/rapldesk/instances", i),
+  remove: (id) => api.del(`/rapldesk/instances/${id}`),
+  call: (id, payload) => api.post(`/rapldesk/${id}/call`, payload),
 };
 
 // --- domain helpers --------------------------------------------------------

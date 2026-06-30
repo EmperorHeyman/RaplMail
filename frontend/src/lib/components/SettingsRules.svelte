@@ -24,7 +24,24 @@
   async function runPreview() {
     try { preview = await api.preview(draft); } catch (e) { notify(e.message, "error"); }
   }
+  const DESTRUCTIVE = new Set(["delete", "archive", "block"]);
   async function create() {
+    // Catch an invalid regex before it silently never-matches (or errors per-message).
+    if (draft.match_op === "regex") {
+      try { new RegExp(draft.match_value); }
+      catch (e) { notify(`Invalid regex: ${e.message}`, "error"); return; }
+    }
+    // Destructive rules (delete/archive/block) get a blast-radius confirm so a
+    // catch-all like `from_domain ends_with ".com"` can't quietly nuke the inbox.
+    if (DESTRUCTIVE.has(draft.action)) {
+      let count = preview?.match_count;
+      try { const p = await api.preview(draft); preview = p; count = p.match_count; } catch {}
+      const verb = label(ACTIONS, draft.action).toLowerCase();
+      if (count != null &&
+          !confirm(`This rule will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail. Continue?`)) {
+        return;
+      }
+    }
     try { await api.create(draft); notify("Rule saved"); draft = newDraft(); preview = null; await load(); }
     catch (e) { notify(e.message, "error"); }
   }

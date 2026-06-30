@@ -121,18 +121,26 @@ def list_messages(
             rx = re.compile(q.strip()[1:-1], re.IGNORECASE)
         except re.error:
             return []
-        cand = session.exec(
-            select(Message.id, Message.subject, Message.from_addr, Message.from_name,
-                   Message.snippet, Message.body_text).where(Message.pending_action == "")
-            .order_by(Message.date.desc()).limit(4000)
-        ).all()
+        # Scan the whole mailbox in date-desc batches until we have `limit`
+        # matches or run out — instead of silently only looking at the newest
+        # 4000 messages (which made /regex/ unable to find anything older).
         ids = []
-        for row in cand:
-            hay = " ".join(str(x) for x in row[1:] if x)
-            if rx.search(hay):
-                ids.append(row[0])
-            if len(ids) >= limit:
+        batch, off = 2000, 0
+        while len(ids) < limit:
+            rows = session.exec(
+                select(Message.id, Message.subject, Message.from_addr, Message.from_name,
+                       Message.snippet, Message.body_text).where(Message.pending_action == "")
+                .order_by(Message.date.desc()).offset(off).limit(batch)
+            ).all()
+            if not rows:
                 break
+            for row in rows:
+                hay = " ".join(str(x) for x in row[1:] if x)
+                if rx.search(hay):
+                    ids.append(row[0])
+                    if len(ids) >= limit:
+                        break
+            off += batch
         if not ids:
             return []
         msgs = session.exec(select(Message).where(Message.id.in_(ids))).all()
@@ -211,26 +219,28 @@ def list_messages(
                 func.lower(Message.body_text).like(like),
             ))
 
-    # Newest first at the SQL level, so the limit keeps the most recent mail
-    # (not the first rows by insertion order).
-    stmt = stmt.order_by(Message.date.desc())
-
+    # Screener filter pushed into SQL so pagination is correct. Doing it in
+    # Python over a capped fetch dropped results and broke page 2 (it re-sliced
+    # the same capped window instead of paging through the whole mailbox).
     use_screener = screener in ("only", "exclude") and not searching
-    fetch_limit = max(limit * 5, 200) if use_screener else limit
-    msgs = list(session.exec(stmt.limit(fetch_limit)))
-
     if use_screener:
+        from sqlalchemy import false, or_
+
         from app.sync.contacts import KNOWN_DOMAINS
-        known = {e.lower() for e in session.exec(select(Contact.email))}
+        known = [e.lower() for e in session.exec(select(Contact.email)) if e]
+        conds = []
+        if known:
+            conds.append(func.lower(Message.from_addr).in_(known))
+        for dom in KNOWN_DOMAINS:
+            conds.append(func.lower(Message.from_addr).like(f"%@{dom.lower()}"))
+        known_expr = or_(*conds) if conds else false()
+        # "exclude" hides first-time senders (show known); "only" is the Screener
+        # view (show unknown / first-time senders).
+        stmt = stmt.where(known_expr if screener == "exclude" else ~known_expr)
 
-        def known_sender(m: Message) -> bool:
-            a = (m.from_addr or "").lower()
-            return a in known or a.rsplit("@", 1)[-1] in KNOWN_DOMAINS
-
-        msgs = [m for m in msgs if (not known_sender(m)) == (screener == "only")]
-
-    msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0, reverse=True)
-    msgs = msgs[offset:offset + limit]
+    # Newest first at the SQL level, then page in SQL.
+    stmt = stmt.order_by(Message.date.desc())
+    msgs = list(session.exec(stmt.offset(offset).limit(limit)))
     return [_to_out(m) for m in msgs]
 
 
@@ -872,14 +882,18 @@ async def set_done(message_id: int, body: BoolValue, session: Session = Depends(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
     msg.is_done = body.value
     _persist_state(session, msg, done=body.value)
-    account = session.get(Account, msg.account_id)
-    folder = session.get(Folder, msg.folder_id)
-    uid = msg.uid
     session.add(msg)
     session.commit()
     session.refresh(msg)
-    if account and folder and uid:
-        await run_in_threadpool(_push_done_keyword, account, folder.path, uid, body.value)
+    # Mirror the done state to the server keyword in the BACKGROUND — don't make
+    # the user wait on an IMAP STORE round-trip (that was the perceptible lag on
+    # every "e"). Fire-and-forget; a failed push just isn't mirrored cross-device.
+    if msg.account_id and msg.folder_id and msg.uid:
+        import asyncio
+        task = asyncio.create_task(run_in_threadpool(
+            _push_done_keywords_bulk, [(msg.account_id, msg.folder_id, msg.uid)], body.value))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
     return _to_out(msg)
 
 
@@ -1083,6 +1097,14 @@ def process_action_queue() -> int:
                     a.last_error = err[:300]
                     if a.attempts >= 8:
                         a.status = "failed"
+                        # Give up: un-hide the affected messages so they don't
+                        # vanish forever (they were never actually moved/deleted
+                        # on the server). They reappear in the normal views.
+                        if kind in ("archive", "delete"):
+                            ids = payload.get("ids", [])
+                            if ids:
+                                for m in session.exec(select(Message).where(Message.id.in_(ids))):
+                                    m.pending_action = ""
                 session.commit()
     return flushed
 
@@ -1123,13 +1145,22 @@ def mute_thread(message_id: int, session: Session = Depends(get_session)) -> dic
     key = msg.thread_id
     if not key:
         return {"muted": "", "count": 0}
-    if not session.exec(select(MutedThread).where(MutedThread.thread_key == key)).first():
-        session.add(MutedThread(thread_key=key))
     n = 0
+    parts: set[str] = set()
     for m in session.exec(select(Message).where(Message.thread_id == key)):
         m.is_done = True
         _persist_state(session, m, done=True)
+        if m.from_addr:
+            parts.add(m.from_addr.strip().lower())
         n += 1
+    # Scope the mute to the senders in this conversation so a shared subject line
+    # doesn't silently auto-archive unrelated mail from strangers (see threading).
+    participants = ",".join(sorted(parts))
+    existing = session.exec(select(MutedThread).where(MutedThread.thread_key == key)).first()
+    if existing:
+        existing.participants = participants
+    else:
+        session.add(MutedThread(thread_key=key, participants=participants))
     session.commit()
     return {"muted": key, "count": n}
 

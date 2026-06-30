@@ -9,11 +9,23 @@ multistatus response, and the existing iCal parser for events.
 from __future__ import annotations
 
 import base64
+import os
 import ssl
 import urllib.request
 import xml.etree.ElementTree as ET
 
 from app.sync.ics import parse_events
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """Verify TLS certs + hostname by DEFAULT — credentials travel over HTTP Basic,
+    so disabling verification globally exposed them to MITM on hostile networks.
+    Self-hosted boxes with self-signed certs can opt out via an env var."""
+    ctx = ssl.create_default_context()
+    if os.environ.get("RAPLMAIL_CALDAV_INSECURE_TLS", "").lower() in ("1", "true", "yes"):
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 _CAL_QUERY = (
     '<?xml version="1.0" encoding="utf-8"?>'
@@ -40,9 +52,7 @@ def _report(url: str, user: str, password: str, body: str) -> str:
         token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
         headers["Authorization"] = f"Basic {token}"
     req = urllib.request.Request(url, data=body.encode("utf-8"), method="REPORT", headers=headers)
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE  # self-hosted servers often use self-signed certs
+    ctx = _ssl_context()
     with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
         return resp.read().decode("utf-8", "ignore")
 
@@ -99,9 +109,7 @@ def fetch_ics(url: str) -> list[dict]:
     if url.lower().startswith("webcal://"):
         url = "https://" + url[len("webcal://"):]
     req = urllib.request.Request(url, headers={"User-Agent": "RaplMail/1.0"})
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False
-    ctx.verify_mode = ssl.CERT_NONE
+    ctx = _ssl_context()
     with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
         text = resp.read().decode("utf-8", "ignore")
     return parse_events(text)

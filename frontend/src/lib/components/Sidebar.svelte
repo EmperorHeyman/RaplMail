@@ -52,6 +52,7 @@
     items.push({ id: "allsent", icon: icons.sent, label: "All Sent", active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } });
     items.push({ id: "snoozed", icon: icons.snooze, label: "Snoozed", active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } });
     items.push({ id: "calendar", icon: icons.calendar, label: "Calendar", active: app.view === "calendar", run: () => { app.view = "calendar"; } });
+    items.push({ id: "tickets", icon: icons.receipt, label: "Tickets", active: app.view === "tickets", run: () => { app.view = "tickets"; } });
     items.push({ id: "scheduled", icon: icons.clock, label: "Scheduled", active: app.view === "scheduled", run: () => { app.view = "scheduled"; } });
     items.push({ id: "newsfeed", icon: icons.newspaper, label: "Newsletter Feed", active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
     items.push({ id: "papertrail", icon: icons.receipt, label: "Paper Trail", active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });

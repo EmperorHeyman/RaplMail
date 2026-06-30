@@ -2907,7 +2907,7 @@ dependencies = [
 
 [[package]]
 name = "raplmail"
-version = "0.1.21"
+version = "0.2.3"
 dependencies = [
  "base64 0.22.1",
  "rand 0.8.6",

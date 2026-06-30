@@ -7,6 +7,7 @@ messages and parses their .ics). This is an email-derived calendar — no CalDAV
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -152,9 +153,13 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
     """Fetch each ICS feed, upsert its events, and delete events that are no
     longer present in any feed (handles deletions). Each feed is {url, color}.
     Returns (upserted, removed)."""
+    import hashlib
+
     from app.sync import caldav as dav
     from app.models import CalendarEvent
     seen: set[str] = set()
+    ok_prefixes: list[str] = []   # "ics:<feedhash>:" for feeds that fetched OK
+    google_ids_seen: set[str] = set()   # raw Google event ids present in any feed
     upserted = 0
     for feed in feeds:
         url = (feed.get("url") or "").strip()
@@ -164,11 +169,16 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
         try:
             events = dav.fetch_ics(url)
         except Exception:
-            continue  # one bad feed shouldn't break the rest
+            continue  # one bad feed shouldn't break the rest (and don't prune its events)
+        # This feed responded — its events are now authoritative for pruning.
+        ok_prefixes.append(f"ics:{hashlib.sha1(url.encode('utf-8')).hexdigest()[:10]}:")
         for ev in events:
             if not ev.get("start"):
                 continue
-            uid = _ics_uid(url, ev.get("uid") or f"{ev.get('summary','')}|{ev.get('start')}")
+            raw_uid = ev.get("uid") or f"{ev.get('summary','')}|{ev.get('start')}"
+            if "@google.com" in raw_uid:
+                google_ids_seen.add(raw_uid.split("@")[0])
+            uid = _ics_uid(url, raw_uid)
             seen.add(uid)
             row = session.exec(select(CalendarEvent).where(
                 CalendarEvent.account_id == acct_id, CalendarEvent.uid == uid)).first()
@@ -186,10 +196,20 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
             row.all_day = bool(ev.get("all_day"))
             row.cancelled = bool(ev.get("cancelled"))
             upserted += 1
-    # Delete ICS events that vanished from the feeds (removed/expired/feed dropped).
+    # Delete ICS events that vanished — but ONLY for feeds that actually responded
+    # this run. A feed that failed (network blip / temporary 5xx) must not have its
+    # whole calendar wiped; its events are left untouched until it fetches again.
     removed = 0
     for row in session.exec(select(CalendarEvent).where(CalendarEvent.source == "ics")).all():
-        if row.uid not in seen:
+        from_ok_feed = any(row.uid.startswith(p) for p in ok_prefixes)
+        if from_ok_feed and row.uid not in seen:
+            session.delete(row)
+            removed += 1
+    # Drop our local "gcal:" placeholder once the same event arrives via the feed,
+    # so an event created in RaplMail doesn't show twice after the feed catches up.
+    for row in session.exec(select(CalendarEvent).where(CalendarEvent.source == "gcal")).all():
+        gid = (row.uid or "")[5:]
+        if gid and gid in google_ids_seen:
             session.delete(row)
             removed += 1
     session.flush()
@@ -257,9 +277,10 @@ def _ics_dt(dt: datetime, all_day: bool) -> str:
 
 
 def _build_event_ics(uid, summary, start, end, all_day, location, description,
-                     organizer, attendee, method="REQUEST") -> str:
+                     organizer, attendee, method="REQUEST", partstat="NEEDS-ACTION") -> str:
     """A minimal iMIP VEVENT. With METHOD:REQUEST + an ATTENDEE, Gmail/Outlook add
-    it to the calendar and show an RSVP box — no API needed (RFC 6047)."""
+    it to the calendar and show an RSVP box — no API needed (RFC 6047). With
+    METHOD:REPLY + a PARTSTAT it tells the organizer your accept/decline."""
     end = end or (start + (timedelta(days=1) if all_day else timedelta(hours=1)))
     now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     dtstart = f"DTSTART;VALUE=DATE:{_ics_dt(start, True)}" if all_day else f"DTSTART:{_ics_dt(start, False)}"
@@ -274,12 +295,27 @@ def _build_event_ics(uid, summary, start, end, all_day, location, description,
         lines.append(f"LOCATION:{_ics_escape(location)}")
     if description:
         lines.append(f"DESCRIPTION:{_ics_escape(description)}")
+    rsvp_attr = ";RSVP=TRUE" if method == "REQUEST" else ""
     lines += [
         f"ORGANIZER:mailto:{organizer}",
-        f"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT=NEEDS-ACTION;RSVP=TRUE:mailto:{attendee}",
+        f"ATTENDEE;CUTYPE=INDIVIDUAL;ROLE=REQ-PARTICIPANT;PARTSTAT={partstat}{rsvp_attr}:mailto:{attendee}",
         "SEQUENCE:0", "STATUS:CONFIRMED", "TRANSP:OPAQUE", "END:VEVENT", "END:VCALENDAR",
     ]
     return "\r\n".join(lines) + "\r\n"
+
+
+# RSVP status -> iCalendar PARTSTAT
+_PARTSTAT = {"accepted": "ACCEPTED", "declined": "DECLINED",
+             "tentative": "TENTATIVE", "needsAction": "NEEDS-ACTION"}
+
+
+def _bare_email(s: str) -> str:
+    """Extract a bare address from 'Name <a@b>' / 'mailto:a@b' / 'a@b'."""
+    s = (s or "").strip()
+    m = re.search(r"<([^>]+)>", s)
+    if m:
+        s = m.group(1)
+    return s.replace("mailto:", "").strip()
 
 
 class CreateEventIn(BaseModel):
@@ -292,19 +328,91 @@ class CreateEventIn(BaseModel):
     description: str = ""
 
 
+# --- Google Calendar (OAuth write) ------------------------------------------
+_GCAL_KEY = "google_calendar"
+
+
+def _gcal_bundle(store) -> dict | None:
+    import json
+    if not store.is_unlocked:
+        return None
+    raw = store.get(_GCAL_KEY)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+
+@router.post("/google/connect")
+async def google_calendar_connect(session: Session = Depends(get_session)) -> dict:
+    """Run the Google OAuth flow (calendar scope) so events can be written
+    directly to the user's Google Calendar — reliable, unlike the iMIP trick."""
+    import json
+
+    from app.core.security import get_secret_store
+    from app.models import Setting
+    from app.providers import oauth
+
+    store = get_secret_store()
+    if not store.is_unlocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault first.")
+    try:
+        email, bundle = await run_in_threadpool(oauth.google_run_installed_flow, oauth.GCAL_SCOPES)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Google sign-in failed: {exc}") from exc
+    store.set(_GCAL_KEY, json.dumps(bundle))
+    row = session.get(Setting, 1)
+    cfg = dict(row.data) if row and row.data else {}
+    cfg["googleCalendarEmail"] = email
+    if row is None:
+        session.add(Setting(id=1, data=cfg))
+    else:
+        row.data = cfg
+    session.commit()
+    return {"connected": True, "email": email}
+
+
+@router.get("/google/status")
+def google_calendar_status(session: Session = Depends(get_session)) -> dict:
+    from app.core.security import get_secret_store
+    from app.models import Setting
+    store = get_secret_store()
+    row = session.get(Setting, 1)
+    cfg = dict(row.data) if row and row.data else {}
+    connected = bool(_gcal_bundle(store))
+    return {"connected": connected, "email": cfg.get("googleCalendarEmail", "")}
+
+
+@router.post("/google/disconnect")
+def google_calendar_disconnect(session: Session = Depends(get_session)) -> dict:
+    from app.core.security import get_secret_store
+    from app.models import Setting
+    store = get_secret_store()
+    if store.is_unlocked:
+        try:
+            store.delete(_GCAL_KEY)
+        except Exception:
+            pass
+    row = session.get(Setting, 1)
+    if row and row.data and "googleCalendarEmail" in row.data:
+        cfg = dict(row.data); cfg.pop("googleCalendarEmail", None); row.data = cfg
+        session.commit()
+    return {"connected": False}
+
+
 @router.post("/create")
 async def create_event(body: CreateEventIn, request: Request,
                        session: Session = Depends(get_session)) -> dict:
-    """Create an event and push it to the user's Google/Outlook calendar via iMIP:
-    we email an .ics (METHOD:REQUEST) to their own address; their provider parses
-    it and adds the event. Also stored locally so it shows in RaplMail at once."""
+    """Create an event. If Google Calendar is connected (OAuth), write it there
+    via the API (reliable). Otherwise fall back to the iMIP email trick. Always
+    stored locally so it shows in RaplMail immediately."""
     acct = session.get(Account, body.account_id)
     if acct is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
     uid = f"raplmail-{uuid.uuid4().hex}@raplmail"
-    ics = _build_event_ics(uid, body.summary, body.start, body.end, body.all_day,
-                           body.location, body.description, acct.email, acct.email)
-    # Store locally first so it appears immediately even if SMTP is slow/offline.
+    # Store locally first so it appears immediately regardless of the write path.
     upsert_events(session, acct.id, None, [{
         "uid": uid, "summary": body.summary, "location": body.location,
         "description": body.description, "start": body.start, "end": body.end,
@@ -317,6 +425,36 @@ async def create_event(body: CreateEventIn, request: Request,
         row.status = "accepted"
     session.commit()
 
+    # Preferred path: write straight to Google Calendar via the API.
+    from app.core.security import get_secret_store
+    store = get_secret_store()
+    bundle = _gcal_bundle(store)
+    if bundle is not None:
+        import json
+
+        from app.sync import gcal
+        try:
+            _ev, bundle = await run_in_threadpool(
+                gcal.insert_event, bundle, summary=body.summary, start=body.start,
+                end=body.end, all_day=body.all_day, location=body.location,
+                description=body.description)
+            store.set(_GCAL_KEY, json.dumps(bundle))
+            # Encode the Google event id in the local row's uid so we can delete it
+            # later and dedupe it against the ICS feed when that catches up.
+            gid = (_ev or {}).get("id") or ""
+            if row and gid:
+                row.uid = f"gcal:{gid}"
+                row.source = "gcal"
+                session.add(row)
+                session.commit()
+            return {"uid": row.uid if row else uid, "google": True, "sent": True}
+        except Exception as exc:
+            return {"uid": uid, "google": False, "sent": False,
+                    "error": f"Google Calendar write failed: {exc}"}
+
+    # Fallback: iMIP email trick (best-effort; unreliable for self-events).
+    ics = _build_event_ics(uid, body.summary, body.start, body.end, body.all_day,
+                           body.location, body.description, acct.email, acct.email)
     from html import escape as _esc
     payload = {
         "account_id": body.account_id, "from_addr": acct.email, "to": [acct.email],
@@ -330,13 +468,49 @@ async def create_event(body: CreateEventIn, request: Request,
         await run_in_threadpool(_deliver_blocking, payload)
         sent = True
     except Exception:
-        # The local copy is already saved; the invite email just didn't go out.
         pass
-    return {"uid": uid, "sent": sent}
+    return {"uid": uid, "sent": sent, "google": False}
+
+
+def _google_event_id(ev: CalendarEvent) -> str | None:
+    """The Google Calendar event id for a row, if it maps to one — either an event
+    we created (uid 'gcal:<id>') or a Google-feed event synced via ICS."""
+    if (ev.uid or "").startswith("gcal:"):
+        return ev.uid[5:]
+    if ev.source == "ics" and "@google.com" in (ev.uid or ""):
+        raw = ev.uid.split(":", 2)[-1]   # ics:<feedhash>:<rawuid>
+        return raw.split("@")[0]
+    return None
+
+
+@router.delete("/{event_id}")
+async def delete_event(event_id: int, session: Session = Depends(get_session)) -> dict:
+    """Delete an event. If it lives on a connected Google Calendar (created here
+    or synced from the feed), delete it there too; always remove the local row."""
+    ev = session.get(CalendarEvent, event_id)
+    if ev is None:
+        return {"deleted": False}
+    gid = _google_event_id(ev)
+    if gid:
+        from app.core.security import get_secret_store
+        store = get_secret_store()
+        bundle = _gcal_bundle(store)
+        if bundle is not None:
+            import json
+
+            from app.sync import gcal
+            try:
+                bundle = await run_in_threadpool(gcal.delete_event, bundle, gid)
+                store.set(_GCAL_KEY, json.dumps(bundle))
+            except Exception:
+                pass   # local delete still proceeds
+    session.delete(ev)
+    session.commit()
+    return {"deleted": True, "google": bool(gid)}
 
 
 @router.post("/{event_id}/rsvp", response_model=EventOut)
-def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_session)) -> CalendarEvent:
+async def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_session)) -> CalendarEvent:
     ev = session.get(CalendarEvent, event_id)
     if ev is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "event not found")
@@ -346,4 +520,29 @@ def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_session)) -
     session.add(ev)
     session.commit()
     session.refresh(ev)
+
+    # Tell the organizer (iMIP METHOD:REPLY) — otherwise "Accept/Decline" only
+    # turned a local badge green and the organizer saw no response. Best-effort:
+    # the local status is already saved if the email can't go out.
+    acct = session.get(Account, ev.account_id)
+    organizer = _bare_email(ev.organizer)
+    me = (acct.email if acct else "").strip()
+    if acct and organizer and me and organizer.lower() != me.lower() and body.status != "needsAction" and ev.start:
+        ics = _build_event_ics(
+            ev.uid or f"raplmail-{uuid.uuid4().hex}@raplmail", ev.summary, ev.start, ev.end,
+            bool(ev.all_day), ev.location or "", ev.description or "",
+            organizer=organizer, attendee=me, method="REPLY", partstat=_PARTSTAT[body.status],
+        )
+        verb = {"accepted": "Accepted", "declined": "Declined", "tentative": "Tentative"}[body.status]
+        payload = {
+            "account_id": ev.account_id, "from_addr": me, "to": [organizer],
+            "subject": f"{verb}: {ev.summary or '(no title)'}",
+            "html": f"<p>{verb} — {ev.summary or ''}</p>",
+            "calendar_ics": ics, "calendar_method": "REPLY",
+        }
+        try:
+            from app.api.compose import _deliver_blocking
+            await run_in_threadpool(_deliver_blocking, payload)
+        except Exception:
+            pass
     return ev

@@ -70,6 +70,29 @@
     return { destroy() { io?.disconnect(); } };
   }
 
+  // Spark-style time buckets for the section headers.
+  function dateBucket(iso) {
+    if (!iso) return "Older";
+    const d = new Date(iso);
+    const now = new Date();
+    const day = 86400000;
+    const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const startYesterday = startToday - day;
+    const dow = (now.getDay() + 6) % 7;            // Monday-first
+    const startWeek = startToday - dow * day;
+    const startLastWeek = startWeek - 7 * day;
+    const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const startLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1).getTime();
+    const t = d.getTime();
+    if (t >= startToday) return "Today";
+    if (t >= startYesterday) return "Yesterday";
+    if (t >= startWeek) return "This week";
+    if (t >= startLastWeek) return "Last week";
+    if (t >= startMonth) return "This month";
+    if (t >= startLastMonth) return "Last month";
+    return "Older";
+  }
+
   const NOTIF = new Set(["updates", "social", "newsletters"]);
   function buildItems(msgs) {
     if (smartActive()) {
@@ -94,7 +117,30 @@
         groups.sort((a, b) => (b.latest || "").localeCompare(a.latest || ""));
       }
       // Where the group cards sit relative to the classic messages.
-      const placement = app.settings.smartGroupPlacement || "afterN";
+      const placement = app.settings.smartGroupPlacement || "dateSections";
+      if (placement === "dateSections") {
+        // Spark-style: messages split into Today / Yesterday / This week / …
+        // with the category cards parked at the END of Today.
+        const out = [];
+        let bucket = null;
+        let groupsDone = false;
+        for (const it of items) {
+          const b = dateBucket(it.msg.date);
+          if (b !== bucket) {
+            // Leaving Today → drop the group cards before the next section.
+            if (bucket === "Today" && !groupsDone) { out.push(...groups); groupsDone = true; }
+            out.push({ kind: "header", key: "h:" + b, label: b });
+            bucket = b;
+          }
+          out.push(it);
+        }
+        if (!groupsDone) {
+          // No section followed Today (everything is today, or there's no today
+          // mail) — put the cards after today's messages, else at the very top.
+          out.push(...groups);
+        }
+        return out;
+      }
       if (placement === "top") return [...groups, ...items];
       if (placement === "afterN") {
         const k = Math.max(0, app.settings.smartGroupsAfter ?? 3);
@@ -139,6 +185,9 @@
   }
   const items = $derived.by(() => {
     const built = buildItems(app.messages);
+    // Date-section layout has its own ordering (with header rows) — don't pull
+    // pinned/VIP to the top or it would orphan the section headers.
+    if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
     const isP = (it) => it.kind === "msg" && it.msg.pinned;
     const isV = (it) => it.kind === "msg" && !it.msg.pinned && isVip(it.msg.from_addr);
@@ -153,8 +202,15 @@
   async function doneGroup(item) {
     const ids = item.msgs.map((m) => m.id);
     if (!app.showDone) app.messages = app.messages.filter((m) => !ids.includes(m.id));
-    try { await messagesApi.bulk(ids, "done"); refreshMessages({ background: true }); }
-    catch (e) { notify("Couldn't update", "error"); refreshMessages({ background: true }); }
+    try {
+      await messagesApi.bulk(ids, "done");
+      notify(`${ids.length} marked done`, "info", () => {
+        messagesApi.bulk(ids, "undone")
+          .then(() => refreshMessages({ background: true }))
+          .catch(() => notify("Couldn't undo", "error"));
+      });
+      refreshMessages({ background: true });
+    } catch (e) { notify("Couldn't update", "error"); refreshMessages({ background: true }); }
   }
 
   // Mark an entire Smart Inbox category done (every mail in it, not just the
@@ -170,7 +226,14 @@
       hiddenDone = new Set([...hiddenDone, ...ids]);
       const s = new Set(expandedKeys); s.delete(item.key); expandedKeys = s;  // collapse
       await messagesApi.bulk(ids, "done");
-      notify(`${ids.length} marked done`);
+      // A category-done can touch hundreds/thousands of messages — always offer
+      // undo (single-message done already does; this destructive bulk must too).
+      notify(`${ids.length} marked done`, "info", () => {
+        hiddenDone = new Set([...hiddenDone].filter((id) => !idset.has(id)));
+        messagesApi.bulk(ids, "undone")
+          .then(() => refreshMessages({ background: true }))
+          .catch(() => notify("Couldn't undo", "error"));
+      });
       refreshMessages({ background: true });   // also refreshes the group counts
     } catch { notify("Couldn't mark group done", "error"); refreshMessages({ background: true }); }
   }
@@ -201,7 +264,10 @@
   const isChecked = (id) => selectedIds.includes(id);
 
   function toggleSelect(msg, index, e) {
-    if (e?.shiftKey && lastIdx >= 0) {
+    // Shift-range only makes sense for rows that live in `items` (index >= 0).
+    // Nested bundle rows pass index < 0 and just toggle themselves — using the
+    // group's index produced a zero-width range that selected the whole bundle.
+    if (e?.shiftKey && lastIdx >= 0 && index >= 0) {
       const [a, b] = [Math.min(lastIdx, index), Math.max(lastIdx, index)];
       const ids = items.slice(a, b + 1).flatMap((it) => it.kind === "msg" ? [it.msg.id] : it.msgs.map((m) => m.id));
       const set = new Set(selectedIds);
@@ -210,17 +276,70 @@
     } else {
       selectedIds = isChecked(msg.id) ? selectedIds.filter((x) => x !== msg.id) : [...selectedIds, msg.id];
     }
-    lastIdx = index;
+    if (index >= 0) lastIdx = index;
   }
   function clearSelection() { selectedIds = []; lastIdx = -1; bulkSnooze = false; }
 
   // --- right-click context menu ---
   let ctx = $state(null); // { x, y, msg }
-  function openCtx(e, msg) { e.preventDefault(); ctx = { x: e.clientX, y: e.clientY, msg }; }
+  let ctxSearch = $state("");
+  function openCtx(e, msg) { e.preventDefault(); ctxSearch = ""; ctx = { x: e.clientX, y: e.clientY, msg }; }
   function closeCtx() { ctx = null; }
-  function ctxRun(fn) { const m = ctx?.msg; closeCtx(); if (m) fn(m); }
+  function ctxDo(fn) { const m = ctx?.msg; closeCtx(); if (m) fn(m); }
   function toggleSeen(m) { const v = !m.is_seen; m.is_seen = v; messagesApi.setSeen(m.id, v).catch(() => {}); }
   function toggleFlag(m) { const v = !m.is_flagged; m.is_flagged = v; messagesApi.setFlag(m.id, v).catch(() => {}); }
+
+  // Flat, searchable action list for the right-click menu. `kw` adds extra
+  // search keywords beyond the label.
+  function ctxActions(m) {
+    const acts = [
+      { label: "Open", run: () => open(m, focusIndex) },
+      { label: m.pinned ? "Unpin" : "Pin to top", icon: icons.pin, run: () => pinMessage(m) },
+      { label: m.is_done ? "Mark not done" : "Mark done", icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
+      { label: m.is_seen ? "Mark unread" : "Mark read", kw: "seen", run: () => toggleSeen(m) },
+      { label: m.is_flagged ? "Unflag" : "Flag", icon: icons.flag, kw: "star", run: () => toggleFlag(m) },
+      { label: isVip(m.from_addr) ? "Remove VIP" : "Mark sender VIP", icon: icons.star, run: () => toggleVip(m.from_addr) },
+      { label: isTrustedSender(m.from_addr) ? "Unmark safe" : "Mark sender safe", icon: icons.shieldCheck, run: () => toggleTrusted(m.from_addr) },
+      { sep: "Move to category", kw: "" },
+      { label: "Move to Primary (normal inbox)", icon: icons.inbox, kw: "move out newsletter normal queue", run: () => setSenderCategory(m, "primary") },
+      ...Object.entries(CAT_META).map(([id, meta]) => ({ label: `Move to ${meta.label}`, icon: meta.icon, kw: "move category " + id, run: () => setSenderCategory(m, id) })),
+      { label: "Reset category (auto)", icon: icons.reset, kw: "move category", run: () => setSenderCategory(m, "auto") },
+      { sep: "Snooze" },
+      ...snoozePresets().map((p) => ({ label: `Snooze: ${p.label}`, icon: icons.snooze, kw: "snooze remind later", run: () => snoozeMessage(m, p.iso, p.presence) })),
+      { sep: "More" },
+      { label: "Archive", icon: icons.archive, run: () => archiveOne(m) },
+      { label: "Delete", icon: icons.trash, danger: true, run: () => deleteOne(m) },
+      { label: "Show mail from sender", kw: "filter from", run: () => searchAddress(m.from_addr) },
+      { label: "Mute sender", icon: icons.mute, run: () => muteSender(m) },
+      { label: "Mute conversation", icon: icons.mute, kw: "thread", run: () => muteThread(m) },
+      { label: "Block sender", icon: icons.junk, danger: true, run: () => blockSender(m) },
+      { label: "Create rule…", icon: icons.bolt, run: () => createRuleFromSender(m) },
+    ];
+    const q = ctxSearch.trim().toLowerCase();
+    if (!q) return acts;
+    // When searching, drop section separators and match label + keywords.
+    return acts.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
+  }
+  function runCtx(a) { if (a?.run) ctxDo(a.run); }
+  function ctxEnter() {
+    const first = ctxActions(ctx.msg).find((a) => !a.sep);
+    if (first) runCtx(first);
+  }
+
+  // Position the menu fully on-screen — flip up/left near edges, cap height.
+  function placeMenu(node, pos) {
+    const apply = (p) => {
+      const r = node.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight, pad = 8;
+      let x = p.x, y = p.y;
+      if (x + r.width > vw - pad) x = Math.max(pad, vw - r.width - pad);
+      if (y + r.height > vh - pad) y = Math.max(pad, vh - r.height - pad);
+      node.style.left = `${x}px`;
+      node.style.top = `${y}px`;
+    };
+    requestAnimationFrame(() => apply(pos));
+    return { update: (p) => requestAnimationFrame(() => apply(p)) };
+  }
   function archiveOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); messagesApi.bulk([m.id], "archive").then(refreshQueue); }
   function deleteOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); messagesApi.bulk([m.id], "delete").then(refreshQueue); }
 
@@ -250,11 +369,12 @@
 
   // Prefetch the focused item's latest message (urgent — jumps the queue) plus
   // the next one, so opening / arrowing through is instant.
+  const _pfId = (it) => (it?.kind === "msg" ? it.msg.id : it?.latest?.id);
   $effect(() => {
-    const it = items[focusIndex];
-    if (it) prefetchBody(it.kind === "msg" ? it.msg.id : it.latest.id, true);
-    const nx = items[focusIndex + 1];
-    if (nx) prefetchBody(nx.kind === "msg" ? nx.msg.id : nx.latest.id);
+    const id = _pfId(items[focusIndex]);
+    if (id) prefetchBody(id, true);
+    const nx = _pfId(items[focusIndex + 1]);
+    if (nx) prefetchBody(nx);
   });
 
   // Keep the focused row visible when navigating with the keyboard.
@@ -287,7 +407,10 @@
   async function open(message, index) {
     // In selection mode, a row click adds/removes from the selection instead of opening.
     if (selectedIds.length > 0) { toggleSelect(message, index); return; }
-    focusIndex = index;
+    // index < 0 = a message nested inside an expanded bundle/group; it has no
+    // slot in `items`, so don't move keyboard focus to the group card (that's
+    // what made a subsequent `e` mass-complete the whole category).
+    if (index >= 0) focusIndex = index;
     app.threadKey = null;
     app.selectedMessageId = message.id;
     if (!message.is_seen) {
@@ -310,15 +433,26 @@
       document.querySelector(".list .search")?.focus(); e.preventDefault(); return;
     }
     if (!items.length) return;
+    // Skip non-interactive date-section headers when arrowing.
+    const step = (dir) => {
+      let i = focusIndex;
+      for (let n = 0; n < items.length; n++) {
+        i = Math.min(items.length - 1, Math.max(0, i + dir));
+        if (items[i]?.kind !== "header") break;
+        if (i === 0 || i === items.length - 1) break;
+      }
+      focusIndex = i;
+    };
     if (combo === kb.next) {
-      focusIndex = Math.min(items.length - 1, focusIndex + 1); e.preventDefault();
+      step(1); e.preventDefault();
     } else if (combo === kb.prev) {
-      focusIndex = Math.max(0, focusIndex - 1); e.preventDefault();
+      step(-1); e.preventDefault();
     } else if (combo === kb.open) {
       const it = items[focusIndex];
-      if (it.kind === "msg") open(it.msg, focusIndex); else activate(it);
+      if (it.kind === "msg") open(it.msg, focusIndex); else if (it.kind === "group") activate(it);
     } else if (combo === kb.done) {
       const it = items[focusIndex];
+      if (it.kind === "header") { e.preventDefault(); return; }
       if (it.kind === "msg") {
         const doneNow = !it.msg.is_done;
         markDone(it.msg, doneNow);
@@ -370,39 +504,19 @@
 <svelte:window on:keydown={onKey} on:click={() => ctx && closeCtx()} />
 
 {#if ctx}
-  <div class="ctxmenu" style="left:{ctx.x}px; top:{ctx.y}px" onclick={(e) => e.stopPropagation()}>
-    <button onclick={() => ctxRun((m) => open(m, focusIndex))}>Open</button>
-    <button onclick={() => ctxRun((m) => pinMessage(m))}>{@html icons.pin} {ctx.msg.pinned ? "Unpin" : "Pin to top"}</button>
-    <button onclick={() => ctxRun((m) => toggleVip(m.from_addr))}>{@html icons.star} {isVip(ctx.msg.from_addr) ? "Remove VIP" : "Mark sender VIP"}</button>
-    <button onclick={() => ctxRun((m) => toggleTrusted(m.from_addr))}>{@html icons.shieldCheck} {isTrustedSender(ctx.msg.from_addr) ? "Unmark safe" : "Mark sender safe"}</button>
-    <button onclick={() => ctxRun((m) => markDone(m, !m.is_done))}>{#if !ctx.msg.is_done}{@html icons.done} {/if}{ctx.msg.is_done ? "Mark not done" : "Mark done"}</button>
-    <button onclick={() => ctxRun(toggleSeen)}>{ctx.msg.is_seen ? "Mark unread" : "Mark read"}</button>
-    <button onclick={() => ctxRun(toggleFlag)}>{#if !ctx.msg.is_flagged}{@html icons.flag} {/if}{ctx.msg.is_flagged ? "Unflag" : "Flag"}</button>
-    <div class="ctx-sub">
-      {@html icons.snooze} Snooze ▸
-      <div class="ctx-subm">
-        {#each snoozePresets() as p}<button onclick={() => ctxRun((m) => snoozeMessage(m, p.iso, p.presence))}>{p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}</button>{/each}
-      </div>
+  <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
+    <input class="ctx-search" placeholder="Search actions…" bind:value={ctxSearch} autofocus
+      onkeydown={(e) => { if (e.key === "Enter") ctxEnter(); else if (e.key === "Escape") closeCtx(); }} />
+    <div class="ctx-list">
+      {#each ctxActions(ctx.msg) as a}
+        {#if a.sep}
+          <div class="ctx-head">{a.sep}</div>
+        {:else}
+          <button class:danger={a.danger} onclick={() => runCtx(a)}>{#if a.icon}{@html a.icon} {/if}{a.label}</button>
+        {/if}
+      {/each}
+      {#if ctxActions(ctx.msg).length === 0}<div class="ctx-empty">No matching action</div>{/if}
     </div>
-    <div class="ctx-sep"></div>
-    <button onclick={() => ctxRun(archiveOne)}>{@html icons.archive} Archive</button>
-    <button class="danger" onclick={() => ctxRun(deleteOne)}>{@html icons.trash} Delete</button>
-    <div class="ctx-sub">
-      {@html icons.tag} Mark sender as ▸
-      <div class="ctx-subm">
-        {#each Object.entries(CAT_META) as [id, meta]}
-          <button onclick={() => ctxRun((m) => setSenderCategory(m, id))}>{@html meta.icon} {meta.label}</button>
-        {/each}
-        <button onclick={() => ctxRun((m) => setSenderCategory(m, "primary"))}>{@html icons.inbox} Primary</button>
-        <button onclick={() => ctxRun((m) => setSenderCategory(m, "auto"))}>{@html icons.reset} Auto (reset)</button>
-      </div>
-    </div>
-    <div class="ctx-sep"></div>
-    <button onclick={() => ctxRun((m) => searchAddress(m.from_addr))}>Show mail from sender</button>
-    <button onclick={() => ctxRun(muteSender)}>{@html icons.mute} Mute sender</button>
-    <button onclick={() => ctxRun(muteThread)}>{@html icons.mute} Mute conversation</button>
-    <button class="danger" onclick={() => ctxRun(blockSender)}>{@html icons.junk} Block sender</button>
-    <button onclick={() => ctxRun(createRuleFromSender)}>{@html icons.bolt} Create rule…</button>
   </div>
 {/if}
 
@@ -462,7 +576,9 @@
     {:else}
       {#each items as item, i (item.kind === "msg" ? "m" + item.msg.id : "g" + item.key)}
         <div animate:flip={{ duration: 220 }} out:fly={{ x: 60, duration: 200 }}>
-          {#if item.kind === "msg"}
+          {#if item.kind === "header"}
+            <div class="datesep">{item.label}</div>
+          {:else if item.kind === "msg"}
             <MessageRow
               message={item.msg}
               focused={i === focusIndex}
@@ -494,8 +610,8 @@
                     <div class="bundled">
                       <MessageRow message={m} selected={app.selectedMessageId === m.id}
                         checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                        onselect={(e) => toggleSelect(m, i, e)}
-                        onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
+                        onselect={(e) => toggleSelect(m, -1, e)}
+                        onopen={() => open(m, -1)} ondone={() => doneRow(m, !m.is_done)}
                         onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
                         onmenu={(e) => openCtx(e, m)} />
                     </div>
@@ -527,8 +643,8 @@
                     <div class="bundled">
                       <MessageRow message={m} selected={app.selectedMessageId === m.id}
                         checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                        onselect={(e) => toggleSelect(m, i, e)}
-                        onopen={() => open(m, i)} ondone={() => doneRow(m, !m.is_done)}
+                        onselect={(e) => toggleSelect(m, -1, e)}
+                        onopen={() => open(m, -1)} ondone={() => doneRow(m, !m.is_done)}
                         onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
                         onmenu={(e) => openCtx(e, m)} />
                     </div>
@@ -594,25 +710,29 @@
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   .rows:focus { outline: none; }
+  /* Spark-style date section header */
+  .datesep { position: sticky; top: 0; z-index: 4; padding: 7px 16px 5px; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px);
+    border-bottom: 1px solid var(--border); }
   .catbody { overflow: hidden; }
   .bundled { padding-left: 22px; background: var(--surface); box-shadow: inset 2px 0 0 var(--surface-3); }
   .loadmore { display: flex; align-items: center; gap: 8px; padding: 11px 22px; color: var(--muted); font-size: 12px; }
   .loadmore .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .ctxmenu { position: fixed; z-index: 300; min-width: 200px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; }
-  .ctxmenu > button, .ctx-sub { text-align: left; padding: 8px 11px; border-radius: 6px; font-size: 13px; color: var(--text); }
-  .ctxmenu > button:hover { background: var(--accent); color: #fff; }
-  .ctxmenu > button.danger:hover { background: var(--danger); }
-  .ctx-sep { height: 1px; background: var(--border); margin: 4px 0; }
-  .ctx-sub { position: relative; cursor: default; color: var(--muted); }
-  .ctx-sub:hover { background: var(--surface-2); }
-  .ctx-subm { position: absolute; left: 100%; top: 0; display: none; min-width: 150px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; flex-direction: column; }
-  .ctx-sub:hover .ctx-subm { display: flex; }
-  .ctx-subm button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
-  .ctx-subm button:hover { background: var(--accent); color: #fff; }
-  .ctx-subm .when { color: var(--faint); font-size: 11px; }
-  .ctx-subm button:hover .when { color: #e7e9ff; }
+  .ctxmenu { position: fixed; z-index: 300; width: 244px; max-height: min(72vh, 560px); background: var(--surface-3);
+    border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 6px;
+    display: flex; flex-direction: column; min-height: 0; }
+  .ctx-search { width: 100%; box-sizing: border-box; margin-bottom: 5px; padding: 7px 10px; font-size: 13px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+  .ctx-search:focus { border-color: var(--accent); outline: none; }
+  .ctx-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
+  .ctx-list > button { text-align: left; padding: 8px 11px; border-radius: 6px; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .ctx-list > button:hover { background: var(--accent); color: #fff; }
+  .ctx-list > button.danger:hover { background: var(--danger); }
+  .ctx-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); padding: 8px 11px 3px; }
+  .ctx-empty { color: var(--muted); font-size: 13px; padding: 10px 11px; }
 
   /* Loading skeleton */
   .skel { display: flex; gap: 11px; align-items: center; padding: 13px 14px; border-bottom: 1px solid var(--border); }

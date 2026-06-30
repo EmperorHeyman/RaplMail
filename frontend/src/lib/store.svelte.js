@@ -47,7 +47,7 @@ const DEFAULT_SETTINGS = {
   emailAdaptColors: true,        // invert light-authored email HTML to match a dark theme
   alwaysOriginalHtml: false,     // always render emails in their original HTML (no theming)
   customCssInEmails: false,      // also apply custom CSS inside email bodies (off = emails untouched)
-  smartGroupPlacement: "afterN", // where category groups sit: "top" | "afterN" | "bottom"
+  smartGroupPlacement: "dateSections", // "dateSections" (Spark-style) | "top" | "afterN" | "timeline" | "bottom"
   smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
   senderAvatars: true,           // fetch + cache the sender domain's favicon as the avatar
   relativeTime: false,           // list rows show "3 hours ago" instead of a date
@@ -79,6 +79,9 @@ const DEFAULT_SETTINGS = {
   emailTheme: "",                // email body rendering: "" (auto) | "adaptive" | "dark" | "original"
   trustedSenders: [],            // addresses the user marked OK (suppresses spoof warnings)
   icsFeeds: [],                  // subscribed iCal feeds: [{ url, color }] (read-only)
+  raplDesk: [],                  // connected RaplDesk instances [{id,name,url}] (keys in vault)
+  raplDeskUserId: null,          // your RaplDesk agent user id (for replies/new tickets)
+  calendarDefaultView: "month",  // calendar opens in "month" or "week"
   calendarReminders: [10],       // lead times (minutes) for event reminders; combinable
   icsSyncMinutes: 30,            // auto-refresh subscribed calendars this often
   scheduleLaterHours: 3,         // "Later today" = now + this many hours
@@ -208,14 +211,23 @@ async function doSend(payload) {
   }
 }
 
+// During the undo-send delay the payload is also written to localStorage, so a
+// hard quit/kill within the (default 5s) window doesn't silently lose the mail —
+// it's redelivered on the next boot (see recoverPendingSend).
+const PENDING_SEND_KEY = "raplmail.pendingSend";
+function persistPendingSend(payload) { try { localStorage.setItem(PENDING_SEND_KEY, JSON.stringify(payload)); } catch {} }
+function clearPersistedPendingSend() { try { localStorage.removeItem(PENDING_SEND_KEY); } catch {} }
+
 /** Queue a send; with undo-send on, it can be cancelled during the delay. */
 export function queueSend(payload, seed) {
   app.composing = null; // hide the compose window immediately
   const delay = app.settings.undoSend ? (app.settings.undoSendDelay || 5) : 0;
   if (delay <= 0) { doSend(payload); return; }
+  persistPendingSend(payload);
   const timer = setTimeout(() => {
     const ps = app.pendingSend;
     app.pendingSend = null;
+    clearPersistedPendingSend(); // clear right before delivery so we never double-send
     if (ps) doSend(ps.payload);
   }, delay * 1000);
   app.pendingSend = { payload, seed, delay, timer, label: payload.subject || "(no subject)" };
@@ -226,18 +238,39 @@ export function cancelSend() {
   if (!ps) return;
   clearTimeout(ps.timer);
   app.pendingSend = null;
+  clearPersistedPendingSend();
   notify("Send cancelled");
   openCompose(ps.seed); // bring the message back to keep editing
 }
 
+// On boot, redeliver any send that was still counting down when the app was
+// quit/killed (the renderer setTimeout died with the process). The key is
+// cleared the instant before a normal delivery, so this only fires for sends
+// that genuinely never went out.
+export function recoverPendingSend() {
+  let payload = null;
+  try { payload = JSON.parse(localStorage.getItem(PENDING_SEND_KEY) || "null"); } catch {}
+  if (!payload) return;
+  clearPersistedPendingSend();
+  doSend(payload);
+  notify("Delivered a message that was still sending when the app closed");
+}
+
 let _settingsTimer = null;
+// Keys the BACKEND owns inside the shared settings blob — never sent from the
+// UI save (the backend merges its own), so a settings save can't wipe them.
+const _BACKEND_OWNED = ["raplDesk", "googleCalendarEmail"];
 export function saveSettings(patch) {
   app.settings = { ...app.settings, ...patch };
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(app.settings)); } catch {}
   // Persist to the backend (a file) too, debounced, so settings survive across
   // installs and can be exported.
   clearTimeout(_settingsTimer);
-  _settingsTimer = setTimeout(() => { appSettings.put(app.settings).catch(() => {}); }, 400);
+  _settingsTimer = setTimeout(() => {
+    const out = { ...app.settings };
+    for (const k of _BACKEND_OWNED) delete out[k];
+    appSettings.put(out).catch(() => {});
+  }, 400);
 }
 
 // Load settings from the server on boot. The server copy is authoritative; if
@@ -262,6 +295,13 @@ export async function initSettings() {
       appSettings.put(app.settings).catch(() => {});
     }
   } catch { /* offline / not ready — localStorage value stands */ }
+  // One-time migration: move the old default "afterN" to the new Spark-style
+  // date sections. Guarded so it runs once and never overrides a later choice.
+  if (!app.settings._placementMigrated) {
+    const patch = { _placementMigrated: true };
+    if ((app.settings.smartGroupPlacement || "afterN") === "afterN") patch.smartGroupPlacement = "dateSections";
+    saveSettings(patch);
+  }
 }
 
 export async function exportConfig() {
@@ -325,16 +365,25 @@ export async function checkForUpdates({ silent = false } = {}) {
   }
 }
 
+// LIFO stack of recent undoable actions. The toast only shows the latest, but
+// fast triage produces several — keeping a stack means each one stays reversible
+// (via Ctrl+Z) instead of only the most recent surviving.
+const _undoStack = [];
 export function notify(message, kind = "info", undo = null) {
   const id = Math.random();
+  if (undo) {
+    _undoStack.push(undo);
+    if (_undoStack.length > 20) _undoStack.shift();
+  }
   app.toast = { message, kind, id, undo };
   setTimeout(() => { if (app.toast && app.toast.id === id) app.toast = null; }, undo ? 6000 : 3200);
 }
 export function runUndo() {
-  const u = app.toast?.undo;
   app.toast = null;
-  if (u) u();
+  const u = _undoStack.pop();
+  if (u) { u(); notify("Undone"); }
 }
+export function hasUndo() { return _undoStack.length > 0; }
 
 export async function refreshVault() {
   app.vault = { ...(await vault.status()), ready: true };
@@ -612,12 +661,16 @@ export async function snoozeMessage(message, untilISO, presence = false) {
     await messages.snooze(message.id, presence ? null : untilISO, presence);
     if (untilISO || presence) {
       notify(presence ? "Snoozed until you're back" : "Snoozed", "info", () => {
-        messages.snooze(message.id, null, false).catch(() => {});
         message.snooze_until = null;
         if (!app.messages.some((m) => m.id === message.id)) {
           const at = idx >= 0 ? idx : app.messages.length;
           app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
         }
+        // Re-sync to land the row in its correct sorted position (the captured
+        // idx may be stale if the list changed during the undo window).
+        messages.snooze(message.id, null, false)
+          .then(() => refreshMessages({ background: true }))
+          .catch(() => {});
       });
     } else {
       notify("Unsnoozed");
@@ -690,7 +743,10 @@ function _remindLabel(min) {
 }
 function _checkReminders() {
   const offsets = app.settings.calendarReminders || [];
-  if (!offsets.length || inQuietHours()) return;
+  // NB: calendar reminders are NOT gated by email quiet hours — a meeting
+  // reminder you explicitly set must still fire overnight/early. Quiet hours
+  // only governs new-mail notifications.
+  if (!offsets.length) return;
   const now = Date.now();
   for (const e of _calEvents) {
     if (!e.start || e.cancelled) continue;
@@ -889,6 +945,17 @@ function preloadAvatars() {
   }
 }
 
+// Folder counts (sidebar unread/badges) refresh after triage actions. Debounced
+// so rapid keyboard triage (holding/repeating `e`) coalesces into one request
+// instead of one round-trip per keystroke.
+let _folderRefreshTimer = null;
+export function refreshFoldersSoon() {
+  clearTimeout(_folderRefreshTimer);
+  _folderRefreshTimer = setTimeout(() => {
+    folders.list().then((f) => { app.folders = f; updateBadge(); }).catch(() => {});
+  }, 350);
+}
+
 export async function markDone(message, done) {
   const wasSelected = app.selectedMessageId === message.id;
   const idx = app.messages.findIndex((m) => m.id === message.id);
@@ -914,7 +981,7 @@ export async function markDone(message, done) {
   }
   try {
     await messages.setDone(message.id, done);
-    app.folders = await folders.list();
+    refreshFoldersSoon();
     // Offer a quick undo when a message was archived out of the view.
     if (!app.showDone && done) {
       notify("Marked done", "info", () => {
@@ -923,7 +990,9 @@ export async function markDone(message, done) {
           const at = idx >= 0 ? idx : app.messages.length;
           app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
         }
-        messages.setDone(message.id, false).then(() => folders.list().then((f) => (app.folders = f))).catch(() => {});
+        messages.setDone(message.id, false)
+          .then(() => { refreshFoldersSoon(); refreshMessages({ background: true }); })
+          .catch(() => {});
       });
     }
   } catch (e) {

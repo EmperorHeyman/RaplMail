@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -16,6 +16,7 @@
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
   import CalendarView from "./lib/components/CalendarView.svelte";
+  import TicketsView from "./lib/components/TicketsView.svelte";
   import Dashboard from "./lib/components/Dashboard.svelte";
   import ShortcutsOverlay from "./lib/components/ShortcutsOverlay.svelte";
   import Toast from "./lib/components/Toast.svelte";
@@ -29,18 +30,40 @@
   let shortcutsOpen = $state(false);
 
   // Customize mode: drag column dividers to resize (locked unless enabled).
-  let resizing = null;
+  // During a drag we update a transient width (cheap, rAF-throttled) and only
+  // persist to settings ONCE on release — calling saveSettings() per pointermove
+  // (full settings reassign + localStorage write + app-wide reactivity) made the
+  // resize unusably laggy.
+  let resizing = $state(null);
+  let rafId = 0;
+  let lastX = 0;
+  let dragW = $state({ sidebar: null, list: null });
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   // Effective sidebar width — collapsed rail is a fixed 60px regardless of the stored width.
-  const effSidebarW = () => (app.settings.sidebarCollapsed ? 60 : app.settings.sidebarWidth);
+  const effSidebarW = () => (app.settings.sidebarCollapsed ? 60 : (dragW.sidebar ?? app.settings.sidebarWidth));
   function startResize(which, e) {
     resizing = which; e.preventDefault();
     window.addEventListener("pointermove", onResize);
-    window.addEventListener("pointerup", () => { resizing = null; window.removeEventListener("pointermove", onResize); }, { once: true });
+    window.addEventListener("pointerup", endResize, { once: true });
   }
   function onResize(e) {
-    if (resizing === "sidebar") saveSettings({ sidebarWidth: clamp(e.clientX, 150, 460) });
-    else if (resizing === "list") saveSettings({ listWidth: clamp(e.clientX - effSidebarW(), 280, 760) });
+    lastX = e.clientX;
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = 0;
+      if (resizing === "sidebar") dragW.sidebar = clamp(lastX, 150, 460);
+      else if (resizing === "list") dragW.list = clamp(lastX - effSidebarW(), 280, 760);
+    });
+  }
+  function endResize() {
+    window.removeEventListener("pointermove", onResize);
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    const patch = {};
+    if (dragW.sidebar != null) patch.sidebarWidth = dragW.sidebar;
+    if (dragW.list != null) patch.listWidth = dragW.list;
+    if (Object.keys(patch).length) saveSettings(patch);
+    dragW = { sidebar: null, list: null };
+    resizing = null;
   }
 
   function isTyping(e) {
@@ -89,16 +112,16 @@
   function onGlobalKey(e) {
     if (composeWindow) return;
     const kb = app.settings.keybinds || {};
-    // Ctrl/Cmd+R → check for new mail (override the webview's reload-the-app default).
+    // Ctrl/Cmd+R → check for new mail (override the webview's reload-the-app
+    // default). Always block the reload, but don't trigger a sync mid-typing.
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && (e.key === "r" || e.key === "R")) {
       e.preventDefault();
-      syncAllAccounts();
+      if (!isTyping(e)) syncAllAccounts();
       return;
     }
-    // Ctrl/Cmd+N → new message, from anywhere (even while typing in a field).
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
-      e.preventDefault();
-      openCompose({ to: "", subject: "", html: "" });
+    // Ctrl/Cmd+Z → undo the most recent reversible action (done/snooze/etc.).
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z") && !isTyping(e)) {
+      if (hasUndo()) { e.preventDefault(); runUndo(); }
       return;
     }
     const combo = keyCombo(e);
@@ -147,6 +170,7 @@
       (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();
       recategorizeOnce();
+      recoverPendingSend();  // redeliver a send interrupted by a quit mid-undo-countdown
     }
   });
 </script>
@@ -169,8 +193,8 @@
 {:else if !app.vault.unlocked}
   <VaultGate />
 {:else}
-  <div class="app" class:customizing={app.customizing}
-       style="--sidebar-w: {app.settings.sidebarCollapsed ? '60px' : app.settings.sidebarWidth + 'px'}; --list-w: {app.settings.listWidth}px">
+  <div class="app" class:customizing={app.customizing} class:resizing={!!resizing}
+       style="--sidebar-w: {app.settings.sidebarCollapsed ? '60px' : (dragW.sidebar ?? app.settings.sidebarWidth) + 'px'}; --list-w: {(dragW.list ?? app.settings.listWidth)}px">
     <Sidebar />
     {#if app.view === "settings"}
       <Settings />
@@ -180,6 +204,8 @@
       <NewsletterFeed />
     {:else if app.view === "calendar"}
       <CalendarView />
+    {:else if app.view === "tickets"}
+      <TicketsView />
     {:else if app.view === "dashboard"}
       <Dashboard />
     {:else}
@@ -230,6 +256,10 @@
     position: relative;
   }
   .app.customizing { user-select: none; }
+  /* While dragging a divider, stop the message iframe (and other panes) from
+     capturing pointer events — otherwise the drag stalls over the reader. */
+  .app.resizing :global(iframe) { pointer-events: none; }
+  .app.resizing { cursor: col-resize; }
   .resizer {
     position: absolute; top: 0; bottom: 0; width: 9px; margin-left: -4px;
     cursor: col-resize; z-index: 120;
@@ -259,6 +289,7 @@
   :global(.app:has(.cal)),
   :global(.app:has(.sched)),
   :global(.app:has(.feed)),
+  :global(.app:has(.tickets)),
   :global(.app:has(.dash)) {
     grid-template-columns: var(--sidebar-w) 1fr;
   }

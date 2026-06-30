@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { signatures as sigApi, compose as composeApi } from "../api.js";
@@ -93,12 +93,16 @@
     try {
       if (!userTyped()) { localStorage.removeItem(DRAFT_KEY); return; }
       localStorage.setItem(DRAFT_KEY, JSON.stringify({
-        to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", account_id: accountId,
+        to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
+        account_id: accountId, in_reply_to: c.in_reply_to || "",
       }));
     } catch {}
   }
   function scheduleSave() { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 700); }
   function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
+  // Flush the debounced save right now (used on close/unmount so the last
+  // keystrokes are never lost between the 700ms debounce and teardown).
+  function flushSave() { clearTimeout(draftTimer); saveDraft(); }
 
   onMount(async () => {
     if (standalone) {
@@ -121,10 +125,15 @@
     } catch {}
     applySignature();
 
-    // Restore an autosaved draft, but only into a blank new compose (never over a reply/forward).
-    if (!standalone && !c.to && !c.subject && !c.html) {
+    // Restore an autosaved draft into a blank new compose, OR when resuming the
+    // exact same reply (matching in_reply_to) — so closing a half-written reply
+    // and reopening it brings the text back instead of losing it.
+    const blankSeed = !c.to && !c.subject && !c.html;
+    const savedPeek = (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; } })();
+    const sameReply = !!(c.in_reply_to && savedPeek && savedPeek.in_reply_to === c.in_reply_to);
+    if (!standalone && (blankSeed || sameReply)) {
       try {
-        const saved = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+        const saved = savedPeek;
         if (saved && (saved.to || saved.subject || (saved.html || "").trim())) {
           c.to = saved.to || ""; c.cc = saved.cc || ""; c.subject = saved.subject || "";
           if (saved.account_id) accountId = saved.account_id;
@@ -137,10 +146,17 @@
     focusTop();
     // Autosave as fields change.
     scheduleSave();
+    mounted = true;
   });
 
-  // Persist subject/recipients as they change.
-  $effect(() => { void c.to; void c.cc; void c.subject; if (editor) scheduleSave(); });
+  // True once the user actually edits something (vs. the seeded reply/forward
+  // content), so close() only confirms when there's genuine unsaved work.
+  let mounted = false;
+  let dirty = $state(false);
+  function onBodyInput() { dirty = true; scheduleSave(); }
+
+  // Persist subject/recipients as they change (and flag genuine edits).
+  $effect(() => { void c.to; void c.cc; void c.subject; if (mounted) dirty = true; if (editor) scheduleSave(); });
 
   // Re-pick the default signature when the From account changes.
   let _lastAcct = null;
@@ -154,9 +170,17 @@
   });
 
   function close() {
+    // Persist whatever's typed before tearing down so the X never silently
+    // drops a draft (the 700ms debounce hadn't fired yet). If there's real
+    // unsaved content, confirm — the saved copy is restorable next compose.
+    flushSave();
+    if (dirty && userTyped() && !confirm("Discard this draft? Your text is saved and can be restored from a new message.")) return;
     if (standalone) { window.close(); return; }
     app.composing = null;
   }
+  // Last-resort flush if the component is torn down some other way (route
+  // change, parent re-render) without close() running.
+  onDestroy(() => { try { flushSave(); } catch {} });
 
   // Rich-text commands (contenteditable).
   function exec(cmd, value = null) {
@@ -464,7 +488,7 @@
   </div>
 
   <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label="Message body"
-    bind:this={editor} onkeydown={onEditorKey} oninput={scheduleSave} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
+    bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
     data-placeholder="Write your message…  (Ctrl+Enter to send)"></div>
 
   {#if attachments.length}

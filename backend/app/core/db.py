@@ -74,6 +74,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "source": "ALTER TABLE calendarevent ADD COLUMN source TEXT DEFAULT 'mail'",
         "color": "ALTER TABLE calendarevent ADD COLUMN color TEXT DEFAULT ''",
     },
+    "mutedthread": {
+        "participants": "ALTER TABLE mutedthread ADD COLUMN participants TEXT DEFAULT ''",
+    },
 }
 
 

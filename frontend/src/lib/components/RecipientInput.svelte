@@ -16,7 +16,19 @@
     return parts[parts.length - 1].trim();
   }
 
+  // Pull the bare address out of a "Name <addr>" token.
+  const addrOf = (t) => (String(t).match(/<([^>]+)>/)?.[1] || String(t)).trim();
+  const looksValid = (t) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(addrOf(t));
+  // Completed tokens (everything but the one still being typed) that don't look
+  // like a valid address — surfaced so a typo'd / mis-pasted recipient is caught
+  // before send rather than shipped verbatim to the server.
+  const invalid = $derived(
+    value.split(",").slice(0, -1).map((t) => t.trim()).filter((t) => t && !looksValid(t))
+  );
+
   function onInput() {
+    // Accept lists pasted from other clients: Outlook uses ';', some use newlines.
+    if (/[;\n\t]/.test(value)) value = value.replace(/[;\n\t]+/g, ", ");
     const frag = currentFragment();
     clearTimeout(timer);
     if (frag.length < 2) { open = false; suggestions = []; return; }
@@ -58,6 +70,9 @@
     onblur={() => setTimeout(() => (open = false), 120)}
     autocomplete="off"
   />
+  {#if invalid.length}
+    <div class="rcpt-warn">⚠ Check {invalid.length === 1 ? "this address" : "these addresses"}: {invalid.join(", ")}</div>
+  {/if}
   {#if open}
     <ul class="suggest" role="listbox">
       {#each suggestions as c, i (c.id)}
@@ -74,6 +89,7 @@
 
 <style>
   .rcpt { position: relative; flex: 1; }
+  .rcpt-warn { font-size: 11px; color: var(--warning); padding: 2px 0; }
   input { width: 100%; border: none; background: transparent; padding: 4px 0; }
   input:focus { border: none; }
   .suggest {

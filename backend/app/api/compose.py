@@ -12,7 +12,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import require_unlocked_store, verify_token
 from app.core.db import get_session
-from app.models import Account, ActionQueue, Folder, FolderRole, ScheduledSend, Signature
+from app.models import Account, ActionQueue, Folder, FolderRole, Provider, ScheduledSend, Signature
 from app.providers.base import OutgoingMessage
 from app.sync.compose import inject_signature
 
@@ -229,7 +229,13 @@ def _deliver_blocking(body_dict: dict) -> None:
         ).first()
         provider = build_provider(account)
     try:
-        raw = provider.send(message)
+        try:
+            raw = provider.send(message)
+        except OSError as exc:   # incl. socket.gaierror "getaddrinfo failed"
+            # unreachable SMTP host — the stored server is
+            # stale or wrong (common for vanity domains, e.g. a Seznam-hosted
+            # rapl-group.eu). Re-detect from MX, persist, and retry once.
+            raw = _resend_with_detected_host(body.account_id, message, exc)
         if sent_path:
             try:
                 provider.append_to_folder(sent_path, raw, seen=True)
@@ -237,6 +243,33 @@ def _deliver_blocking(body_dict: dict) -> None:
                 pass
     finally:
         provider.close()
+
+
+def _resend_with_detected_host(account_id: int, message, original_exc):
+    """Auto-correct a wrong/unreachable SMTP host via autodiscover, save it, retry."""
+    from app.core.db import get_engine
+    from app.providers.autodiscover import discover
+    from app.sync.engine import build_provider
+
+    with Session(get_engine()) as session:
+        account = session.get(Account, account_id)
+        if account is None or account.provider != Provider.imap:
+            raise original_exc
+        d = discover(account.email)
+        if not d.smtp_host or (d.smtp_host == account.smtp_host and d.imap_host == account.imap_host):
+            raise original_exc   # nothing better to try
+        account.imap_host = d.imap_host or account.imap_host
+        account.imap_port = d.imap_port or account.imap_port
+        account.smtp_host = d.smtp_host
+        account.smtp_port = d.smtp_port or account.smtp_port
+        session.add(account)
+        session.commit()
+        session.refresh(account)
+        fixed = build_provider(account)
+    try:
+        return fixed.send(message)
+    finally:
+        fixed.close()
 
 
 def _save_draft_blocking(body_dict: dict, replace_uid: int | None) -> dict:
@@ -308,7 +341,15 @@ def process_due_scheduled() -> int:
         with Session(get_engine()) as session:
             s = session.get(ScheduledSend, sid)
             if s:
-                s.status = "sent" if ok else "failed"
+                if ok:
+                    s.status = "sent"
+                else:
+                    # Don't silently drop it: hand off to the resilient send
+                    # queue (8 retries with backoff) just like an immediate send
+                    # that couldn't reach the server. The message is no longer
+                    # lost on a momentary blip at the scheduled minute.
+                    s.status = "failed"
+                    session.add(ActionQueue(kind="send", payload=payload))
                 session.commit()
         sent += 1 if ok else 0
     return sent

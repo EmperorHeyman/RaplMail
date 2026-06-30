@@ -108,7 +108,7 @@ def build_provider(account: Account) -> ImapSmtpProvider:
 class SyncManager:
     def __init__(self, hub: WebSocketHub):
         self._hub = hub
-        self._executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="sync")
+        self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sync")
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
         self._wake = asyncio.Event()
@@ -299,8 +299,9 @@ class SyncManager:
             return  # cannot decrypt credentials yet
         with Session(get_engine()) as session:
             account_ids = list(session.exec(select(Account.id).where(Account.enabled == True)))  # noqa: E712
-        for account_id in account_ids:
-            await self.sync_account(account_id)
+        # Sync accounts concurrently (was one-at-a-time) — each runs in its own
+        # thread, so N mailboxes refresh in parallel instead of serially.
+        await asyncio.gather(*(self.sync_account(aid) for aid in account_ids), return_exceptions=True)
         self._ensure_idle(account_ids)  # keep near-instant IDLE watchers in sync
 
     async def sync_account(self, account_id: int) -> None:
@@ -334,7 +335,12 @@ class SyncManager:
             ))
             from app.models import MutedThread, SenderCategory
             overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
-            muted = {r.thread_key for r in session.exec(select(MutedThread))}
+            # thread_key -> set of muted-conversation sender addresses (empty set
+            # = legacy subject-only mute). Used to scope auto-archive on arrival.
+            muted = {
+                r.thread_key: {p for p in (r.participants or "").split(",") if p}
+                for r in session.exec(select(MutedThread))
+            }
             provider = build_provider(account)
             try:
                 self._sync_folders(session, account, provider)
@@ -380,7 +386,7 @@ class SyncManager:
 
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
-                     previews: list[dict] | None = None, muted: set | None = None) -> int:
+                     previews: list[dict] | None = None, muted: dict | None = None) -> int:
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
         ).one()
@@ -396,12 +402,20 @@ class SyncManager:
             new_count += 1
             # Restore durable local state by Message-ID.
             self._restore_state(session, account, msg)
-            # Muted conversation: auto-done new replies so they never hit the inbox.
-            if muted and msg.thread_id in muted and not msg.is_done:
-                msg.is_done = True
-                self._mark_state_done(session, account, msg)
-            # Run rules on fresh inbox mail only.
-            if folder.role == FolderRole.inbox and not msg.is_done:
+            # Muted conversation: auto-done new replies so they never hit the
+            # inbox — but only when the sender was part of the muted conversation
+            # (or it's a legacy subject-only mute with no recorded participants),
+            # so a common subject line doesn't mute unrelated strangers.
+            if muted and not msg.is_done and msg.thread_id in muted:
+                parts = muted[msg.thread_id]
+                if not parts or (msg.from_addr or "").strip().lower() in parts:
+                    msg.is_done = True
+                    self._mark_state_done(session, account, msg)
+            # Run rules on fresh mail in the inbox AND custom folders. A server-
+            # side filter often files list/automated mail into a subfolder
+            # (role "other"); a muted/blocked sender must be caught there too, not
+            # only in the inbox. Sent/drafts/trash/junk/archive are left alone.
+            if folder.role in (FolderRole.inbox, FolderRole.other) and not msg.is_done:
                 self._apply_rules(session, account, folder, msg, provider, rules)
             # Collect a preview for desktop notifications (inbox, still-unread).
             if previews is not None and folder.role == FolderRole.inbox and not msg.is_done:
@@ -436,9 +450,19 @@ class SyncManager:
             if flags is None:
                 continue
             server_done = _DONE_KW in flags
-            if server_done != m.is_done:
-                m.is_done = server_done
-                self._set_state_done(session, account, m, server_done)
+            if server_done == m.is_done:
+                continue
+            # One-directional reconcile of the hero "done" bit. The server may
+            # turn done ON (e.g. another device archived this message) and we
+            # adopt it. But we must NOT let the server silently turn done OFF for
+            # a message marked done locally: the done-keyword push is best-effort
+            # and many servers reject custom keywords, so a missing keyword means
+            # "the push hasn't landed", not "the user un-done it". Reverting here
+            # is what made every local 'done' reappear minutes later. Un-done is
+            # the rare case and stays an explicit local action (the Done slider).
+            if server_done and not m.is_done:
+                m.is_done = True
+                self._set_state_done(session, account, m, True)
                 session.add(m)
 
     def _set_state_done(self, session: Session, account: Account, msg: Message, done: bool) -> None:

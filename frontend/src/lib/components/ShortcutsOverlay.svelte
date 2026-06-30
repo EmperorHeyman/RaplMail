@@ -9,13 +9,15 @@
   const groups = $derived([
     { title: "Triage", items: [
       [`${comboLabel(kb.next)} / ${comboLabel(kb.prev)}`, "Move down / up"], [comboLabel(kb.open), "Open message / thread"],
-      [comboLabel(kb.done), "Toggle / archive done"], ["Click avatar", "Select (Shift-click for a range)"], ["Right-click", "Actions menu"],
+      [comboLabel(kb.done), "Mark done (toggle)"], ["Ctrl/⌘ + Z", "Undo last action"],
+      ["Click avatar", "Select (Shift-click for a range)"], ["Right-click", "Actions menu"],
     ]},
     { title: "Navigate", items: [
       [comboLabel(kb.search), "Focus search"], [comboLabel(kb.palette), "Command palette"],
-      ["Ctrl/⌘ + 1…9", "Switch workspace"], [comboLabel(kb.help), "This cheatsheet"],
+      ["Ctrl/⌘ + 1…9 / 0", "Switch workspace / All"], [comboLabel(kb.help), "This cheatsheet"],
       ["g then i / s / c", "Jump: Inbox / Snoozed / Calendar"],
       ["g then f / n / p / t", "Follow-ups / Newsfeed / Paper Trail / Scheduled"],
+      ["g then a", "Jump: Settings"],
     ]},
     { title: "Compose", items: [
       [comboLabel(kb.compose), "New message"], ["Ctrl/⌘ + Enter", "Send"], [";shortcut + Space", "Expand a snippet"],

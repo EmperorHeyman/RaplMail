@@ -31,6 +31,31 @@
 
   const smartSplit = (s) => (s.match(/\/[^/]+\/|"[^"]*"|\S+/g)) || [];
   const isOp = (t) => OP_RE.test(t);
+
+  // Operators that can't sensibly coexist (would AND to an always-empty result).
+  const EXCLUSIVE = [["is:read", "is:unread"]];
+  // De-dupe identical chips (last wins) and drop earlier members of a mutually
+  // exclusive group, so `is:unread` + `is:read` can't silently zero out results.
+  function normalizeChips(list) {
+    const seen = new Set();
+    const out = [];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const key = list[i].toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.unshift(list[i]);
+    }
+    for (const group of EXCLUSIVE) {
+      const members = out.filter((c) => group.includes(c.toLowerCase()));
+      if (members.length > 1) {
+        const keep = members[members.length - 1];
+        for (let i = out.length - 1; i >= 0; i--) {
+          if (group.includes(out[i].toLowerCase()) && out[i] !== keep) out.splice(i, 1);
+        }
+      }
+    }
+    return out;
+  }
   const opParts = (t) => { const i = t.indexOf(":"); return i < 0 ? [t, ""] : [t.slice(0, i + 1), t.slice(i + 1)]; };
 
   // Re-parse when the value changes from the outside (e.g. searchAddress()).
@@ -38,7 +63,7 @@
   $effect(() => {
     if (value === lastEmitted) return;
     const tokens = smartSplit(value || "");
-    chips = tokens.filter(isOp);
+    chips = normalizeChips(tokens.filter(isOp));
     text = tokens.filter((t) => !isOp(t)).join(" ");
     lastEmitted = value;
   });
@@ -60,7 +85,7 @@
   function chipLastWordIfComplete() {
     const tokens = smartSplit(text);
     const last = tokens[tokens.length - 1];
-    if (last && isOp(last)) { chips = [...chips, last]; text = tokens.slice(0, -1).join(" "); }
+    if (last && isOp(last)) { chips = normalizeChips([...chips, last]); text = tokens.slice(0, -1).join(" "); }
   }
 
   async function recompute() {
@@ -91,7 +116,7 @@
     if (/\s$/.test(text)) {
       const tokens = smartSplit(text);
       const last = tokens[tokens.length - 1];
-      if (last && isOp(last)) { chips = [...chips, last]; text = tokens.slice(0, -1).join(" "); }
+      if (last && isOp(last)) { chips = normalizeChips([...chips, last]); text = tokens.slice(0, -1).join(" "); }
     }
     emit();
     recompute();

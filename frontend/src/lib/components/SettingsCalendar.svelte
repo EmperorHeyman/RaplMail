@@ -1,7 +1,24 @@
 <script>
+  import { onMount } from "svelte";
   import { app, saveSettings, notify, normalizeFeeds, CAL_PALETTE } from "../store.svelte.js";
   import { calendar as calApi } from "../api.js";
   import { icons } from "../icons.js";
+
+  // Google Calendar write access (OAuth) — lets "New event" actually land on
+  // your Google Calendar (the iMIP email trick is unreliable for self-events).
+  let gcal = $state({ connected: false, email: "" });
+  let gcalBusy = $state(false);
+  onMount(async () => { try { gcal = await calApi.googleStatus(); } catch {} });
+  async function connectGoogleCal() {
+    gcalBusy = true;
+    try { gcal = await calApi.googleConnect(); notify(`Google Calendar connected (${gcal.email || "ok"})`); }
+    catch (e) { notify(e.message || "Google sign-in failed", "error"); }
+    finally { gcalBusy = false; }
+  }
+  async function disconnectGoogleCal() {
+    try { await calApi.googleDisconnect(); gcal = { connected: false, email: "" }; notify("Google Calendar disconnected"); }
+    catch (e) { notify(e.message, "error"); }
+  }
 
   // Each subscribed feed is { url, color }. Edited as a list with a color swatch.
   let feeds = $state(normalizeFeeds(app.settings.icsFeeds));
@@ -46,6 +63,24 @@
 </script>
 
 <div class="wrap">
+  <section class="card">
+    <h3>Write to Google Calendar</h3>
+    <p class="hint">Subscribed iCal feeds are read-only. Connect your Google account once (calendar permission)
+      so events you create in RaplMail are written straight to your Google Calendar via the API — reliable,
+      unlike emailing yourself an invite.</p>
+    {#if gcal.connected}
+      <div class="rowbtns" style="align-items:center">
+        <span class="hint" style="margin:0">✓ Connected{gcal.email ? ` as ${gcal.email}` : ""}</span>
+        <button class="btn" onclick={disconnectGoogleCal}>Disconnect</button>
+      </div>
+    {:else}
+      <div class="rowbtns">
+        <button class="btn primary" onclick={connectGoogleCal} disabled={gcalBusy}>{@html icons.google || ""} {gcalBusy ? "Waiting for Google…" : "Connect Google Calendar"}</button>
+      </div>
+      <p class="hint" style="margin-top:8px">A browser window opens for Google sign-in; approve the calendar permission and come back.</p>
+    {/if}
+  </section>
+
   <section class="card">
     <h3>Subscribed calendars (iCal / ICS)</h3>
     <p class="hint">Paste iCal feed URLs — one per line — and RaplMail pulls their events into your calendar.

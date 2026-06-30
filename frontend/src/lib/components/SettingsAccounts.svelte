@@ -144,6 +144,23 @@
     catch (e) { notify(e.message, "error"); }
   }
 
+  // --- server settings (fix a wrong/empty IMAP or SMTP host) ----------------
+  let srvEdit = $state(null);
+  let srv = $state(null);
+  function openServer(a) {
+    srvEdit = srvEdit === a.id ? null : a.id;
+    if (srvEdit) srv = { imap_host: a.imap_host || "", imap_port: a.imap_port || 993, smtp_host: a.smtp_host || "", smtp_port: a.smtp_port || 465 };
+  }
+  async function saveServer(a) {
+    try {
+      await api.update(a.id, { imap_host: srv.imap_host.trim(), imap_port: Number(srv.imap_port),
+                               smtp_host: srv.smtp_host.trim(), smtp_port: Number(srv.smtp_port) });
+      await loadAccountsAndFolders();
+      srvEdit = null;
+      notify("Server settings saved — try sending again");
+    } catch (e) { notify(e.message, "error"); }
+  }
+
   async function setColor(a, color) { await api.update(a.id, { color }); await loadAccountsAndFolders(); }
   async function rename(a, name) { await api.update(a.id, { display_name: name }); await loadAccountsAndFolders(); }
 
@@ -178,10 +195,26 @@
         </button>
         {#if a.provider === "imap"}
           <button class="btn ghost" onclick={() => reconnect(a)} title="Re-enter / fix the password for this account">Reconnect</button>
+          <button class="btn ghost" onclick={() => openServer(a)} title="Edit IMAP/SMTP server settings">Server</button>
         {/if}
         <button class="btn ghost" onclick={() => triggerSync(a)} disabled={h?.status === "syncing"} title="Sync now">↻</button>
         <button class="btn ghost danger" onclick={() => remove(a)}>Remove</button>
       </div>
+      {#if srvEdit === a.id && srv}
+        <div class="idedit">
+          <p class="muted">Fix the mail server for this account. Seznam is <code>imap.seznam.cz</code> / <code>smtp.seznam.cz</code> (SMTP port 465).</p>
+          <div class="srvgrid">
+            <label>IMAP host<input bind:value={srv.imap_host} placeholder="imap.seznam.cz" /></label>
+            <label>IMAP port<input type="number" bind:value={srv.imap_port} /></label>
+            <label>SMTP host<input bind:value={srv.smtp_host} placeholder="smtp.seznam.cz" /></label>
+            <label>SMTP port<input type="number" bind:value={srv.smtp_port} /></label>
+          </div>
+          <div class="idactions">
+            <button class="btn primary" onclick={() => saveServer(a)}>Save server settings</button>
+            <button class="btn ghost" onclick={() => (srvEdit = null)}>Cancel</button>
+          </div>
+        </div>
+      {/if}
       {#if idEdit === a.id}
         <div class="idedit">
           <p class="muted">One identity per line — a plain address or <code>Name &lt;addr@host&gt;</code>. The server sends as it only if it recognizes the address. Your primary address ({a.email}) is always available.</p>
@@ -319,6 +352,9 @@
   .idedit code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; font-size: 11px; }
   .idedit textarea { width: 100%; resize: vertical; font-family: var(--mono, monospace); font-size: 13px; }
   .idactions { display: flex; gap: 8px; }
+  .srvgrid { display: grid; grid-template-columns: 1fr 110px; gap: 8px 10px; }
+  .srvgrid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); }
+  .srvgrid input { font-size: 13px; }
   h3 { margin: 0 0 6px; }
   .lead { color: var(--muted); margin: 0 0 14px; }
   .email-row { display: flex; gap: 10px; }

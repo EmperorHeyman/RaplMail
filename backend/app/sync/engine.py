@@ -72,9 +72,22 @@ def build_provider(account: Account) -> ImapSmtpProvider:
     secret = store.get(account.secret_key) or ""
 
     if account.provider == Provider.imap:
+        imap_host, imap_port = account.imap_host, account.imap_port
+        smtp_host, smtp_port = account.smtp_host, account.smtp_port
+        # Heal missing server settings (e.g. an account imported without an SMTP
+        # host — the cause of "getaddrinfo failed" on send) from autodiscover.
+        if not smtp_host or not imap_host:
+            try:
+                from app.providers.autodiscover import discover
+                d = discover(account.email)
+                imap_host = imap_host or d.imap_host
+                imap_port = imap_port or d.imap_port
+                smtp_host = smtp_host or d.smtp_host
+                smtp_port = smtp_port or d.smtp_port
+            except Exception:
+                pass
         auth = Auth(mechanism="plain", user=account.email, secret=secret)
-        return ImapSmtpProvider(auth, account.imap_host, account.imap_port,
-                                account.smtp_host, account.smtp_port)
+        return ImapSmtpProvider(auth, imap_host, imap_port, smtp_host, smtp_port)
 
     if account.provider == Provider.gmail:
         bundle = oauth.deserialize_bundle(secret)

@@ -30,12 +30,18 @@ class AccountOut(BaseModel):
     color: str
     enabled: bool
     aliases: list[str] = []
+    imap_host: str = ""
+    imap_port: int = 993
+    smtp_host: str = ""
+    smtp_port: int = 465
 
 
 def _to_out(a: Account) -> AccountOut:
     return AccountOut(id=a.id, email=a.email, display_name=a.display_name,
                       provider=a.provider, color=a.color, enabled=a.enabled,
-                      aliases=list(a.aliases or []))
+                      aliases=list(a.aliases or []),
+                      imap_host=a.imap_host, imap_port=a.imap_port,
+                      smtp_host=a.smtp_host, smtp_port=a.smtp_port)
 
 
 @router.get("", response_model=list[AccountOut])
@@ -236,6 +242,10 @@ class AccountUpdate(BaseModel):
     color: str | None = None
     display_name: str | None = None
     aliases: list[str] | None = None
+    imap_host: str | None = None
+    imap_port: int | None = None
+    smtp_host: str | None = None
+    smtp_port: int | None = None
 
 
 @router.patch("/{account_id}", response_model=AccountOut)
@@ -255,9 +265,19 @@ def update_account(account_id: int, body: AccountUpdate,
             if a and a.lower() not in seen:
                 seen.add(a.lower()); cleaned.append(a)
         account.aliases = cleaned
+    if body.imap_host is not None: account.imap_host = body.imap_host.strip()
+    if body.imap_port is not None: account.imap_port = body.imap_port
+    if body.smtp_host is not None: account.smtp_host = body.smtp_host.strip()
+    if body.smtp_port is not None: account.smtp_port = body.smtp_port
     session.add(account)
     session.commit()
     session.refresh(account)
+    # New server settings → drop any pooled connection using the old host.
+    try:
+        from app.providers.pool import pool
+        pool.drop(account.id)
+    except Exception:
+        pass
     return _to_out(account)
 
 

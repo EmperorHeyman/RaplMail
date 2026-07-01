@@ -249,42 +249,53 @@ def _deliver_blocking(body_dict: dict) -> None:
         secret_key = account.secret_key
         provider = build_provider(account)
     try:
-        try:
-            raw = provider.send(message)
-        except OSError as exc:   # incl. socket.gaierror "getaddrinfo failed"
-            # unreachable SMTP host — the stored server is
-            # stale or wrong (common for vanity domains, e.g. a Seznam-hosted
-            # rapl-group.eu). Re-detect from MX, persist, and retry once.
-            raw = _resend_with_detected_host(body.account_id, message, exc)
-        except smtplib.SMTPResponseException as exc:
-            # This exact error ("535 5.7.139 SmtpClientAuthentication is disabled
-            # for the Tenant") only comes from Microsoft 365, so key off the error
-            # itself — not the stored host, which may be blank for OAuth accounts.
-            if not _is_smtp_auth_disabled(exc):
-                raise
-            if is_m365:
-                # Graph Mail.Send is governed separately and still works — send via
-                # Graph (which also saves to Sent), so skip the IMAP append.
-                log.warning("SMTP AUTH disabled for tenant; sending via Microsoft Graph")
-                raw = _send_via_graph(secret_key, message)
-                sent_path = None
-            else:
-                # A Microsoft mailbox connected as a plain IMAP/password account
-                # can't use Graph (no OAuth token). Tell the user how to fix it
-                # instead of silently queuing a doomed retry.
-                raise PermanentSendError(
-                    "This Microsoft 365 mailbox has SMTP sending disabled by the tenant, "
-                    "and it's connected here with a password. Remove the account and "
-                    "re-add it with 'Sign in with Microsoft' so RaplMail can send via "
-                    "Microsoft Graph — or ask your admin to re-enable SMTP AUTH."
-                ) from exc
-        if sent_path:
+        raw, saved_to_sent = _transport_send(provider, message, is_m365, secret_key, body.account_id)
+        if sent_path and not saved_to_sent:
             try:
                 provider.append_to_folder(sent_path, raw, seen=True)
             except Exception:
                 pass
     finally:
         provider.close()
+
+
+def _transport_send(provider, message, is_m365: bool, secret_key: str, account_id: int):
+    """Send the message via the best transport. Returns (raw_mime, saved_to_sent),
+    where saved_to_sent is True when the transport (Graph) already filed a copy in
+    Sent so the caller shouldn't append it again."""
+    if is_m365:
+        # Graph-first for Microsoft 365: works even when the tenant has SMTP AUTH
+        # disabled (the common default) and avoids a guaranteed ~13s SMTP failure.
+        # Fall back to SMTP only if Graph is unavailable — some tenants allow SMTP
+        # but haven't granted Graph Mail.Send.
+        try:
+            return _send_via_graph(secret_key, message), True
+        except PermanentSendError as graph_err:
+            try:
+                return provider.send(message), False
+            except smtplib.SMTPResponseException as smtp_err:
+                if _is_smtp_auth_disabled(smtp_err):
+                    raise graph_err from smtp_err   # both blocked → Graph guidance
+                raise
+    # NB: smtplib.SMTPException subclasses OSError, so the SMTP-protocol handler
+    # MUST come before the OSError (socket-level) handler or it never runs.
+    try:
+        return provider.send(message), False
+    except smtplib.SMTPResponseException as exc:
+        # A Microsoft mailbox connected as a plain IMAP/password account hits the
+        # tenant SMTP-disabled 535 but can't use Graph (no OAuth token).
+        if _is_smtp_auth_disabled(exc):
+            raise PermanentSendError(
+                "This Microsoft 365 mailbox has SMTP sending disabled by the tenant, "
+                "and it's connected here with a password. Re-add it with 'Sign in "
+                "with Microsoft' so RaplMail can send via Graph — or ask your admin "
+                "to re-enable SMTP AUTH."
+            ) from exc
+        raise
+    except OSError as exc:   # socket.gaierror "getaddrinfo failed", timeouts, etc.
+        # Unreachable SMTP host — the stored server is stale/wrong (common for
+        # vanity domains, e.g. a Seznam-hosted rapl-group.eu). Re-detect + retry.
+        return _resend_with_detected_host(account_id, message, exc), False
 
 
 def _is_smtp_auth_disabled(exc: smtplib.SMTPResponseException) -> bool:

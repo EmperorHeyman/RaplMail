@@ -12,7 +12,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -36,6 +36,18 @@ class EventOut(BaseModel):
     status: str
     cancelled: bool
     color: str = ""
+
+    # Event times are stored normalized to UTC, but SQLite drops the tzinfo so
+    # they come back naive. Emit them with an explicit UTC offset so the frontend's
+    # `new Date(...)` converts to the viewer's local zone (else it reads the UTC
+    # wall-clock as local — the "2 hours behind" bug).
+    @field_serializer("start", "end")
+    def _as_utc(self, v: datetime | None):
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
 
 
 def _synth_uid(account_id: int, ev: dict) -> str:

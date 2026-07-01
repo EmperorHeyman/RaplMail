@@ -11,6 +11,46 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.2.14] — 2026-07-01
+
+### Fixed
+- **Calendar/Home event times were 2 hours off** (showing UTC instead of local).
+  Event times are stored in UTC but were sent to the UI without a timezone marker,
+  so the app read them as local time. They now carry a UTC offset and render in
+  your local zone (both the Calendar and the Home tab's agenda).
+
+## [0.2.13] — 2026-07-01
+
+### Fixed
+- **Sync broke** ("cannot DELETE from contentless fts5 table") when indexing new
+  mail into the search index — it aborted the folder on the first new message.
+  Indexing is now resilient on older databases (the replace-delete is wrapped in
+  a savepoint so it can't break the message insert), and new databases create the
+  search index with delete support so re-indexing is clean.
+
+## [0.2.12] — 2026-07-01
+
+### Changed
+- When a Microsoft Graph send token can't be acquired, the Debug log now shows
+  the exact reason from Microsoft (the `AADSTS…` code) instead of a generic
+  "re-authentication required" — so a consent vs propagation vs stale-token
+  problem can be told apart.
+
+## [0.2.11] — 2026-07-01
+
+### Changed
+- **Microsoft 365 now sends via Graph first.** Instead of always attempting SMTP
+  (which fails after ~13s on tenants with SMTP AUTH disabled), M365 sends go
+  straight through Microsoft Graph, falling back to SMTP only if Graph isn't
+  available. Sends are instant once Graph `Mail.Send` is granted.
+
+### Fixed
+- SMTP protocol errors (e.g. the 535 "SMTP disabled") were being caught by the
+  socket-error handler first (because `SMTPException` subclasses `OSError`), so
+  the intended handling never ran. Reordered so send errors are classified
+  correctly — a genuine bad password is retried, a tenant-disabled/permission
+  error is reported clearly.
+
 ## [0.2.10] — 2026-07-01
 
 ### Added

@@ -133,9 +133,14 @@ def _ms_token_for(cache_blob: str, scopes: list[str]) -> tuple[str, str]:
     accounts = app.get_accounts()
     if not accounts:
         raise RuntimeError("no cached Microsoft account; re-authentication required")
-    result = app.acquire_token_silent(scopes, account=accounts[0])
+    # _with_error surfaces the real AADSTS reason (consent_required, invalid_grant,
+    # propagation, etc.) instead of a bare None, so failures are diagnosable.
+    result = app.acquire_token_silent_with_error(scopes, account=accounts[0])
     if not result or "access_token" not in result:
-        err = (result or {}).get("error_description") or "re-authentication required"
+        r = result or {}
+        err = r.get("error_description") or r.get("error") or "re-authentication required"
+        # Collapse to the first line — AADSTS descriptions are multi-line essays.
+        err = str(err).splitlines()[0]
         raise RuntimeError(f"failed to acquire Microsoft token for {scopes}: {err}")
     return result["access_token"], cache.serialize()
 

@@ -41,7 +41,7 @@ _FTS_SETUP = [
     """
     CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
         subject, from_addr, from_name, snippet, body,
-        content='', tokenize='unicode61'
+        content='', contentless_delete=1, tokenize='unicode61'
     )
     """,
 ]
@@ -105,7 +105,17 @@ def init_db() -> None:
 def index_message_fts(session: Session, rowid: int, *, subject: str, from_addr: str,
                       from_name: str, snippet: str, body: str) -> None:
     """Upsert a message into the FTS index (content-less table keyed by rowid)."""
-    session.exec(text("DELETE FROM message_fts WHERE rowid = :rid").bindparams(rid=rowid))
+    # Older DBs created this table without `contentless_delete=1`, and SQLite then
+    # rejects any DELETE on it ("cannot DELETE from contentless fts5 table"). The
+    # DELETE only matters when re-indexing an existing rowid; for new messages
+    # there's nothing to remove. Wrap it in a SAVEPOINT so a rejection rolls back
+    # ONLY the delete (not the caller's pending message insert) and the INSERT
+    # still runs — worst case a re-indexed row leaves a duplicate, deduped on read.
+    try:
+        with session.begin_nested():
+            session.exec(text("DELETE FROM message_fts WHERE rowid = :rid").bindparams(rid=rowid))
+    except Exception:
+        pass
     session.exec(
         text(
             "INSERT INTO message_fts(rowid, subject, from_addr, from_name, snippet, body) "

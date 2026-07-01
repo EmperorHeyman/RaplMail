@@ -12,6 +12,7 @@
   import Compose from "./lib/components/Compose.svelte";
   import MailMerge from "./lib/components/MailMerge.svelte";
   import AiInbox from "./lib/components/AiInbox.svelte";
+  import RuleModal from "./lib/components/RuleModal.svelte";
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
@@ -238,6 +239,9 @@
 {/if}
 {#if app.aiInboxOpen}
   <AiInbox />
+{/if}
+{#if app.ruleModal}
+  <RuleModal />
 {/if}
 <SendingIndicator />
 <svelte:window on:keydown={onGlobalKey} />

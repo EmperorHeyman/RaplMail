@@ -170,15 +170,25 @@
   }
   const reSubject = () => (/^re:/i.test(detail.subject || "") ? detail.subject : `Re: ${detail.subject || "(no subject)"}`);
 
+  // Wrap quote content in a Spark-style collapsible block. The composer inserts
+  // your signature *above* this block and (for replies) shows it collapsed behind
+  // a "···" pill, so you type on top with the thread tucked out of the way.
+  // The toggle is contenteditable=false so it survives inside the editor.
+  function collapsibleQuote(inner, { collapsed = true } = {}) {
+    return `<div class="rapl-quoted-block${collapsed ? " collapsed" : ""}">` +
+      `<div class="rapl-quote-toggle" contenteditable="false" role="button" title="Show/hide quoted text">•••</div>` +
+      `<div class="rapl-quoted-content">${inner}</div></div>`;
+  }
+
   // Build the quoted original ("On <date>, <name> wrote:") so replies carry the
-  // thread context the recipient expects. Mirrors the forward quote style; the
-  // composer puts the cursor above this block so you type your reply on top.
+  // thread context the recipient expects. Collapsed by default (Spark-style).
   function quotedOriginal() {
     const orig = detail.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
     const who = detail.from_name ? `${detail.from_name} <${detail.from_addr || ""}>` : (detail.from_addr || "");
-    return `<br><br><div class="rapl-quote" style="color:#888">` +
+    const inner = `<div class="rapl-quote" style="color:#888">` +
       `On ${escapeHtml(fmtDate(detail.date))}, ${escapeHtml(who)} wrote:</div>` +
       `<blockquote style="margin:0 0 0 8px;padding-left:10px;border-left:2px solid #888;color:#888">${orig}</blockquote>`;
+    return collapsibleQuote(inner, { collapsed: true });
   }
 
   function reply() {
@@ -195,12 +205,13 @@
     if (!detail) return;
     const subj = /^fwd:/i.test(detail.subject || "") ? detail.subject : `Fwd: ${detail.subject || "(no subject)"}`;
     const orig = detail.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
-    const quote =
-      `<br><br><div style="color:#888">---------- Forwarded message ----------<br>` +
+    const quote = collapsibleQuote(
+      `<div style="color:#888">---------- Forwarded message ----------<br>` +
       `From: ${escapeHtml(detail.from_name || "")} &lt;${escapeHtml(detail.from_addr || "")}&gt;<br>` +
       `Date: ${escapeHtml(fmtDate(detail.date))}<br>` +
       `Subject: ${escapeHtml(detail.subject || "")}<br>` +
-      `To: ${escapeHtml((detail.to_addrs || []).join(", "))}</div><br>${orig}`;
+      `To: ${escapeHtml((detail.to_addrs || []).join(", "))}</div><br>${orig}`,
+      { collapsed: false });
     // Carry the original (non-inline) attachments — a forward without them is
     // surprising. Inline images already live in the quoted HTML.
     const atts = (detail.attachments || []).filter((a) => !a.inline);

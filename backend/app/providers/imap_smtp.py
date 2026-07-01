@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from email.header import decode_header, make_header
 
-from imapclient import IMAPClient
+from imapclient import IMAPClient, SocketTimeout
 
 
 def decode_mime_words(value) -> str:
@@ -90,7 +90,11 @@ class ImapSmtpProvider:
     # --- connection ---------------------------------------------------------
     def _imap(self) -> IMAPClient:
         if self._client is None:
-            client = IMAPClient(self._imap_host, port=self._imap_port, use_uid=True, ssl=True)
+            # Bound connect + read so a stalled server (seen on M365) fails fast
+            # instead of hanging the sync for minutes on the OS TCP timeout. Read
+            # timeout stays well above the 60s IDLE poll so IDLE isn't cut short.
+            client = IMAPClient(self._imap_host, port=self._imap_port, use_uid=True, ssl=True,
+                                timeout=SocketTimeout(connect=20, read=120))
             if self._auth.mechanism == "xoauth2":
                 client.oauth2_login(self._auth.user, self._auth.secret)
             else:

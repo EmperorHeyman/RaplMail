@@ -13,15 +13,17 @@ import contextlib
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import accounts, ai, avatars, calendar, compose, contacts, folders, messages, metrics, rapldesk, rules, settings as settings_api, signatures, track, unfurl, vault
+from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, folders, messages, metrics, rapldesk, rules, settings as settings_api, signatures, track, unfurl, vault
 from app.core.config import get_settings
 from app.core.db import init_db
+from app.core.logbuffer import install as install_log_buffer
 from app.core.ws import hub
 from app.sync.engine import SyncManager
 
 
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI):
+    install_log_buffer()   # capture backend logs for the in-app Debug window
     init_db()
     # If the user enabled "don't require password", unlock the vault now.
     from app.core.security import get_secret_store
@@ -65,6 +67,7 @@ app.include_router(unfurl.router)
 app.include_router(metrics.router)
 app.include_router(ai.router)
 app.include_router(rapldesk.router)
+app.include_router(debug.router)
 app.include_router(track.router)
 app.include_router(track.pixel_router)
 

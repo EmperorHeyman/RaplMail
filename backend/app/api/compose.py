@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import base64
+import logging
+import smtplib
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,6 +20,12 @@ from app.providers.base import OutgoingMessage
 from app.sync.compose import inject_signature
 
 router = APIRouter(prefix="/compose", tags=["compose"], dependencies=[Depends(verify_token)])
+log = logging.getLogger("raplmail.send")
+
+
+class PermanentSendError(RuntimeError):
+    """A send that won't succeed on retry (e.g. missing Graph Mail.Send consent),
+    so we surface it to the user instead of silently queuing it forever."""
 
 
 def _alias_addr(s: str) -> str:
@@ -69,14 +78,23 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
         return {"scheduled": True, "send_at": when.isoformat()}
 
     payload = body.model_dump(mode="json")
+    log.info("send: account=%s to=%s subject=%r", body.account_id, ", ".join(body.to), body.subject)
+    t0 = time.monotonic()
     try:
         await run_in_threadpool(_deliver_blocking, payload)
-    except Exception:
+    except PermanentSendError as exc:
+        # Won't succeed on retry (e.g. missing Graph Mail.Send consent) — tell the
+        # user now instead of silently queuing a doomed send.
+        log.error("send rejected (permanent): %s", exc)
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
+    except Exception as exc:
         # Offline / transient failure — queue it and let the worker retry.
+        log.warning("send failed after %.1fs (queued for retry): %s", time.monotonic() - t0, exc)
         session.add(ActionQueue(kind="send", payload=payload))
         session.commit()
         request.app.state.sync.request_sync()
         return {"queued": True}
+    log.info("send: delivered in %.1fs", time.monotonic() - t0)
     request.app.state.sync.request_sync()
     return {"sent": True}
 
@@ -227,6 +245,8 @@ def _deliver_blocking(body_dict: dict) -> None:
             select(Folder.path).where(Folder.account_id == body.account_id,
                                       Folder.role == FolderRole.sent)
         ).first()
+        is_m365 = account.provider == Provider.m365
+        secret_key = account.secret_key
         provider = build_provider(account)
     try:
         try:
@@ -236,6 +256,17 @@ def _deliver_blocking(body_dict: dict) -> None:
             # stale or wrong (common for vanity domains, e.g. a Seznam-hosted
             # rapl-group.eu). Re-detect from MX, persist, and retry once.
             raw = _resend_with_detected_host(body.account_id, message, exc)
+        except smtplib.SMTPResponseException as exc:
+            # M365 tenants commonly disable SMTP AUTH ("535 5.7.139
+            # SmtpClientAuthentication is disabled for the Tenant"). Graph
+            # Mail.Send is governed separately and still works — send via Graph,
+            # which also saves to Sent Items, so skip the IMAP append below.
+            if is_m365 and _is_smtp_auth_disabled(exc):
+                log.warning("SMTP AUTH disabled for tenant; sending via Microsoft Graph")
+                raw = _send_via_graph(secret_key, message)
+                sent_path = None
+            else:
+                raise
         if sent_path:
             try:
                 provider.append_to_folder(sent_path, raw, seen=True)
@@ -243,6 +274,42 @@ def _deliver_blocking(body_dict: dict) -> None:
                 pass
     finally:
         provider.close()
+
+
+def _is_smtp_auth_disabled(exc: smtplib.SMTPResponseException) -> bool:
+    """True for the M365 'SmtpClientAuthentication is disabled' 535 response."""
+    if getattr(exc, "smtp_code", None) != 535:
+        return False
+    msg = getattr(exc, "smtp_error", b"")
+    if isinstance(msg, bytes):
+        msg = msg.decode("utf-8", "replace")
+    return "smtpclientauthentication" in msg.lower() or "5.7.139" in msg
+
+
+def _send_via_graph(secret_key: str, message) -> bytes:
+    """Send an OutgoingMessage through Microsoft Graph (Mail.Send). Returns the
+    raw MIME so callers keep the same contract as provider.send()."""
+    from app.core.security import get_secret_store
+    from app.providers import graph, oauth
+    from app.sync.compose import build_mime
+
+    store = get_secret_store()
+    cache_blob = store.get(secret_key) or ""
+    try:
+        token, updated = oauth.ms_graph_token(cache_blob)
+    except Exception as exc:
+        raise PermanentSendError(
+            "This Microsoft 365 tenant has SMTP sending disabled, and RaplMail "
+            "couldn't get a Microsoft Graph send token. Ask your admin to add the "
+            "Graph 'Mail.Send' permission to the app registration (with admin "
+            "consent), then reconnect the account — or to re-enable SMTP AUTH for "
+            f"your mailbox. ({exc})"
+        ) from exc
+    if updated and updated != cache_blob:
+        store.set(secret_key, updated)
+    raw = build_mime(message).as_bytes()
+    graph.send_mime(token, raw)
+    return raw
 
 
 def _resend_with_detected_host(account_id: int, message, original_exc):

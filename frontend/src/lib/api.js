@@ -295,6 +295,13 @@ export const contacts = {
   rescan: () => api.post("/contacts/rescan"),
 };
 
+export const debug = {
+  logs: (since = 0, level) =>
+    api.get(`/debug/logs?since=${since}${level ? `&level=${encodeURIComponent(level)}` : ""}`),
+  clearLogs: () => api.del("/debug/logs"),
+  health: () => api.get("/debug/health"),
+};
+
 /** Connect to the live event stream. @param {(ev:{event:string,payload:any})=>void} onEvent */
 export function connectEvents(onEvent) {
   let ws;

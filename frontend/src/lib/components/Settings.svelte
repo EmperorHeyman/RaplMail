@@ -14,6 +14,7 @@
   import SettingsPgp from "./SettingsPgp.svelte";
   import SettingsCalendar from "./SettingsCalendar.svelte";
   import SettingsRaplDesk from "./SettingsRaplDesk.svelte";
+  import SettingsDebug from "./SettingsDebug.svelte";
   import { icons } from "../icons.js";
 
   let tab = $state(app.settingsTab || "accounts");
@@ -32,6 +33,7 @@
     { id: "calendar", label: "Calendar & Contacts", icon: icons.calendar || icons.general, kw: "calendar contacts caldav carddav events sync nextcloud fastmail icloud seznam radicale subscribe add calendar" },
     { id: "rapldesk", label: "RAPL Desk", icon: icons.receipt || icons.general, kw: "rapldesk tickets ticketing api key support helpdesk instance" },
     { id: "general", label: "General", icon: icons.general, kw: "smart inbox notifications desktop notification snooze presence quick action quick-action buttons row buttons hover backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement" },
+    { id: "debug", label: "Debug", icon: icons.bolt || icons.general, kw: "debug log logs console backend diagnostics sync health error troubleshoot stuck hang stall developer verbose activity" },
   ];
 
   let appVersion = $state("");
@@ -88,6 +90,7 @@
     {:else if tab === "snippets"}<SettingsSnippets />
     {:else if tab === "appearance"}<SettingsAppearance />
     {:else if tab === "shortcuts"}<SettingsShortcuts />
+    {:else if tab === "debug"}<SettingsDebug />
     {:else}<SettingsGeneral />{/if}
     <footer class="madeby">
       RaplMail <span class="ver">v{appVersion}</span> · Made by <a href="https://rapl-group.eu/" target="_blank" rel="noreferrer">RAPL Group</a>

@@ -46,6 +46,7 @@
   function applySignature() {
     if (!editor) return;
     editor.querySelector(".rapl-sig-wrap")?.remove();
+    const quoteBlock = editor.querySelector(".rapl-quoted-block");
     if (signatureId !== "none") {
       const sig = sigs.find((s) => String(s.id) === String(signatureId));
       if (sig) {
@@ -53,19 +54,29 @@
         wrap.className = "rapl-sig-wrap";
         // Blank line above the signature so it never butts against your text.
         wrap.innerHTML = `<div><br></div><div class="rapl-sig">${sigHtml(sig)}</div>`;
-        editor.appendChild(wrap);
+        // Spark order: reply text → signature → quoted thread. Put the signature
+        // right before the quote (not at the very bottom, after their email).
+        if (quoteBlock) editor.insertBefore(wrap, quoteBlock);
+        else editor.appendChild(wrap);
       }
     }
-    // Guarantee at least one editable line that isn't the signature, so you can
-    // always type above it (fixes "signature stuck at the very top").
+    // Guarantee an editable line at the very top (before the signature/quote) so
+    // you can always start typing your reply on top.
     const hasBody = [...editor.childNodes].some(
-      (n) => !(n.nodeType === 1 && n.classList && n.classList.contains("rapl-sig-wrap"))
+      (n) => !(n.nodeType === 1 && n.classList &&
+               (n.classList.contains("rapl-sig-wrap") || n.classList.contains("rapl-quoted-block")))
     );
     if (!hasBody) {
       const lead = document.createElement("div");
       lead.innerHTML = "<br>";
       editor.insertBefore(lead, editor.firstChild);
     }
+  }
+  // Collapse/expand the quoted thread when its "•••" pill is clicked (the pill is
+  // contenteditable=false, so this delegated handler drives it).
+  function onEditorClick(e) {
+    const t = e.target.closest?.(".rapl-quote-toggle");
+    if (t) { e.preventDefault(); t.closest(".rapl-quoted-block")?.classList.toggle("collapsed"); }
   }
   function focusTop() {
     if (!editor) return;
@@ -257,6 +268,19 @@
     } finally { savingDraft = false; }
   }
 
+  // The composer HTML carries UI-only bits (the "•••" collapse pill + its wrapper
+  // divs). Strip them so recipients get clean, standard quoted HTML.
+  function outgoingHtml() {
+    if (!editor) return "";
+    const clone = editor.cloneNode(true);
+    clone.querySelectorAll(".rapl-quote-toggle").forEach((n) => n.remove());
+    clone.querySelectorAll(".rapl-quoted-block, .rapl-quoted-content").forEach((n) => {
+      while (n.firstChild) n.parentNode.insertBefore(n.firstChild, n);
+      n.remove();
+    });
+    return clone.innerHTML;
+  }
+
   function buildPayload() {
     const to = c.to.split(",").map((s) => s.trim()).filter(Boolean);
     const cc = (c.cc || "").split(",").map((s) => s.trim()).filter(Boolean);
@@ -270,7 +294,7 @@
       cc,
       bcc: autoBccFor([...to, ...cc]),
       subject: c.subject,
-      html: editor?.innerHTML || "",
+      html: outgoingHtml(),
       in_reply_to: c.in_reply_to || "",
       // Signature is rendered directly in the body now, so don't let the server
       // append it again (its data: images become inline CID on send).
@@ -488,7 +512,7 @@
   </div>
 
   <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label="Message body"
-    bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
+    bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} onclick={onEditorClick} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
     data-placeholder="Write your message…  (Ctrl+Enter to send)"></div>
 
   {#if attachments.length}
@@ -538,7 +562,7 @@
 </div>
 
 <style>
-  .panel { position: fixed; bottom: 18px; z-index: 50; width: min(580px, 94vw); height: min(600px, 86vh);
+  .panel { position: fixed; bottom: 18px; z-index: 50; width: min(720px, 96vw); height: min(640px, 88vh);
     display: flex; flex-direction: column; overflow: hidden; background: var(--surface); color: var(--text);
     border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
     resize: both; min-width: 380px; min-height: 360px; max-width: 96vw; max-height: 92vh; }
@@ -567,6 +591,14 @@
   .editor { flex: 1; padding: 14px; overflow-y: auto; outline: none; line-height: 1.6; color: var(--text); caret-color: var(--accent); }
   .editor:empty::before { content: attr(data-placeholder); color: var(--faint); }
   .editor :global(a) { color: var(--accent); }
+  /* Spark-style collapsible quoted thread: a "•••" pill you type above. */
+  .editor :global(.rapl-quoted-block) { margin-top: 10px; }
+  .editor :global(.rapl-quote-toggle) {
+    display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+    width: 34px; height: 18px; border-radius: 9px; background: var(--surface-3); color: var(--muted);
+    font-size: 13px; letter-spacing: 1px; line-height: 1; user-select: none; margin: 2px 0; }
+  .editor :global(.rapl-quote-toggle:hover) { background: var(--border); color: var(--text); }
+  .editor :global(.rapl-quoted-block.collapsed .rapl-quoted-content) { display: none; }
   .attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); }
   .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-3); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
   .chip button { color: var(--muted); }

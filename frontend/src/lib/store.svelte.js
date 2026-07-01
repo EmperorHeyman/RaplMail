@@ -130,6 +130,7 @@ export const app = $state({
   view: "mail",                  // "mail" | "settings" | "scheduled" | "newsfeed"
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
+  ruleModal: null,               // { message } — open the quick "New rule" modal
   composing: null,
   mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
   aiInboxOpen: false,            // AI inbox digest + priority triage dialog
@@ -578,16 +579,49 @@ export async function blockSender(message) {
   } catch (e) { notify("Couldn't block", "error"); refreshMessages({ background: true }); }
 }
 
-export function createRuleFromSender(message) {
+// The value a rule should match for a given field, pulled from the clicked
+// message — so picking "Subject" auto-fills the subject, "Sender domain" the
+// domain, etc. Body has no sensible single value, so it stays blank.
+export function ruleValueForField(field, message) {
+  if (!message) return "";
   const addr = message.from_addr || "";
+  switch (field) {
+    case "from_domain": return addr.includes("@") ? addr.split("@")[1] : "";
+    case "from": return addr;
+    case "to": return message.to_addrs?.[0] || "";
+    case "subject": return message.subject || "";
+    default: return "";   // body
+  }
+}
+
+// The operator that fits a field by default (substring for text, exact/suffix
+// for addresses).
+export function ruleOpForField(field) {
+  if (field === "from_domain") return "ends_with";
+  if (field === "from" || field === "to") return "equals";
+  return "contains";   // subject / body
+}
+
+// Open the quick "New rule" modal, prefilled from the clicked message.
+export function openRuleModal(message, field) {
+  const addr = message?.from_addr || "";
   const domain = addr.includes("@") ? addr.split("@")[1] : "";
-  app.ruleDraft = {
-    name: `From ${domain || addr}`,
-    match_field: domain ? "from_domain" : "from", match_op: domain ? "ends_with" : "equals",
-    match_value: domain || addr, action: "move", action_arg: "Archive", enabled: true, order: 0,
+  const startField = field || (domain ? "from_domain" : "from");
+  app.ruleModal = {
+    message,
+    draft: {
+      name: `From ${domain || addr}`.trim(),
+      match_field: startField,
+      match_op: ruleOpForField(startField),
+      match_value: ruleValueForField(startField, message),
+      action: "move", action_arg: "Archive", enabled: true, order: 0,
+    },
   };
-  app.settingsTab = "rules";
-  app.view = "settings";
+}
+
+// Context-menu "Create rule…": open the modal instead of jumping to Settings.
+export function createRuleFromSender(message) {
+  openRuleModal(message);
 }
 
 export async function setSenderCategory(message, category) {

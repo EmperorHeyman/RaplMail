@@ -26,6 +26,11 @@ MS_SCOPES = [
     "https://outlook.office365.com/IMAP.AccessAsUser.All",
     "https://outlook.office365.com/SMTP.Send",
 ]
+# Graph send, used when the tenant has SMTP client auth disabled (a common admin
+# policy — SMTP AUTH is off by default in modern M365). Graph Mail.Send is a
+# separate permission that still works, so we send via Graph instead of SMTP.
+# Different resource than the Outlook scopes above, so it's acquired separately.
+MS_GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Send"]
 MS_IMAP_HOST = "outlook.office365.com"
 MS_SMTP_HOST = "smtp.office365.com"
 
@@ -104,13 +109,28 @@ def ms_complete_device_flow(flow: dict) -> tuple[str, str]:
 
 def ms_access_token(cache_blob: str) -> tuple[str, str]:
     """Return (access_token, possibly-updated cache blob), refreshing silently."""
+    return _ms_token_for(cache_blob, MS_SCOPES)
+
+
+def ms_graph_token(cache_blob: str) -> tuple[str, str]:
+    """Graph-scoped token (Mail.Send) for sending when SMTP AUTH is disabled.
+
+    Uses the same cached refresh token. Requires the Azure app registration to
+    have the Graph *Mail.Send* delegated permission granted (admin consent, or a
+    re-login that consents to it) — otherwise MSAL can't mint a Graph token.
+    """
+    return _ms_token_for(cache_blob, MS_GRAPH_SCOPES)
+
+
+def _ms_token_for(cache_blob: str, scopes: list[str]) -> tuple[str, str]:
     app, cache = _ms_app(cache_blob)
     accounts = app.get_accounts()
     if not accounts:
         raise RuntimeError("no cached Microsoft account; re-authentication required")
-    result = app.acquire_token_silent(MS_SCOPES, account=accounts[0])
+    result = app.acquire_token_silent(scopes, account=accounts[0])
     if not result or "access_token" not in result:
-        raise RuntimeError("failed to refresh Microsoft token; re-authentication required")
+        err = (result or {}).get("error_description") or "re-authentication required"
+        raise RuntimeError(f"failed to acquire Microsoft token for {scopes}: {err}")
     return result["access_token"], cache.serialize()
 
 

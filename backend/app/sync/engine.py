@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
@@ -308,14 +309,16 @@ class SyncManager:
         loop = asyncio.get_running_loop()
         now = datetime.now(timezone.utc).isoformat()
         self._set_health(account_id, last_attempt=now, status="syncing")
+        t0 = time.monotonic()
         try:
             counts = await loop.run_in_executor(self._executor, self._sync_account_blocking, account_id)
         except Exception as exc:
-            log.exception("sync failed for account %s", account_id)
+            log.exception("sync failed for account %s after %.1fs", account_id, time.monotonic() - t0)
             self._set_health(account_id, status="error", last_error=str(exc),
                              last_error_at=datetime.now(timezone.utc).isoformat())
             await self._hub.broadcast("sync:error", {"account_id": account_id})
             return
+        log.info("sync ok: account=%s new=%s in %.1fs", account_id, counts.get("new", 0), time.monotonic() - t0)
         self._set_health(account_id, status="ok", last_sync=datetime.now(timezone.utc).isoformat(),
                          last_new=counts.get("new", 0), last_error=None)
         await self._hub.broadcast("sync:done", {"account_id": account_id, **counts})

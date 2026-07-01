@@ -351,9 +351,17 @@ class SyncManager:
                 for folder in folders:
                     try:
                         new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted)
-                    except Exception:
-                        # One unselectable/odd folder shouldn't abort the whole account.
-                        log.exception("folder sync failed: account %s folder %s", account_id, folder.path)
+                    except Exception as exc:
+                        # A folder the server says doesn't exist / can't be selected
+                        # (e.g. Gmail's "[Gmail]" \Noselect parent, stored by an
+                        # older build) — drop it so it stops erroring every sync.
+                        emsg = str(exc)
+                        if "NONEXISTENT" in emsg or "Unknown Mailbox" in emsg:
+                            log.info("pruning unselectable folder %r (account %s)", folder.path, account_id)
+                            session.delete(folder)
+                        else:
+                            # One odd folder shouldn't abort the whole account.
+                            log.exception("folder sync failed: account %s folder %s", account_id, folder.path)
             finally:
                 provider.close()
             session.commit()

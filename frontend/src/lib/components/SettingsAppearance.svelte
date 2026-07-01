@@ -7,6 +7,27 @@
     (app.settings.alwaysOriginalHtml ? "original" : (app.settings.emailAdaptColors === false ? "original" : "adaptive"))
   );
 
+  // Configurable quick-action buttons (which buttons show on rows / in the reader).
+  const ROW_CHOICES = [
+    ["none", "— None —"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
+    ["read", "Read / unread"], ["archive", "Archive"], ["delete", "Delete"],
+  ];
+  const READER_CHOICES = [
+    ["reply", "Reply"], ["replyAll", "Reply all"], ["forward", "Forward"],
+    ["done", "Done"], ["flag", "Flag"],
+  ];
+  function setRowAction(index, key) {
+    const cur = [...(app.settings.rowActions || ["snooze", "done"])];
+    cur[index] = key;
+    saveSettings({ rowActions: cur });
+  }
+  function toggleReaderAction(key, on) {
+    const order = READER_CHOICES.map((c) => c[0]);
+    const cur = new Set(app.settings.readerActions || order);
+    if (on) cur.add(key); else cur.delete(key);
+    saveSettings({ readerActions: order.filter((k) => cur.has(k)) });
+  }
+
   const LABELS = {
     "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
     "--surface-3": "Surface 3", "--border": "Border", "--text": "Text",
@@ -191,6 +212,28 @@
   </section>
 
   <section class="card">
+    <h3>Quick-action buttons</h3>
+    <p class="fhint">The two buttons that appear on each message row when you hover.</p>
+    <div class="rowbtns">
+      {#each [0, 1] as idx}
+        <label class="inline">{idx === 0 ? "Left" : "Right"}
+          <select value={(app.settings.rowActions || ["snooze", "done"])[idx]} onchange={(e) => setRowAction(idx, e.currentTarget.value)}>
+            {#each ROW_CHOICES as [val, label]}<option value={val}>{label}</option>{/each}
+          </select>
+        </label>
+      {/each}
+    </div>
+    <p class="fhint" style="margin-top:16px">Buttons shown under the recipient when reading a message.</p>
+    <div class="rdrcats">
+      {#each READER_CHOICES as [val, label]}
+        <label class="grp"><input type="checkbox"
+          checked={(app.settings.readerActions || READER_CHOICES.map((c) => c[0])).includes(val)}
+          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{label}</span></label>
+      {/each}
+    </div>
+  </section>
+
+  <section class="card">
     <h3>Custom CSS</h3>
     <p class="hint">Power-user escape hatch — applied app-wide and live. Target the classes and
       CSS variables in the reference below.</p>
@@ -255,6 +298,10 @@
   .segbtn:hover { color: var(--text); }
   .segbtn.on { background: var(--accent); color: #fff; }
   .css { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
+  .rowbtns { display: flex; gap: 18px; }
+  .inline { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+  .rdrcats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .grp { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; }
   .hint code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
   .docs { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
   .docs summary { cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 550; }

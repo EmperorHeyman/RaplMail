@@ -28,11 +28,11 @@
     { id: "pgp", label: "Encryption (PGP)", icon: icons.shieldCheck || icons.shield || icons.rules, kw: "pgp gpg openpgp encryption sign verify decrypt key public private s/mime secure" },
     { id: "signature", label: "Signatures", icon: icons.signature, kw: "signature html image preview text footer" },
     { id: "snippets", label: "Snippets & Templates", icon: icons.bolt, kw: "snippets templates canned replies expander shortcut variables" },
-    { id: "appearance", label: "Appearance", icon: icons.palette, kw: "theme color colour preset dark light css radius corner rounded avatar logo favicon relative time notifications email adapt customize layout font style vscode" },
+    { id: "appearance", label: "Appearance", icon: icons.palette, kw: "theme color colour preset dark light css radius corner rounded avatar logo favicon relative time email adapt customize layout font style vscode quick action quick-action buttons row buttons hover reader actions reply forward done flag" },
     { id: "shortcuts", label: "Shortcuts", icon: icons.keyboard, kw: "keyboard shortcuts keybindings keys hotkeys palette" },
     { id: "calendar", label: "Calendar & Contacts", icon: icons.calendar || icons.general, kw: "calendar contacts caldav carddav events sync nextcloud fastmail icloud seznam radicale subscribe add calendar" },
     { id: "rapldesk", label: "RAPL Desk", icon: icons.receipt || icons.general, kw: "rapldesk tickets ticketing api key support helpdesk instance" },
-    { id: "general", label: "General", icon: icons.general, kw: "smart inbox notifications desktop notification snooze presence quick action quick-action buttons row buttons hover backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement" },
+    { id: "general", label: "General", icon: icons.general, kw: "mail behavior compose sending undo send smart inbox notifications desktop notification snooze presence backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement privacy tracking password security newsletter paper trail drafts" },
     { id: "debug", label: "Debug", icon: icons.bolt || icons.general, kw: "debug log logs console backend diagnostics sync health error troubleshoot stuck hang stall developer verbose activity" },
   ];
 

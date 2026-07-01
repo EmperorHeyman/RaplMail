@@ -1,6 +1,6 @@
 <script>
   import { flip } from "svelte/animate";
-  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent } from "../store.svelte.js";
+  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog } from "../store.svelte.js";
   import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
 
@@ -50,12 +50,15 @@
     if (s.screener)
       items.push({ id: "screener", icon: icons.screener, label: "Screener", active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
     items.push({ id: "allsent", icon: icons.sent, label: "All Sent", active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } });
+    items.push({ id: "drafts", icon: icons.drafts || icons.edit, label: "Drafts", active: app.selectedKind === "drafts" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedDrafts(); } });
     items.push({ id: "snoozed", icon: icons.snooze, label: "Snoozed", active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } });
     items.push({ id: "calendar", icon: icons.calendar, label: "Calendar", active: app.view === "calendar", run: () => { app.view = "calendar"; } });
     items.push({ id: "tickets", icon: icons.receipt, label: "Tickets", active: app.view === "tickets", run: () => { app.view = "tickets"; } });
     items.push({ id: "scheduled", icon: icons.clock, label: "Scheduled", active: app.view === "scheduled", run: () => { app.view = "scheduled"; } });
-    items.push({ id: "newsfeed", icon: icons.newspaper, label: "Newsletter Feed", active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
-    items.push({ id: "papertrail", icon: icons.receipt, label: "Paper Trail", active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
+    if (s.showNewsletterFeed !== false)
+      items.push({ id: "newsfeed", icon: icons.newspaper, label: "Newsletter Feed", active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
+    if (s.showPaperTrail !== false)
+      items.push({ id: "papertrail", icon: icons.receipt, label: "Paper Trail", active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
     items.push({ id: "followups", icon: icons.alarm, label: "Follow-ups", active: app.selectedKind === "followups" && app.view === "mail", run: () => { app.view = "mail"; selectFollowups(); } });
     const order = s.specialOrder || [];
     const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 999 : i; };
@@ -122,9 +125,24 @@
     } catch (e) { notify(e.message, "error"); }
   }
   async function removeFolder(f) {
-    if (!confirm(`Delete folder “${f.name}” and its cached messages? This deletes it on the server too.`)) return;
+    const ok = await confirmDialog({
+      title: `Delete folder "${f.name}"?`,
+      message: "This deletes the folder and its cached messages — on the server too.",
+      confirmLabel: "Delete folder", danger: true,
+    });
+    if (!ok) return;
     try { await foldersApi.remove(f.id); await loadAccountsAndFolders(); notify("Folder deleted"); }
     catch (e) { notify(e.message, "error"); }
+  }
+  async function removeAccount(a) {
+    const ok = await confirmDialog({
+      title: `Remove ${a.email}?`,
+      message: "Deletes the account, its credentials, and its cached mail from this device. Mail on the server is untouched.",
+      confirmLabel: "Remove account", danger: true,
+    });
+    if (!ok) return;
+    try { await accountsApi.remove(a.id); await loadAccountsAndFolders(); notify("Account removed"); }
+    catch (e) { notify(`Couldn't remove: ${e.message}`, "error"); }
   }
   async function syncAll() {
     app.syncing = true;
@@ -242,6 +260,7 @@
             <span class="email">{g.account.email}</span>
           </button>
           <button class="addbtn" title="New folder" onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>＋</button>
+          {#if manage}<button class="addbtn del" title="Remove this account" onclick={() => removeAccount(g.account)}>{@html icons.trash}</button>{/if}
         {:else}
           <span class="dot rail-dot" style="background:{g.account.color}" title={g.account.email}></span>
         {/if}
@@ -334,6 +353,7 @@
   .rail-dot { width: 10px; height: 10px; margin: 8px auto 2px; }
   .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .addbtn { color: var(--accent); font-size: 15px; padding: 0 6px; }
+  .addbtn.del { color: var(--danger); font-size: 13px; display: inline-flex; align-items: center; }
   .newfolder { display: flex; gap: 6px; padding: 4px 2px 8px; flex-wrap: wrap; }
   .newfolder select, .newfolder input { flex: 1 1 100%; padding: 6px 8px; }
   .newfolder-root { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border-radius: var(--radius-sm); color: var(--muted); font-size: 13px; width: 100%; text-align: left; }

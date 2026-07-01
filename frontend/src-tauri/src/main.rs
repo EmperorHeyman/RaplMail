@@ -239,7 +239,8 @@ fn main() {
                 .shell()
                 .sidecar("raplmail-backend")?
                 .env("RAPLMAIL_PORT", port.to_string())
-                .env("RAPLMAIL_TOKEN", token.clone());
+                .env("RAPLMAIL_TOKEN", token.clone())
+                .env("RAPLMAIL_VERSION", app.package_info().version.to_string());
             let (mut rx, child) = sidecar.spawn()?;
             *app.state::<ChildGuard>().0.lock().unwrap() = Some(child);
 

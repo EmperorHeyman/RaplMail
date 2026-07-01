@@ -114,6 +114,11 @@ class ImapSmtpProvider:
     def list_folders(self) -> list[FolderInfo]:
         out: list[FolderInfo] = []
         for flags, _delim, name in self._imap().list_folders():
+            # Skip container-only folders that can't be selected (e.g. Gmail's
+            # "[Gmail]" parent is \Noselect) — trying to fetch them errors with
+            # "[NONEXISTENT] Unknown Mailbox".
+            if any(f in (b"\\Noselect", b"\\NonExistent") for f in flags):
+                continue
             role = "other"
             if name.upper() == "INBOX":
                 role = "inbox"

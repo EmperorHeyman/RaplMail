@@ -66,6 +66,8 @@ const DEFAULT_SETTINGS = {
   launchOnStartup: false,        // start RaplMail at login (tray/background mode)
   minimizeToTray: true,          // closing the window hides to the tray instead of quitting
   dashboard: true,               // show the Home dashboard entry in the sidebar
+  showPaperTrail: true,          // show the "Paper Trail" nav item (receipts/orders)
+  showNewsletterFeed: true,      // show the "Newsletter Feed" nav item
   pgpPrivateKey: "",             // your armored OpenPGP private key (for decrypt/sign)
   pgpPassphrase: "",             // passphrase for the private key (if protected)
   pgpPublicKeys: [],             // armored public keys of correspondents (verify/encrypt)
@@ -143,6 +145,7 @@ export const app = $state({
   queueFailed: 0,
   customizing: false,            // layout-edit mode (resize columns)
   toast: null,
+  confirm: null,                 // { title, message, confirmLabel, danger, resolve } — in-app confirm dialog
   settings: loadSettings(),
 });
 
@@ -379,6 +382,20 @@ export function notify(message, kind = "info", undo = null) {
   app.toast = { message, kind, id, undo };
   setTimeout(() => { if (app.toast && app.toast.id === id) app.toast = null; }, undo ? 6000 : 3200);
 }
+// In-app confirmation dialog (replaces the browser's ugly "tauri.localhost says"
+// window.confirm). Returns a Promise<boolean>. Render <ConfirmDialog /> once at
+// the app root; it reads app.confirm.
+export function confirmDialog({ title = "Are you sure?", message = "", confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
+  return new Promise((resolve) => {
+    app.confirm = { title, message, confirmLabel, cancelLabel, danger, resolve };
+  });
+}
+export function resolveConfirm(result) {
+  const c = app.confirm;
+  app.confirm = null;
+  if (c) c.resolve(result);
+}
+
 export function runUndo() {
   app.toast = null;
   const u = _undoStack.pop();
@@ -473,6 +490,17 @@ export function selectUnifiedSent() {
   app.selectedFolderId = null;
   app.selectedAccountId = null;
   app.selectedFolderRole = "sent";
+  app.selectedMessageId = null;
+  app.search = "";
+  app.category = null;
+  refreshMessages();
+}
+
+export function selectUnifiedDrafts() {
+  app.selectedKind = "drafts";
+  app.selectedFolderId = null;
+  app.selectedAccountId = null;
+  app.selectedFolderRole = "drafts";
   app.selectedMessageId = null;
   app.search = "";
   app.category = null;
@@ -899,6 +927,8 @@ export async function refreshMessages({ background = false } = {}) {
       if (app.settings.screener) params.screener = "exclude";  // hide first-time senders
     } else if (app.selectedKind === "sent") {
       params = { role: "sent", include_done: true };
+    } else if (app.selectedKind === "drafts") {
+      params = { role: "drafts", include_done: true };
     } else {
       params = { folder_id: app.selectedFolderId ?? undefined, include_done: app.showDone };
       if (app.settings.screener && app.selectedFolderRole === "inbox") params.screener = "exclude";

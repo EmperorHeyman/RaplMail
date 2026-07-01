@@ -9,6 +9,7 @@
   let level = $state("");        // "", INFO, WARNING, ERROR
   let paused = $state(false);
   let autoscroll = $state(true);
+  let appVersion = $state("");
   let logEl;
   let timer;
 
@@ -49,7 +50,11 @@
   const fmtWhen = (iso) => { if (!iso) return "—"; try { return new Date(iso).toLocaleString(); } catch { return iso; } };
   const lvlClass = (l) => `lvl-${(l || "").toLowerCase()}`;
 
-  onMount(() => { poll(); timer = setInterval(poll, 1500); });
+  onMount(async () => {
+    try { const { getVersion } = await import("@tauri-apps/api/app"); appVersion = await getVersion(); }
+    catch { appVersion = "dev"; }
+    poll(); timer = setInterval(poll, 1500);
+  });
   onDestroy(() => clearInterval(timer));
 </script>
 
@@ -78,7 +83,7 @@
       <p class="hint" style="margin:0">No accounts.</p>
     {/if}
     {#if health?.system}
-      <p class="sysline">RaplMail v{health.system.version} · Python {health.system.python} · {health.system.platform}</p>
+      <p class="sysline">RaplMail v{appVersion || health.system.version} · Python {health.system.python} · {health.system.platform}</p>
     {/if}
   </section>
 

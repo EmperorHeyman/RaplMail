@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, loadAccountsAndFolders, notify } from "../store.svelte.js";
+  import { app, loadAccountsAndFolders, notify, confirmDialog } from "../store.svelte.js";
   import { accounts as api } from "../api.js";
   import { relativeTime } from "../time.js";
 
@@ -109,10 +109,19 @@
   }
 
   async function remove(a) {
-    if (!confirm(`Remove ${a.email}? Stored credentials will be deleted.`)) return;
-    await api.remove(a.id);
-    await loadAccountsAndFolders();
-    notify("Account removed");
+    const ok = await confirmDialog({
+      title: `Remove ${a.email}?`,
+      message: "This deletes the account, its stored credentials, and its cached mail from this device. Mail on the server is untouched.",
+      confirmLabel: "Remove account", danger: true,
+    });
+    if (!ok) return;
+    try {
+      await api.remove(a.id);
+      await loadAccountsAndFolders();
+      notify("Account removed");
+    } catch (e) {
+      notify(`Couldn't remove the account: ${e.message}`, "error");
+    }
   }
 
   async function triggerSync(a) {
@@ -174,15 +183,35 @@
   async function setColor(a, color) { await api.update(a.id, { color }); await loadAccountsAndFolders(); }
   async function rename(a, name) { await api.update(a.id, { display_name: name }); await loadAccountsAndFolders(); }
 
+  // Reorder accounts (persisted as sort_order; the sidebar + unified views follow).
+  async function move(a, dir) {
+    const list = [...app.accounts];
+    const i = list.findIndex((x) => x.id === a.id);
+    const j = i + dir;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    try {
+      await Promise.all(list.map((acc, idx) =>
+        acc.sort_order === idx ? null : api.update(acc.id, { sort_order: idx })));
+      await loadAccountsAndFolders();
+    } catch (e) { notify(e.message, "error"); }
+  }
+
   const providerLabel = { imap: "IMAP / SMTP", gmail: "Google", m365: "Microsoft 365" };
 </script>
 
 <div class="wrap">
   <div class="accounts">
-    {#each app.accounts as a}
+    {#each app.accounts as a, i}
       {@const h = health[a.id]}
       {@const st = stMeta(h?.status)}
       <div class="acct-card">
+        {#if app.accounts.length > 1}
+          <div class="reorder">
+            <button class="ord" title="Move up" disabled={i === 0} onclick={() => move(a, -1)}>▲</button>
+            <button class="ord" title="Move down" disabled={i === app.accounts.length - 1} onclick={() => move(a, 1)}>▼</button>
+          </div>
+        {/if}
         <input class="colorpick" type="color" value={a.color} title="Account color"
           onchange={(e) => setColor(a, e.currentTarget.value)} />
         <div class="info">
@@ -346,6 +375,10 @@
   .wrap { max-width: 720px; display: flex; flex-direction: column; gap: 26px; }
   .accounts { display: flex; flex-direction: column; gap: 10px; }
   .acct-card { display: flex; align-items: center; gap: 12px; padding: 13px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
+  .reorder { display: flex; flex-direction: column; gap: 1px; flex: none; }
+  .ord { color: var(--muted); font-size: 9px; line-height: 1; padding: 3px 4px; border-radius: 4px; }
+  .ord:hover:not(:disabled) { background: var(--surface-3); color: var(--text); }
+  .ord:disabled { opacity: 0.3; cursor: default; }
   .dot { width: 11px; height: 11px; border-radius: 50%; }
   .colorpick { width: 28px; height: 28px; padding: 2px; border-radius: 50%; border: 1px solid var(--border); background: var(--surface-2); cursor: pointer; flex: none; }
   .info { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }

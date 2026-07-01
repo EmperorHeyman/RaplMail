@@ -69,6 +69,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     },
     "account": {
         "aliases": "ALTER TABLE account ADD COLUMN aliases TEXT DEFAULT '[]'",
+        "sort_order": "ALTER TABLE account ADD COLUMN sort_order INTEGER DEFAULT 0",
     },
     "calendarevent": {
         "source": "ALTER TABLE calendarevent ADD COLUMN source TEXT DEFAULT 'mail'",

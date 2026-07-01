@@ -1,5 +1,5 @@
 <script>
-  import { app, notify, ruleValueForField, ruleOpForField } from "../store.svelte.js";
+  import { app, notify, ruleValueForField, ruleOpForField, confirmDialog } from "../store.svelte.js";
   import { rules as api } from "../api.js";
   import { icons } from "../icons.js";
 
@@ -44,9 +44,13 @@
       let count = preview?.match_count;
       try { const p = await api.preview(draft); preview = p; count = p.match_count; } catch {}
       const verb = label(ACTIONS, draft.action).toLowerCase();
-      if (count != null &&
-          !confirm(`This rule will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail. Continue?`)) {
-        return;
+      if (count != null) {
+        const ok = await confirmDialog({
+          title: "Apply this rule?",
+          message: `It will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail.`,
+          confirmLabel: `${label(ACTIONS, draft.action)} ${count}`, danger: true,
+        });
+        if (!ok) return;
       }
     }
     busy = true;

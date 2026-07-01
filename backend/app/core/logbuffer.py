@@ -16,6 +16,16 @@ from threading import Lock
 _MAX = 800  # keep the last ~800 lines; plenty to diagnose a sync/send stall
 
 
+def _is_noise(record: logging.LogRecord, msg: str) -> bool:
+    """Drop harmless churn that would only clutter the Debug window. The main one
+    on Windows is asyncio's proactor logging every abrupt socket close (WinError
+    10054) when the webview drops an HTTP/WS connection — expected, not an error."""
+    if record.name.startswith("asyncio"):
+        if "10054" in msg or "_call_connection_lost" in msg or "ConnectionResetError" in msg:
+            return True
+    return False
+
+
 class RingBufferHandler(logging.Handler):
     def __init__(self, capacity: int = _MAX):
         super().__init__()
@@ -34,6 +44,8 @@ class RingBufferHandler(logging.Handler):
                 msg = msg + "\n" + "".join(traceback.format_exception(*record.exc_info))
             except Exception:
                 pass
+        if _is_noise(record, msg):
+            return
         with self._lock:
             self._seq += 1
             self._buf.append({

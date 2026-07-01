@@ -13,6 +13,7 @@
   import MailMerge from "./lib/components/MailMerge.svelte";
   import AiInbox from "./lib/components/AiInbox.svelte";
   import RuleModal from "./lib/components/RuleModal.svelte";
+  import ConfirmDialog from "./lib/components/ConfirmDialog.svelte";
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
@@ -250,6 +251,7 @@
   <CommandPalette />
   <ShortcutsOverlay open={shortcutsOpen} onclose={() => (shortcutsOpen = false)} />
 {/if}
+<ConfirmDialog />
 <Toast />
 
 <style>

@@ -77,6 +77,7 @@ class Account(SQLModel, table=True):
 
     color: str = "#4f8cff"      # UI accent for unified inbox
     enabled: bool = True
+    sort_order: int = Field(default=0, index=True)   # manual order in the sidebar/UI
     # Extra send-as identities for this account, e.g. ["Sales <sales@co.com>",
     # "me+side@co.com"]. The primary `email` is always implicitly available.
     aliases: list = Field(default_factory=list, sa_column=Column(JSON))

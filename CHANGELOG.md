@@ -9,12 +9,95 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 ## [Unreleased]
 
+_Work in progress lands here, then moves under a version number when bundled._
+
+## [0.2.10] — 2026-07-01
+
+### Added
+- **Reorder accounts** in Settings → Accounts (▲/▼) — the order flows through to
+  the sidebar and unified views.
+- **Remove an account from the sidebar**: enter "Manage folders" and each account
+  gets a remove (🗑) button, with an in-app confirm.
+
+### Fixed
+- **Adding a Google account** failed with "could not determine account email" —
+  the sign-in now requests the identity scopes needed to read your address, and
+  tolerates Google's scope reordering that previously aborted the flow.
+- **Microsoft 365 send** with SMTP disabled: RaplMail now decides based on the
+  actual error (not the stored server host), so a password-connected M365 mailbox
+  gets a clear "reconnect with Sign in with Microsoft" message instead of silently
+  queuing a doomed retry, and a Graph permission problem is reported rather than
+  retried forever.
+
+## [0.2.9] — 2026-07-01
+
+### Fixed
+- **Account removal still failed** on the full-text search index (`cannot DELETE
+  from contentless fts5 table`). Removal no longer touches that index — leftover
+  search entries for deleted mail are harmless (they simply stop resolving) — so
+  accounts now delete cleanly.
+
+## [0.2.8] — 2026-07-01
+
+### Fixed
+- **Account removal failing** ("Failed to fetch"). Deleting an account whose mail
+  included calendar invites hit a foreign-key ordering bug (calendar events were
+  removed after their messages). Deletion now happens in the correct dependency
+  order inside one transaction, rolling back with a clear error if anything goes
+  wrong — so an account always removes cleanly.
+
+## [0.2.7] — 2026-07-01
+
+### Changed
+- **Compose always opens a fresh message.** It no longer silently reopens your
+  last draft. Instead, a **Drafts** menu in the compose header lists your recent
+  drafts (by subject, or recipient when there's no subject) so you restore one on
+  demand — and can delete any from the list.
+- **No more "tauri.localhost says" popups.** Confirmations (removing an account,
+  applying a bulk rule, discarding a draft) now use a proper in-app dialog.
+
+### Fixed
+- **Removing an account failed** when it had synced mail (a foreign-key error),
+  and could error on a broken Microsoft account ("no cached Microsoft account").
+  Removal now cleanly deletes the account, its cached mail/folders/events, and
+  its credentials regardless of token state.
+
+## [0.2.6] — 2026-07-01
+
+### Added
+- **Drafts** now has its own sidebar item, showing draft messages across all
+  accounts.
+- **Hide the Newsletter Feed and/or Paper Trail** sidebar items (Settings →
+  General) if you don't use them.
+
+### Changed (Settings organization)
+- **Quick-action buttons** moved from General to **Appearance** (it's about how
+  the UI looks).
+- **General** is now grouped under scannable headers — *Mail behavior*,
+  *Notifications & scheduling*, *Account & system*, *Security & privacy* —
+  instead of one long list.
+
 ### Changed
 - **"Create rule…" now opens a quick New-rule modal** instead of jumping to
   Settings. Pick a field (Subject, Sender domain, etc.) and the value auto-fills
   from the email you clicked, with a live count of how many existing messages
   match. A "Manage all rules in Settings →" link is there when you want the full
   list.
+- **Closing a draft with unsaved changes** now shows an in-app prompt (Save to
+  Drafts / Keep editing / Discard) instead of the browser's "tauri.localhost
+  says" popup.
+- The Debug window now reports the **correct app version** (was always showing
+  0.1.0) and no longer floods with harmless Windows socket-close (WinError 10054)
+  noise.
+
+### Fixed
+- **Gmail sync error** for the `[Gmail]` container folder (`NONEXISTENT Unknown
+  Mailbox`): container-only folders are no longer selected, and any such folder
+  left over from an older build is pruned automatically.
+- A **Microsoft 365 mailbox connected as a plain IMAP/password account** that
+  hits "SMTP disabled for the tenant" now shows a clear message explaining how to
+  fix it (reconnect with "Sign in with Microsoft", or have the admin re-enable
+  SMTP) instead of silently retrying a doomed send.
 
 ## [0.2.5] — 2026-07-01
 

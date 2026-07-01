@@ -9,6 +9,7 @@ When launched by the Tauri shell, RAPLMAIL_PORT / RAPLMAIL_TOKEN are injected.
 from __future__ import annotations
 
 import contextlib
+import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,7 +38,9 @@ async def lifespan(app: FastAPI):
         await manager.stop()
 
 
-app = FastAPI(title="RaplMail", version="0.1.0", lifespan=lifespan)
+# Version is injected by the Tauri shell (RAPLMAIL_VERSION) so /health and the
+# Debug window report the real installed version, not a hardcoded stub.
+app = FastAPI(title="RaplMail", version=os.environ.get("RAPLMAIL_VERSION", "0.0.0-dev"), lifespan=lifespan)
 
 _settings = get_settings()
 app.add_middleware(

@@ -89,8 +89,34 @@
     } catch {}
   }
 
-  const DRAFT_KEY = "raplmail.draft";
+  // Local autosave keeps a *list* of recent drafts (newest first). Compose always
+  // opens NEW — you restore a previous draft from the "Drafts" menu in the header,
+  // rather than having one silently reappear.
+  const DRAFTS_KEY = "raplmail.drafts";
+  const DRAFTS_MAX = 8;
   let draftTimer;
+  let draftId = null;                 // which stored draft this compose maps to
+  let recentDrafts = $state([]);      // for the header menu
+  let draftsMenu = $state(false);
+
+  function loadRecentDrafts() {
+    try { recentDrafts = JSON.parse(localStorage.getItem(DRAFTS_KEY) || "[]"); }
+    catch { recentDrafts = []; }
+    return recentDrafts;
+  }
+  function persistDrafts(list) {
+    const trimmed = list.slice(0, DRAFTS_MAX);
+    try { localStorage.setItem(DRAFTS_KEY, JSON.stringify(trimmed)); } catch {}
+    recentDrafts = trimmed;
+  }
+  // A short label for the menu: subject, else first recipient, else "(empty)".
+  function draftLabel(d) {
+    const s = (d.subject || "").trim();
+    if (s) return s;
+    const to = (d.to || "").split(",")[0].trim();
+    return to ? `To: ${to}` : "(empty draft)";
+  }
+
   // Is there real user content beyond the auto-inserted signature?
   function userTyped() {
     if (c.to.trim() || (c.cc || "").trim() || c.subject.trim()) return true;
@@ -101,16 +127,27 @@
   }
   function saveDraft() {
     if (standalone) return;
-    try {
-      if (!userTyped()) { localStorage.removeItem(DRAFT_KEY); return; }
-      localStorage.setItem(DRAFT_KEY, JSON.stringify({
-        to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
-        account_id: accountId, in_reply_to: c.in_reply_to || "",
-      }));
-    } catch {}
+    const list = loadRecentDrafts().filter((d) => d.id !== draftId);
+    if (!userTyped()) { persistDrafts(list); return; }   // nothing worth keeping
+    persistDrafts([{
+      id: draftId, to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
+      account_id: accountId, in_reply_to: c.in_reply_to || "", ts: Date.now(),
+    }, ...list]);
   }
   function scheduleSave() { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraft, 700); }
-  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch {} }
+  function clearDraft() { persistDrafts(loadRecentDrafts().filter((d) => d.id !== draftId)); }
+  function removeDraft(id) { persistDrafts(loadRecentDrafts().filter((d) => d.id !== id)); }
+  // Load a stored draft into the current composer (and keep editing under its id).
+  function restoreDraft(d) {
+    c.to = d.to || ""; c.cc = d.cc || ""; c.subject = d.subject || "";
+    if (d.account_id) accountId = d.account_id;
+    if (c.cc) showCc = true;
+    c.in_reply_to = d.in_reply_to || "";
+    if (editor) { editor.innerHTML = d.html || ""; applySignature(); }
+    draftId = d.id;
+    dirty = true; draftsMenu = false;
+    focusTop();
+  }
   // Flush the debounced save right now (used on close/unmount so the last
   // keystrokes are never lost between the 700ms debounce and teardown).
   function flushSave() { clearTimeout(draftTimer); saveDraft(); }
@@ -136,26 +173,11 @@
     } catch {}
     applySignature();
 
-    // Restore an autosaved draft into a blank new compose, OR when resuming the
-    // exact same reply (matching in_reply_to) — so closing a half-written reply
-    // and reopening it brings the text back instead of losing it.
-    const blankSeed = !c.to && !c.subject && !c.html;
-    const savedPeek = (() => { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "null"); } catch { return null; } })();
-    const sameReply = !!(c.in_reply_to && savedPeek && savedPeek.in_reply_to === c.in_reply_to);
-    if (!standalone && (blankSeed || sameReply)) {
-      try {
-        const saved = savedPeek;
-        if (saved && (saved.to || saved.subject || (saved.html || "").trim())) {
-          c.to = saved.to || ""; c.cc = saved.cc || ""; c.subject = saved.subject || "";
-          if (saved.account_id) accountId = saved.account_id;
-          if (saved.cc) showCc = true;
-          if (editor && saved.html) editor.innerHTML = saved.html;
-          notify("Restored your draft");
-        }
-      } catch {}
-    }
+    // Always open a fresh message. Previous drafts are never auto-restored — they
+    // live in the "Drafts" menu in the header, restored on demand.
+    draftId = (crypto.randomUUID ? crypto.randomUUID() : `d${Date.now()}${Math.random()}`);
+    loadRecentDrafts();
     focusTop();
-    // Autosave as fields change.
     scheduleSave();
     mounted = true;
   });
@@ -180,14 +202,24 @@
     }
   });
 
+  let confirmDiscard = $state(false);
   function close() {
     // Persist whatever's typed before tearing down so the X never silently
     // drops a draft (the 700ms debounce hadn't fired yet). If there's real
-    // unsaved content, confirm — the saved copy is restorable next compose.
+    // unsaved content, ask in-app (no native "tauri.localhost says" box).
     flushSave();
-    if (dirty && userTyped() && !confirm("Discard this draft? Your text is saved and can be restored from a new message.")) return;
+    if (dirty && userTyped()) { confirmDiscard = true; return; }
+    doClose();
+  }
+  function doClose() {
+    confirmDiscard = false;
     if (standalone) { window.close(); return; }
     app.composing = null;
+  }
+  async function saveDraftAndClose() {
+    confirmDiscard = false;
+    try { await saveToDrafts(); } catch {}
+    doClose();
   }
   // Last-resort flush if the component is torn down some other way (route
   // change, parent re-render) without close() running.
@@ -457,9 +489,39 @@
 </script>
 
 <div class="panel" class:standalone style={dockStyle} bind:this={panelEl} onkeydown={onComposeKey}>
+  {#if confirmDiscard}
+    <div class="discard-veil" role="dialog" aria-modal="true" aria-label="Unsaved message">
+      <div class="discard-box">
+        <b>Keep this draft?</b>
+        <p>You have unsaved changes.</p>
+        <div class="discard-btns">
+          <button class="btn primary" onclick={saveDraftAndClose}>Save to Drafts</button>
+          <button class="btn ghost" onclick={() => (confirmDiscard = false)}>Keep editing</button>
+          <button class="btn ghost danger" onclick={doClose}>Discard</button>
+        </div>
+      </div>
+    </div>
+  {/if}
   <header onpointerdown={onHeaderDown}>
     <span>New message</span>
     <div class="hbtns" onpointerdown={(e) => e.stopPropagation()}>
+      {#if !standalone && recentDrafts.length}
+        <div class="drafts-pick">
+          <button class="hbtn" title="Restore a saved draft" onclick={() => (draftsMenu = !draftsMenu)}>
+            {@html icons.drafts || icons.edit || ""} Drafts <span class="dcount">{recentDrafts.length}</span> ⌄
+          </button>
+          {#if draftsMenu}
+            <div class="drafts-menu">
+              {#each recentDrafts as d (d.id)}
+                <div class="drow">
+                  <button class="dopen" onclick={() => restoreDraft(d)} title="Restore this draft">{draftLabel(d)}</button>
+                  <button class="ddel" title="Delete draft" onclick={() => removeDraft(d.id)}>{@html icons.close}</button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      {/if}
       {#if !standalone}
         <button class="x" title="Open in a separate window" onclick={popOut}>{@html icons.window || icons.external || "⧉"}</button>
       {/if}
@@ -567,11 +629,30 @@
     border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
     resize: both; min-width: 380px; min-height: 360px; max-width: 96vw; max-height: 92vh; }
   .panel.standalone { position: static; width: 100%; height: 100vh; border: none; border-radius: 0; box-shadow: none; resize: none; max-width: none; max-height: none; }
+  .discard-veil { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,0.4);
+    display: flex; align-items: center; justify-content: center; border-radius: var(--radius); }
+  .discard-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow); padding: 18px 20px; max-width: 340px; text-align: center; }
+  .discard-box b { font-size: 15px; }
+  .discard-box p { margin: 6px 0 14px; color: var(--muted); font-size: 13px; }
+  .discard-btns { display: flex; flex-direction: column; gap: 8px; }
+  .discard-btns .danger { color: var(--danger); }
   header { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; border-bottom: 1px solid var(--border); font-weight: 600; cursor: move; user-select: none; background: var(--surface-2); }
   .panel.standalone header { cursor: default; }
   .hbtns { display: flex; align-items: center; gap: 2px; }
   .x { color: var(--muted); font-size: 14px; padding: 3px 7px; border-radius: 6px; display: inline-flex; }
   .x:hover { background: var(--surface-3); color: var(--text); }
+  .drafts-pick { position: relative; margin-right: 4px; }
+  .hbtn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 9px; border-radius: 6px; }
+  .hbtn:hover { background: var(--surface-3); color: var(--text); }
+  .dcount { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 5px; }
+  .drafts-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 30; min-width: 240px; max-width: 320px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; }
+  .drow { display: flex; align-items: center; gap: 4px; }
+  .dopen { flex: 1; text-align: left; font-size: 13px; font-weight: 400; padding: 7px 9px; border-radius: 6px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dopen:hover { background: var(--surface-3); }
+  .ddel { color: var(--muted); padding: 5px; border-radius: 6px; display: inline-flex; }
+  .ddel:hover { color: var(--danger); background: var(--surface-3); }
   .pgp { display: inline-flex; gap: 4px; }
   .pgp-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); }
   .pgp-btn.on { background: color-mix(in srgb, var(--accent) 18%, transparent); border-color: var(--accent); color: var(--accent); }

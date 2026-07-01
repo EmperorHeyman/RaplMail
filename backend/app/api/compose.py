@@ -257,16 +257,27 @@ def _deliver_blocking(body_dict: dict) -> None:
             # rapl-group.eu). Re-detect from MX, persist, and retry once.
             raw = _resend_with_detected_host(body.account_id, message, exc)
         except smtplib.SMTPResponseException as exc:
-            # M365 tenants commonly disable SMTP AUTH ("535 5.7.139
-            # SmtpClientAuthentication is disabled for the Tenant"). Graph
-            # Mail.Send is governed separately and still works — send via Graph,
-            # which also saves to Sent Items, so skip the IMAP append below.
-            if is_m365 and _is_smtp_auth_disabled(exc):
+            # This exact error ("535 5.7.139 SmtpClientAuthentication is disabled
+            # for the Tenant") only comes from Microsoft 365, so key off the error
+            # itself — not the stored host, which may be blank for OAuth accounts.
+            if not _is_smtp_auth_disabled(exc):
+                raise
+            if is_m365:
+                # Graph Mail.Send is governed separately and still works — send via
+                # Graph (which also saves to Sent), so skip the IMAP append.
                 log.warning("SMTP AUTH disabled for tenant; sending via Microsoft Graph")
                 raw = _send_via_graph(secret_key, message)
                 sent_path = None
             else:
-                raise
+                # A Microsoft mailbox connected as a plain IMAP/password account
+                # can't use Graph (no OAuth token). Tell the user how to fix it
+                # instead of silently queuing a doomed retry.
+                raise PermanentSendError(
+                    "This Microsoft 365 mailbox has SMTP sending disabled by the tenant, "
+                    "and it's connected here with a password. Remove the account and "
+                    "re-add it with 'Sign in with Microsoft' so RaplMail can send via "
+                    "Microsoft Graph — or ask your admin to re-enable SMTP AUTH."
+                ) from exc
         if sent_path:
             try:
                 provider.append_to_folder(sent_path, raw, seen=True)
@@ -308,7 +319,16 @@ def _send_via_graph(secret_key: str, message) -> bytes:
     if updated and updated != cache_blob:
         store.set(secret_key, updated)
     raw = build_mime(message).as_bytes()
-    graph.send_mime(token, raw)
+    try:
+        graph.send_mime(token, raw)
+    except Exception as exc:
+        # A 403 here means the token lacks Mail.Send — a config problem that won't
+        # fix itself on retry, so surface it instead of silently queuing.
+        raise PermanentSendError(
+            "Microsoft Graph refused the send (the account's token is missing the "
+            "'Mail.Send' permission). Ask your admin to grant Graph 'Mail.Send' to the "
+            f"app registration, then reconnect the account. ({exc})"
+        ) from exc
     return raw
 
 

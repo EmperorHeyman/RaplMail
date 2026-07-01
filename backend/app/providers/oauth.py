@@ -35,7 +35,13 @@ MS_IMAP_HOST = "outlook.office365.com"
 MS_SMTP_HOST = "smtp.office365.com"
 
 # --- Gmail -------------------------------------------------------------------
-GOOGLE_SCOPES = ["https://mail.google.com/"]
+# openid + userinfo.email are required so the flow returns an id_token we can read
+# the account's email from — without them, "could not determine account email".
+GOOGLE_SCOPES = [
+    "https://mail.google.com/",
+    "openid",
+    "https://www.googleapis.com/auth/userinfo.email",
+]
 # Calendar write access (create/update/delete events) + email claim for display.
 GCAL_SCOPES = [
     "https://www.googleapis.com/auth/calendar.events",
@@ -142,7 +148,14 @@ def google_run_installed_flow(scopes: list[str] | None = None) -> tuple[str, dic
 
     Blocks until the user authorizes. Call from a worker thread.
     """
+    import os
+
     from google_auth_oauthlib.flow import InstalledAppFlow
+
+    # Google frequently returns scopes reordered / with extras (it adds its own
+    # openid grant), which otherwise makes oauthlib raise "Scope has changed" and
+    # aborts the whole sign-in. Relaxing this lets the flow complete.
+    os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
 
     settings = get_settings()
     if not settings.google_client_id:

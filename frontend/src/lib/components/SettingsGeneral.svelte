@@ -143,26 +143,6 @@
     else notify("Couldn't show notification: " + res.reason, "error");
   }
 
-  // Configurable quick-action buttons.
-  const ROW_CHOICES = [
-    ["none", "— None —"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
-    ["read", "Read / unread"], ["archive", "Archive"], ["delete", "Delete"],
-  ];
-  const READER_CHOICES = [
-    ["reply", "Reply"], ["replyAll", "Reply all"], ["forward", "Forward"],
-    ["done", "Done"], ["flag", "Flag"],
-  ];
-  function setRowAction(index, key) {
-    const cur = [...(app.settings.rowActions || ["snooze", "done"])];
-    cur[index] = key;
-    saveSettings({ rowActions: cur });
-  }
-  function toggleReaderAction(key, on) {
-    const order = READER_CHOICES.map((c) => c[0]);
-    const cur = new Set(app.settings.readerActions || order);
-    on ? cur.add(key) : cur.delete(key);
-    saveSettings({ readerActions: order.filter((k) => cur.has(k)) });
-  }
   let dragCat = $state(null);
   function reorder(targetId) {
     if (!dragCat || dragCat === targetId) return;
@@ -222,6 +202,7 @@
 </script>
 
 <div class="wrap">
+  <h2 class="group-head">Mail behavior</h2>
   <section class="card">
     <h3>Compose window</h3>
     <p class="hint">How a new message or reply opens.</p>
@@ -280,6 +261,14 @@
     <label class="check">
       <input type="checkbox" checked={app.settings.bundles} onchange={(e) => setCompose({ bundles: e.currentTarget.checked })} />
       <div><b>Bundle notifications</b><span>Collapse 3+ messages from the same newsletter/social/update sender into one expandable card.</span></div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.showNewsletterFeed !== false} onchange={(e) => setCompose({ showNewsletterFeed: e.currentTarget.checked })} />
+      <div><b>Newsletter Feed</b><span>Show the “Newsletter Feed” item in the sidebar. Turn off to hide it.</span></div>
+    </label>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.showPaperTrail !== false} onchange={(e) => setCompose({ showPaperTrail: e.currentTarget.checked })} />
+      <div><b>Paper Trail</b><span>Show the “Paper Trail” item (receipts, orders, confirmations) in the sidebar. Turn off to hide it.</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.screener} onchange={(e) => setCompose({ screener: e.currentTarget.checked })} />
@@ -350,6 +339,23 @@
     {/if}
   </section>
 
+  <section class="card">
+    <h3>Auto-BCC</h3>
+    <p class="hint">Automatically BCC outgoing mail by the recipient's domain — e.g. blind-copy your CRM or ticketing system. Use <code>*</code> to match every recipient.</p>
+    {#each bccRules as r, i}
+      <div class="bccrow">
+        <input placeholder="domain (client.com or *)" bind:value={r.domain} />
+        <input placeholder="bcc@yoursystem.com" bind:value={r.bcc} />
+        <button class="btn ghost danger" onclick={() => removeBcc(i)}>{@html icons.close}</button>
+      </div>
+    {/each}
+    <div class="bccactions">
+      <button class="btn" onclick={addBcc}>＋ Add rule</button>
+      <button class="btn primary" onclick={saveBcc}>Save</button>
+    </div>
+  </section>
+
+  <h2 class="group-head">Account &amp; system</h2>
   <section class="card">
     <h3>Backup &amp; migrate</h3>
     <p class="hint"><b>Full backup (.rmail)</b> — the easy one. Includes <b>everything</b>: your accounts, passwords,
@@ -464,6 +470,7 @@
     {/if}
   </section>
 
+  <h2 class="group-head">Notifications &amp; scheduling</h2>
   <section class="card">
     <h3>Notifications</h3>
     {#if notificationsAvailable()}
@@ -529,44 +536,7 @@
     <p class="hint" style="margin-top:8px">Need an exact time? The compose “Later ⌄” menu has a date &amp; time picker.</p>
   </section>
 
-  <section class="card">
-    <h3>Quick-action buttons</h3>
-    <p class="hint">The two buttons that appear on each message row when you hover.</p>
-    <div class="rowbtns">
-      {#each [0, 1] as idx}
-        <label class="inline">{idx === 0 ? "Left" : "Right"}
-          <select value={(app.settings.rowActions || ["snooze", "done"])[idx]} onchange={(e) => setRowAction(idx, e.currentTarget.value)}>
-            {#each ROW_CHOICES as [val, label]}<option value={val}>{label}</option>{/each}
-          </select>
-        </label>
-      {/each}
-    </div>
-    <p class="hint" style="margin-top:16px">Buttons shown under the recipient when reading a message.</p>
-    <div class="smartcats">
-      {#each READER_CHOICES as [val, label]}
-        <label class="grp"><input type="checkbox"
-          checked={(app.settings.readerActions || READER_CHOICES.map((c) => c[0])).includes(val)}
-          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{label}</span></label>
-      {/each}
-    </div>
-  </section>
-
-  <section class="card">
-    <h3>Auto-BCC</h3>
-    <p class="hint">Automatically BCC outgoing mail by the recipient's domain — e.g. blind-copy your CRM or ticketing system. Use <code>*</code> to match every recipient.</p>
-    {#each bccRules as r, i}
-      <div class="bccrow">
-        <input placeholder="domain (client.com or *)" bind:value={r.domain} />
-        <input placeholder="bcc@yoursystem.com" bind:value={r.bcc} />
-        <button class="btn ghost danger" onclick={() => removeBcc(i)}>{@html icons.close}</button>
-      </div>
-    {/each}
-    <div class="bccactions">
-      <button class="btn" onclick={addBcc}>＋ Add rule</button>
-      <button class="btn primary" onclick={saveBcc}>Save</button>
-    </div>
-  </section>
-
+  <h2 class="group-head">Security &amp; privacy</h2>
   <section class="card">
     <h3>Privacy</h3>
     <label class="check">
@@ -603,6 +573,9 @@
 
 <style>
   .wrap { max-width: 640px; display: flex; flex-direction: column; gap: 20px; }
+  .group-head { margin: 8px 0 -6px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--faint); }
+  .group-head:first-child { margin-top: 0; }
   .card { padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
   h3 { margin: 0 0 6px; }
   .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; }

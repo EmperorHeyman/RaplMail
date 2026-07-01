@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -17,6 +18,7 @@ from app.providers import autodiscover as ad
 from app.providers import oauth
 
 router = APIRouter(prefix="/accounts", tags=["accounts"], dependencies=[Depends(verify_token)])
+_log = logging.getLogger("raplmail.accounts")
 
 # Pending Microsoft device-code flows, keyed by an opaque id we hand to the UI.
 _pending_ms_flows: dict[str, dict] = {}
@@ -29,6 +31,7 @@ class AccountOut(BaseModel):
     provider: Provider
     color: str
     enabled: bool
+    sort_order: int = 0
     aliases: list[str] = []
     imap_host: str = ""
     imap_port: int = 993
@@ -39,6 +42,7 @@ class AccountOut(BaseModel):
 def _to_out(a: Account) -> AccountOut:
     return AccountOut(id=a.id, email=a.email, display_name=a.display_name,
                       provider=a.provider, color=a.color, enabled=a.enabled,
+                      sort_order=a.sort_order or 0,
                       aliases=list(a.aliases or []),
                       imap_host=a.imap_host, imap_port=a.imap_port,
                       smtp_host=a.smtp_host, smtp_port=a.smtp_port)
@@ -46,7 +50,8 @@ def _to_out(a: Account) -> AccountOut:
 
 @router.get("", response_model=list[AccountOut])
 def list_accounts(session: Session = Depends(get_session)) -> list[AccountOut]:
-    return [_to_out(a) for a in session.exec(select(Account))]
+    rows = session.exec(select(Account).order_by(Account.sort_order, Account.id)).all()
+    return [_to_out(a) for a in rows]
 
 
 @router.get("/health")
@@ -241,6 +246,7 @@ def _upsert_oauth_account(session: Session, store: SecretStore, email: str,
 class AccountUpdate(BaseModel):
     color: str | None = None
     display_name: str | None = None
+    sort_order: int | None = None
     aliases: list[str] | None = None
     imap_host: str | None = None
     imap_port: int | None = None
@@ -258,6 +264,8 @@ def update_account(account_id: int, body: AccountUpdate,
         account.color = body.color
     if body.display_name is not None:
         account.display_name = body.display_name
+    if body.sort_order is not None:
+        account.sort_order = body.sort_order
     if body.aliases is not None:
         # Drop blanks and dedupe while preserving order.
         seen, cleaned = set(), []
@@ -321,12 +329,45 @@ async def trigger_sync(account_id: int, request: Request,
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(account_id: int, store: SecretStore = Depends(require_unlocked_store),
                    session: Session = Depends(get_session)) -> None:
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import (CalendarEvent, Folder, Message, MessageState, Rule,
+                            ScheduledSend, Signature)
+
     account = session.get(Account, account_id)
     if account is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+
+    # Foreign keys are enforced (PRAGMA foreign_keys=ON), so every child row must
+    # go before whatever it references. Dependency order matters:
+    #   CalendarEvent -> message + account   (delete BEFORE messages)
+    #   Message       -> folder + account    (delete BEFORE folders)
+    # Do it all in one transaction; on any error, roll back and report cleanly so
+    # the request never dies mid-flight ("Failed to fetch").
     try:
-        store.delete(account.secret_key)
-    except Exception:
-        pass
-    session.delete(account)
-    session.commit()
+        # NB: message_fts is a contentless FTS5 table (content=''), which rejects
+        # plain DELETEs, so we intentionally don't touch it here. Its entries are
+        # keyed by message rowid; once the messages are gone, a search hit simply
+        # doesn't resolve to a row and is dropped — harmless orphans, no crash.
+        session.exec(sa_delete(CalendarEvent).where(CalendarEvent.account_id == account_id))
+        session.exec(sa_delete(MessageState).where(MessageState.account_id == account_id))
+        session.exec(sa_delete(Message).where(Message.account_id == account_id))
+        session.exec(sa_delete(Folder).where(Folder.account_id == account_id))
+        session.exec(sa_delete(ScheduledSend).where(ScheduledSend.account_id == account_id))
+        # Rules/signatures scoped to this account only (account_id IS NULL = global).
+        session.exec(sa_delete(Rule).where(Rule.account_id == account_id))
+        session.exec(sa_delete(Signature).where(Signature.account_id == account_id))
+        # Credential removal is best-effort — an M365 account with an empty token
+        # cache still removes cleanly.
+        try:
+            if account.secret_key:
+                store.delete(account.secret_key)
+        except Exception:
+            pass
+        session.delete(account)
+        session.commit()
+    except Exception as exc:
+        session.rollback()
+        _log.exception("account delete failed for %s", account_id)
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            f"Couldn't delete the account: {exc}") from exc

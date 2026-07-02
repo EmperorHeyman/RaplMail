@@ -89,6 +89,10 @@
 
   onMount(() => {
     applyTheme();
+    // A separate #compose window must NOT run the app services (events,
+    // calendar, pending-send recovery) — that duplicated notifications and
+    // could redeliver a send the main window was still counting down.
+    if (composeWindow) { initSettings(); return; }
     initSettings();  // pull persisted settings from the backend file
     boot();
     // Re-evaluate auto day/night theme periodically.
@@ -113,6 +117,7 @@
 
   function onGlobalKey(e) {
     if (composeWindow) return;
+    if (app.confirm) return;   // a confirm dialog owns the keyboard
     const kb = app.settings.keybinds || {};
     // Ctrl/Cmd+R → check for new mail (override the webview's reload-the-app
     // default). Always block the reload, but don't trigger a sync mid-typing.
@@ -142,8 +147,9 @@
       e.preventDefault();
       return;
     }
-    // Ctrl+1..9 switch workspace, Ctrl+0 = All (fixed).
-    if ((e.ctrlKey || e.metaKey) && /^[0-9]$/.test(e.key)) {
+    // Ctrl+1..9 switch workspace, Ctrl+0 = All (fixed). Not while typing —
+    // text fields use Ctrl+digit too.
+    if ((e.ctrlKey || e.metaKey) && /^[0-9]$/.test(e.key) && !isTyping(e)) {
       const ws = app.settings.workspaces || [];
       if (e.key === "0") { setWorkspace(null); e.preventDefault(); }
       else { const w = ws[Number(e.key) - 1]; if (w) { setWorkspace(w.id); e.preventDefault(); } }
@@ -167,7 +173,7 @@
   // first so the default view honors Smart Inbox (avoids defaulting to All Inboxes).
   let _booted = false;
   $effect(() => {
-    if (app.vault.unlocked && !_booted) {
+    if (app.vault.unlocked && !_booted && !composeWindow) {
       _booted = true;
       (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();

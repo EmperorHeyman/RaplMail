@@ -19,6 +19,11 @@
 
   let tab = $state(app.settingsTab || "accounts");
   if (app.settingsTab) app.settingsTab = null;
+  // Deep-links (e.g. RuleModal → "Manage all rules") must also work while
+  // Settings is already mounted — consuming settingsTab only at init missed those.
+  $effect(() => {
+    if (app.settingsTab) { tab = app.settingsTab; app.settingsTab = null; }
+  });
   const tabs = [
     { id: "accounts", label: "Accounts", icon: icons.accounts, kw: "email imap smtp oauth microsoft m365 google gmail add account password connect sign in" },
     { id: "workspaces", label: "Workspaces", icon: icons.workspaces, kw: "workspace group accounts switch context" },
@@ -62,22 +67,22 @@
 </script>
 
 <section class="settings">
-  <header>
-    <button class="btn ghost back" onclick={() => (app.view = "mail")}>← Back to mail</button>
-    <h1>Settings</h1>
+  <aside class="snav">
+    <button class="back" onclick={() => (app.view = "mail")}>← Back to mail</button>
     <div class="search"><span class="s-ic">{@html icons.search}</span>
       <input type="search" placeholder="Search settings…" bind:value={query} />
     </div>
-  </header>
-  <nav>
-    {#each filtered as t}
-      <button class="tab" class:active={tab === t.id} onclick={() => (tab = t.id)}>
-        <span>{@html t.icon}</span> {t.label}
-      </button>
-    {/each}
-    {#if filtered.length === 0}<span class="no-match">No settings match “{query}”</span>{/if}
-  </nav>
+    <nav>
+      {#each filtered as t}
+        <button class="tab" class:active={tab === t.id} onclick={() => (tab = t.id)}>
+          <span class="t-ic">{@html t.icon}</span> {t.label}
+        </button>
+      {/each}
+      {#if filtered.length === 0}<span class="no-match">No settings match “{query}”</span>{/if}
+    </nav>
+  </aside>
   <div class="panel">
+    <h1>{tabs.find((t) => t.id === tab)?.label || "Settings"}</h1>
     {#if tab === "accounts"}<SettingsAccounts />
     {:else if tab === "workspaces"}<SettingsWorkspaces />
     {:else if tab === "contacts"}<SettingsContacts />
@@ -99,21 +104,44 @@
 </section>
 
 <style>
-  .settings { display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-  header { display: flex; align-items: center; gap: 16px; padding: 18px 26px; border-bottom: 1px solid var(--border); }
-  .back { flex: none; }
-  h1 { margin: 0; font-size: 20px; }
-  .search { margin-left: auto; display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px; }
+  .settings { display: flex; min-width: 0; overflow: hidden; }
+  /* Vertical settings nav — 15 sections don't fit a horizontal tab strip. */
+  .snav {
+    flex: none; width: 220px; display: flex; flex-direction: column; gap: 10px;
+    padding: 16px 12px; border-right: 1px solid var(--hairline); background: var(--surface);
+    min-height: 0; overflow: hidden;
+  }
+  .back {
+    flex: none; text-align: left; padding: 7px 10px; border-radius: 8px;
+    color: var(--muted); font-size: 13px; font-weight: 550;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .back:hover { background: var(--hover); color: var(--text); }
+  h1 { margin: 0 0 18px; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  .search { display: flex; align-items: center; gap: 6px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); padding: 5px 10px; transition: border-color var(--t-fast) var(--ease); }
   .search:focus-within { border-color: var(--accent); }
-  .search .s-ic { color: var(--muted); display: inline-flex; }
-  .search input { border: none; background: transparent; outline: none; width: 200px; }
-  .no-match { color: var(--muted); font-size: 13px; padding: 9px 6px; }
-  nav { display: flex; gap: 6px; padding: 12px 22px 0; border-bottom: 1px solid var(--border); }
-  .tab { padding: 9px 14px; border-radius: var(--radius-sm) var(--radius-sm) 0 0; color: var(--muted); font-weight: 550; }
-  .tab:hover { background: var(--surface); }
-  .tab.active { color: var(--text); background: var(--surface-2); box-shadow: inset 0 -2px 0 var(--accent); }
-  .panel { flex: 1; overflow-y: auto; padding: 26px; }
-  .madeby { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--border); text-align: center; color: var(--muted); font-size: 12px; }
+  .search .s-ic { color: var(--muted); display: inline-flex; flex: none; }
+  .search input { border: none; background: transparent; outline: none; box-shadow: none; width: 100%; min-width: 0; padding: 2px 0; }
+  .search input:focus { box-shadow: none; }
+  .no-match { color: var(--muted); font-size: 12.5px; padding: 9px 10px; display: block; }
+  nav { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .tab {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border-radius: 8px; color: var(--muted); font-weight: 550;
+    font-size: 13px; text-align: left; width: 100%;
+    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .t-ic { display: grid; place-items: center; width: 18px; flex: none; }
+  .t-ic :global(svg) { width: 16px; height: 16px; }
+  .tab:hover { background: var(--hover); color: var(--text); }
+  .tab.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+  .tab.active .t-ic { color: var(--accent); }
+  .tab.active::before {
+    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
+    border-radius: 999px; background: var(--accent);
+  }
+  .panel { flex: 1; overflow-y: auto; padding: 26px 30px; min-width: 0; }
+  .madeby { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--hairline); text-align: center; color: var(--muted); font-size: 12px; }
   .madeby a { color: var(--accent); text-decoration: none; }
   .madeby a:hover { text-decoration: underline; }
   .madeby .ver { color: var(--text); font-variant-numeric: tabular-nums; }

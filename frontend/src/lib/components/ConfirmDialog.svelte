@@ -2,14 +2,20 @@
   import { app, resolveConfirm } from "../store.svelte.js";
 
   const c = $derived(app.confirm);
-  function onKey(e) {
+  // Capture-phase listener while the dialog is up: Enter/Escape must resolve
+  // the dialog ONLY — without this, the mail list's window listener also saw
+  // the keystroke (Enter opened the focused message behind the veil).
+  $effect(() => {
     if (!c) return;
-    if (e.key === "Escape") resolveConfirm(false);
-    else if (e.key === "Enter") resolveConfirm(true);
-  }
+    function onKey(e) {
+      if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); resolveConfirm(false); }
+      else if (e.key === "Enter") { e.preventDefault(); e.stopImmediatePropagation(); resolveConfirm(true); }
+      else { e.stopImmediatePropagation(); }  // swallow e/j/k/etc. too
+    }
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  });
 </script>
-
-<svelte:window on:keydown={onKey} />
 
 {#if c}
   <div class="veil" role="presentation" onclick={() => resolveConfirm(false)}>
@@ -26,10 +32,13 @@
 
 <style>
   .veil { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.5);
-    display: flex; align-items: center; justify-content: center; }
-  .box { width: min(420px, 92vw); background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px 22px; }
-  .title { font-size: 16px; }
+    backdrop-filter: blur(2px);
+    display: flex; align-items: center; justify-content: center;
+    animation: fade-in var(--t) var(--ease); }
+  .box { width: min(420px, 92vw); background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 20px 22px;
+    animation: pop-in var(--t) var(--ease); }
+  .title { font-size: 16px; letter-spacing: -0.01em; }
   .msg { margin: 8px 0 18px; color: var(--muted); font-size: 13px; line-height: 1.55; }
   .btns { display: flex; justify-content: flex-end; gap: 10px; }
   .btn.primary.danger { background: var(--danger); border-color: var(--danger); color: #fff; }

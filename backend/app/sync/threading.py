@@ -22,9 +22,18 @@ def normalize_subject(subject: str) -> str:
     return s.strip().lower()
 
 
-def thread_key(account_id: int, subject: str, uid: int = 0) -> str:
-    """Stable thread id for a message. Empty subjects fall back to a unique key."""
+def thread_key(account_id: int, subject: str, uid: int = 0, folder_id: int = 0,
+               participants: list[str] | None = None) -> str:
+    """Stable thread id for a message.
+
+    Subject threads carry the lowest participant address as a discriminator, so
+    a common subject ("Invoice") from unrelated senders doesn't merge — while a
+    reply (which swaps From/To but keeps the same pair) still matches. Empty
+    subjects fall back to a per-folder key (UIDs are only unique per folder).
+    """
     norm = normalize_subject(subject)
     if norm:
-        return f"{account_id}|{norm}"
-    return f"{account_id}|u:{uid}"
+        low = min((p.strip().lower() for p in (participants or []) if p and p.strip()),
+                  default="")
+        return f"{account_id}|{low}|{norm}" if low else f"{account_id}|{norm}"
+    return f"{account_id}|u:{folder_id}:{uid}"

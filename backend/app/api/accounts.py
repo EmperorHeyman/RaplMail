@@ -371,3 +371,10 @@ def delete_account(account_id: int, store: SecretStore = Depends(require_unlocke
         _log.exception("account delete failed for %s", account_id)
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR,
                             f"Couldn't delete the account: {exc}") from exc
+    # Release the pooled IMAP connection so no in-flight work keeps using the
+    # deleted account (best-effort).
+    try:
+        from app.providers.pool import pool
+        pool.drop(account_id)
+    except Exception:
+        pass

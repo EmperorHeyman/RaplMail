@@ -53,8 +53,11 @@ class EventOut(BaseModel):
 def _synth_uid(account_id: int, ev: dict) -> str:
     if ev.get("uid"):
         return ev["uid"]
+    # hashlib, NOT hash(): str hashing is salted per process, which would mint a
+    # new uid every restart and duplicate the event on each rescan.
+    import hashlib
     base = f"{ev.get('summary', '')}|{ev.get('start')}"
-    return f"nouid:{abs(hash(base))}"
+    return f"nouid:{hashlib.sha1(base.encode('utf-8')).hexdigest()[:16]}"
 
 
 def upsert_events(session: Session, account_id: int, message_id: int | None, events: list[dict]) -> int:
@@ -86,9 +89,18 @@ def upsert_events(session: Session, account_id: int, message_id: int | None, eve
     return n
 
 
+def _to_utc_naive(v: datetime | None) -> datetime | None:
+    """Match storage: SQLite drops tzinfo WITHOUT converting, so any tz-aware
+    input must be normalized to UTC-naive first (same as SnoozeIn/send_at)."""
+    if v is not None and v.tzinfo is not None:
+        v = v.astimezone(timezone.utc).replace(tzinfo=None)
+    return v
+
+
 @router.get("", response_model=list[EventOut])
 def list_events(start: datetime | None = None, end: datetime | None = None,
                 session: Session = Depends(get_session)) -> list[CalendarEvent]:
+    start, end = _to_utc_naive(start), _to_utc_naive(end)
     q = select(CalendarEvent)
     if start is not None:
         q = q.where((CalendarEvent.end >= start) | (CalendarEvent.start >= start))
@@ -249,7 +261,11 @@ async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
         return CalDavResult(error="No CalDAV/CardDAV URL or ICS feed configured.")
 
     from app.sync import caldav as dav
-    acct_id = session.exec(select(Account.id)).first() or 0
+    acct_id = session.exec(select(Account.id)).first()
+    if not acct_id:
+        # Events are stored per account (FK enforced) — account_id 0 would just
+        # fail every insert.
+        return CalDavResult(error="Add a mail account first — calendar entries are stored per account.")
     res = CalDavResult()
     try:
         if cal_url:
@@ -423,6 +439,13 @@ async def create_event(body: CreateEventIn, request: Request,
     acct = session.get(Account, body.account_id)
     if acct is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    # Normalize tz-aware input to UTC: SQLite drops the offset UNTRANSLATED, and
+    # EventOut re-labels stored times as UTC — an un-normalized "+02:00" would
+    # display shifted. Kept tz-aware for the Google/iMIP writers below.
+    if body.start.tzinfo is not None:
+        body.start = body.start.astimezone(timezone.utc)
+    if body.end is not None and body.end.tzinfo is not None:
+        body.end = body.end.astimezone(timezone.utc)
     uid = f"raplmail-{uuid.uuid4().hex}@raplmail"
     # Store locally first so it appears immediately regardless of the write path.
     upsert_events(session, acct.id, None, [{

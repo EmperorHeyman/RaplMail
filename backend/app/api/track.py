@@ -50,13 +50,23 @@ async def open_pixel(token: str, request: Request, session: Session = Depends(ge
                     headers={"Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
+def _iso_utc(v: datetime | None) -> str | None:
+    """Stored UTC but SQLite drops the tzinfo — stamp the offset so the frontend
+    doesn't read the UTC wall-clock as local time."""
+    if v is None:
+        return None
+    if v.tzinfo is None:
+        v = v.replace(tzinfo=timezone.utc)
+    return v.isoformat()
+
+
 @router.get("")
 def list_tracked(session: Session = Depends(get_session)) -> list[dict]:
     rows = session.exec(select(OpenTrack).order_by(OpenTrack.created_at.desc()).limit(200))
     return [{
         "token": r.token, "subject": r.subject, "recipient": r.recipient,
-        "created_at": r.created_at.isoformat() if r.created_at else None,
+        "created_at": _iso_utc(r.created_at),
         "open_count": r.open_count,
-        "first_open": r.first_open.isoformat() if r.first_open else None,
-        "last_open": r.last_open.isoformat() if r.last_open else None,
+        "first_open": _iso_utc(r.first_open),
+        "last_open": _iso_utc(r.last_open),
     } for r in rows]

@@ -27,7 +27,9 @@
   const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
+  let _loadGen = 0;   // latest-request-wins: clicking ‹ › quickly overlaps loads
   async function load() {
+    const gen = ++_loadGen;
     loading = true;
     let a, b;
     if (view === "week") {
@@ -39,9 +41,9 @@
       b = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0, 23, 59, 59);
       a.setDate(a.getDate() - 7); b.setDate(b.getDate() + 7);
     }
-    try { events = await calendar.list(a.toISOString(), b.toISOString()) || []; }
-    catch { events = []; }
-    finally { loading = false; }
+    try { const list = await calendar.list(a.toISOString(), b.toISOString()) || []; if (gen === _loadGen) events = list; }
+    catch { if (gen === _loadGen) events = []; }
+    finally { if (gen === _loadGen) loading = false; }
   }
   // "Sync" pulls BOTH mail-derived invites AND any configured calendar
   // subscriptions (ICS feeds / CalDAV) — otherwise a subscription added in
@@ -118,7 +120,17 @@
     saving = true;
     try {
       const startIso = form.all_day ? `${form.date}T00:00:00` : `${form.date}T${form.start}:00`;
-      const endIso = form.all_day ? `${form.endDate || form.date}T00:00:00` : `${form.date}T${form.end}:00`;
+      // All-day DTEND is EXCLUSIVE (the render side treats it that way): the
+      // form's endDate is the last covered day, so send the day after it —
+      // start==end made single-day all-day events invisible everywhere.
+      let endIso;
+      if (form.all_day) {
+        const dayAfter = new Date(`${form.endDate || form.date}T00:00:00`);
+        dayAfter.setDate(dayAfter.getDate() + 1);
+        endIso = `${fmtDate(dayAfter)}T00:00:00`;
+      } else {
+        endIso = `${form.date}T${form.end}:00`;
+      }
       const r = await calendar.create({
         account_id: form.account_id, summary: form.summary.trim(),
         start: new Date(startIso).toISOString(),

@@ -146,6 +146,7 @@ export const app = $state({
   customizing: false,            // layout-edit mode (resize columns)
   toast: null,
   confirm: null,                 // { title, message, confirmLabel, danger, resolve } — in-app confirm dialog
+  syncTick: 0,                   // bumped on each sync:done so views can refresh live
   settings: loadSettings(),
 });
 
@@ -158,18 +159,18 @@ export async function retryQueue() {
 
 // Customizable color tokens (mirror app.css :root) with their built-in defaults.
 export const THEME_TOKENS = [
-  ["--bg", "#0e1014"], ["--surface", "#161922"], ["--surface-2", "#1d212c"],
-  ["--surface-3", "#252a37"], ["--border", "#2a3040"], ["--text", "#e7eaf0"],
-  ["--muted", "#8b93a6"], ["--accent", "#5b8def"], ["--done", "#38d39f"],
-  ["--danger", "#f0616d"], ["--warning", "#f0b429"],
+  ["--bg", "#0b0d12"], ["--surface", "#12151d"], ["--surface-2", "#1a1e29"],
+  ["--surface-3", "#232937"], ["--border", "#262c3b"], ["--text", "#e8ebf2"],
+  ["--muted", "#8f97ab"], ["--accent", "#5e8bff"], ["--done", "#34d399"],
+  ["--danger", "#f26d79"], ["--warning", "#f5b83d"],
 ];
 
 // A built-in light palette (used by the "Light" preset and auto day mode).
 export const LIGHT_THEME = {
-  "--bg": "#f4f6f9", "--surface": "#ffffff", "--surface-2": "#eef1f6",
-  "--surface-3": "#e1e6ef", "--border": "#d3d9e4", "--text": "#1b2230",
-  "--muted": "#5b6678", "--accent": "#3b6fe0", "--done": "#1faa75",
-  "--danger": "#d6455a", "--warning": "#c98a06",
+  "--bg": "#f5f6fa", "--surface": "#ffffff", "--surface-2": "#eef0f5",
+  "--surface-3": "#e3e7ef", "--border": "#d8dde8", "--text": "#171d2b",
+  "--muted": "#5f6a80", "--accent": "#3e6fe6", "--done": "#149d6d",
+  "--danger": "#d84557", "--warning": "#b57d05",
 };
 
 function effectiveTheme() {
@@ -225,6 +226,16 @@ function clearPersistedPendingSend() { try { localStorage.removeItem(PENDING_SEN
 /** Queue a send; with undo-send on, it can be cancelled during the delay. */
 export function queueSend(payload, seed) {
   app.composing = null; // hide the compose window immediately
+  // A second send while one is still counting down would overwrite the first
+  // timer's state and silently lose that mail — flush it out the door now
+  // (its undo window just ends early).
+  const prev = app.pendingSend;
+  if (prev) {
+    clearTimeout(prev.timer);
+    app.pendingSend = null;
+    clearPersistedPendingSend();
+    doSend(prev.payload);
+  }
   const delay = app.settings.undoSend ? (app.settings.undoSendDelay || 5) : 0;
   if (delay <= 0) { doSend(payload); return; }
   persistPendingSend(payload);
@@ -264,17 +275,36 @@ let _settingsTimer = null;
 // Keys the BACKEND owns inside the shared settings blob — never sent from the
 // UI save (the backend merges its own), so a settings save can't wipe them.
 const _BACKEND_OWNED = ["raplDesk", "googleCalendarEmail"];
+function _pushSettings(opts) {
+  const out = { ...app.settings };
+  for (const k of _BACKEND_OWNED) delete out[k];
+  appSettings.put(out, opts).catch(() => {});
+}
 export function saveSettings(patch) {
-  app.settings = { ...app.settings, ...patch };
+  // Mutate in place — replacing the whole settings object invalidated EVERY
+  // settings-reading derived in the app (each mail row reads several), so any
+  // toggle (e.g. collapsing the sidebar) recomputed hundreds of them and lagged
+  // the UI. In-place assignment keeps Svelte's per-key tracking granular.
+  Object.assign(app.settings, patch);
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(app.settings)); } catch {}
   // Persist to the backend (a file) too, debounced, so settings survive across
   // installs and can be exported.
   clearTimeout(_settingsTimer);
-  _settingsTimer = setTimeout(() => {
-    const out = { ...app.settings };
-    for (const k of _BACKEND_OWNED) delete out[k];
-    appSettings.put(out).catch(() => {});
-  }, 400);
+  _settingsTimer = setTimeout(() => { _settingsTimer = null; _pushSettings(); }, 400);
+}
+// Quitting inside the 400ms debounce window would lose the last change (the
+// server copy wins on next boot) — flush it with a keepalive request.
+function _flushSettingsSave() {
+  if (!_settingsTimer) return;
+  clearTimeout(_settingsTimer);
+  _settingsTimer = null;
+  _pushSettings({ keepalive: true });
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", _flushSettingsSave);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") _flushSettingsSave();
+  });
 }
 
 // Load settings from the server on boot. The server copy is authoritative; if
@@ -385,14 +415,18 @@ export function notify(message, kind = "info", undo = null) {
 // In-app confirmation dialog (replaces the browser's ugly "tauri.localhost says"
 // window.confirm). Returns a Promise<boolean>. Render <ConfirmDialog /> once at
 // the app root; it reads app.confirm.
+const _confirmQueue = [];
 export function confirmDialog({ title = "Are you sure?", message = "", confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
   return new Promise((resolve) => {
-    app.confirm = { title, message, confirmLabel, cancelLabel, danger, resolve };
+    const item = { title, message, confirmLabel, cancelLabel, danger, resolve };
+    // A dialog is already up: queue this one so neither promise is orphaned.
+    if (app.confirm) _confirmQueue.push(item);
+    else app.confirm = item;
   });
 }
 export function resolveConfirm(result) {
   const c = app.confirm;
-  app.confirm = null;
+  app.confirm = _confirmQueue.shift() || null;
   if (c) c.resolve(result);
 }
 
@@ -673,6 +707,8 @@ export async function muteSender(message) {
 }
 
 export async function syncAllAccounts() {
+  // No accounts → no sync:done event will ever clear the flag; don't set it.
+  if (!app.accounts.length) return;
   app.syncing = true;
   for (const a of app.accounts) { try { await accounts.sync(a.id); } catch {} }
   notify("Syncing…");
@@ -714,9 +750,17 @@ export function presetWhen(at) {
   return `${at.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
 
+// True if the view the user is looking at is still the one an undo closure was
+// created in — otherwise the optimistic re-insert would splice a foreign row
+// into whatever list is currently displayed.
+function _viewKey() {
+  return `${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`;
+}
+
 export async function snoozeMessage(message, untilISO, presence = false) {
   // Optimistically drop it from the current view.
   const idx = app.messages.findIndex((m) => m.id === message.id);
+  const originView = _viewKey();
   app.messages = app.messages.filter((m) => m.id !== message.id);
   if (app.selectedMessageId === message.id) app.selectedMessageId = null;
   try {
@@ -724,7 +768,7 @@ export async function snoozeMessage(message, untilISO, presence = false) {
     if (untilISO || presence) {
       notify(presence ? "Snoozed until you're back" : "Snoozed", "info", () => {
         message.snooze_until = null;
-        if (!app.messages.some((m) => m.id === message.id)) {
+        if (_viewKey() === originView && !app.messages.some((m) => m.id === message.id)) {
           const at = idx >= 0 ? idx : app.messages.length;
           app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
         }
@@ -732,7 +776,7 @@ export async function snoozeMessage(message, untilISO, presence = false) {
         // idx may be stale if the list changed during the undo window).
         messages.snooze(message.id, null, false)
           .then(() => refreshMessages({ background: true }))
-          .catch(() => {});
+          .catch(() => notify("Couldn't undo the snooze — check your connection", "error"));
       });
     } else {
       notify("Unsnoozed");
@@ -816,23 +860,32 @@ function _checkReminders() {
     for (const min of offsets) {
       const due = t - min * 60000;
       const key = `${e.id}:${min}`;
-      // Fire once when we cross the lead time (60s check cadence → 90s window).
-      if (now >= due && now < due + 90000 && !_firedReminders.has(key)) {
+      // Fire once past the lead time, up to the event start — a fixed 90s
+      // window silently skipped reminders when the machine slept across it.
+      if (now >= due && now < t + 60000 && !_firedReminders.has(key)) {
         _firedReminders.add(key);
         sendNative(e.summary || "Event", `Starts ${_remindLabel(min)}${e.location ? " · " + e.location : ""}`);
       }
     }
   }
 }
+let _feedTimer = null;
+// Self-rescheduling so a changed icsSyncMinutes takes effect without a restart.
+function _scheduleFeedSync() {
+  clearTimeout(_feedTimer);
+  const ms = Math.max(5, app.settings.icsSyncMinutes || 30) * 60000;
+  _feedTimer = setTimeout(() => {
+    syncCalendarFeeds().then(_loadUpcomingEvents).finally(_scheduleFeedSync);
+  }, ms);
+}
 export function startCalendarServices() {
   if (_calTimers) return;
   _loadUpcomingEvents();
-  const feedMs = Math.max(5, app.settings.icsSyncMinutes || 30) * 60000;
   _calTimers = [
     setInterval(_checkReminders, 60000),                                   // reminders: every minute
     setInterval(_loadUpcomingEvents, 5 * 60000),                           // refresh window: every 5 min
-    setInterval(() => syncCalendarFeeds().then(_loadUpcomingEvents), feedMs), // auto-sync feeds
   ];
+  _scheduleFeedSync();                                                     // auto-sync feeds
 }
 
 export async function pinMessage(message, value) {
@@ -841,7 +894,7 @@ export async function pinMessage(message, value) {
   if (item) item.pinned = v;       // optimistic — list re-sorts immediately
   message.pinned = v;
   try { await messages.pin(message.id, v); }
-  catch (e) { notify("Couldn't pin", "error"); if (item) item.pinned = !v; }
+  catch (e) { notify("Couldn't pin", "error"); if (item) item.pinned = !v; message.pinned = !v; }
 }
 
 export async function muteThread(message) {
@@ -888,12 +941,21 @@ export function openMessageById(id) {
   messages.setSeen(id, true).catch(() => {});
 }
 
+// Latest-request-wins: overlapping loads (fast navigation, background refresh
+// racing a user click) must not let an OLDER response clobber a newer view.
+let _msgGen = 0;
 export async function refreshMessages({ background = false } = {}) {
+  const gen = ++_msgGen;
+  const fresh = () => gen === _msgGen;   // still the most recent request?
+  const done = () => { if (fresh()) app.loading = false; };
   if (!background) app.loading = true;
   try {
     if (app.selectedKind === "followups") {
-      try { app.messages = await messages.followups(app.settings.followupDays || 3); }
-      finally { app.loading = false; }
+      try {
+        const list = await messages.followups(app.settings.followupDays || 3);
+        if (!fresh()) return;
+        app.messages = list;
+      } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;
     }
@@ -903,13 +965,14 @@ export async function refreshMessages({ background = false } = {}) {
       const grouped = groupedCategories();
       try {
         let list = await messages.list({ ...scope, exclude_categories: grouped.join(","), include_done: app.showDone });
+        if (!fresh()) return;
         if (app.selectedKind === "smart") {
           const ws = workspaceAccountIds();
           if (ws) list = list.filter((m) => ws.includes(m.account_id));
         }
         app.messages = list;
-        messages.smartGroups(scope).then((d) => (app.smartGroupData = d)).catch(() => {});
-      } finally { app.loading = false; }
+        messages.smartGroups(scope).then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
+      } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;
     }
@@ -935,12 +998,13 @@ export async function refreshMessages({ background = false } = {}) {
     }
     if (app.category && !app.search) params.category = app.category;
     let list = await messages.list(params);
+    if (!fresh()) return;
     // Workspace isolation: limit the unified inbox to the active workspace's accounts.
     const wsIds = workspaceAccountIds();
     if (wsIds && app.selectedKind === "unified") list = list.filter((m) => wsIds.includes(m.account_id));
     app.messages = list;
   } finally {
-    app.loading = false;
+    done();
   }
   prefetchVisible(app.messages.map((m) => m.id));
 }
@@ -1048,15 +1112,18 @@ export async function markDone(message, done) {
     refreshFoldersSoon();
     // Offer a quick undo when a message was archived out of the view.
     if (!app.showDone && done) {
+      const originView = _viewKey();
       notify("Marked done", "info", () => {
         message.is_done = false;
-        if (!app.messages.some((m) => m.id === message.id)) {
-          const at = idx >= 0 ? idx : app.messages.length;
-          app.messages = [...app.messages.slice(0, at), message, ...app.messages.slice(at)];
+        // idx < 0 = the message lives inside an expanded smart-group card, not
+        // the main list — flipping is_done un-hides it there; don't splice a
+        // duplicate row into the main list.
+        if (_viewKey() === originView && idx >= 0 && !app.messages.some((m) => m.id === message.id)) {
+          app.messages = [...app.messages.slice(0, idx), message, ...app.messages.slice(idx)];
         }
         messages.setDone(message.id, false)
           .then(() => { refreshFoldersSoon(); refreshMessages({ background: true }); })
-          .catch(() => {});
+          .catch(() => notify("Couldn't undo — check your connection", "error"));
       });
     }
   } catch (e) {
@@ -1180,12 +1247,23 @@ export async function testNotification() {
 let disconnect = null;
 export function startEvents() {
   if (disconnect) return;
+  // Events emitted while the socket was down (backend restart, network blip)
+  // are gone — treat every reconnect as a missed sync:done and catch up.
+  const onReconnect = () => {
+    loadAccountsAndFolders();
+    refreshMessages({ background: true });
+    refreshQueue();
+    app.syncTick = (app.syncTick || 0) + 1;
+  };
   disconnect = connectEvents((ev) => {
     if (ev.event === "sync:done") {
       app.syncing = false;
       loadAccountsAndFolders();
       // Background refresh: don't blank the list the user is looking at.
       refreshMessages({ background: true });
+      // Bump a tick so other views (Home/Dashboard, Calendar) can refresh live
+      // when new mail lands, instead of only updating on navigation.
+      app.syncTick = (app.syncTick || 0) + 1;
       if (ev.payload && ev.payload.new) {
         notify(`${ev.payload.new} new message(s)`);
         desktopNotify(ev.payload.preview, ev.payload.new);
@@ -1210,6 +1288,6 @@ export function startEvents() {
       notify("☀️ Morning briefing ready — open the inbox assistant");
       sendNative("RaplMail — morning briefing", first.slice(0, 180));
     }
-  });
+  }, onReconnect);
   refreshQueue();
 }

@@ -18,10 +18,11 @@
     const cmds = [
       { icon: icons.compose, label: "Compose new message", run: () => openCompose({ to: "", subject: "", html: "" }) },
       { icon: icons.sent, label: "Mail merge (personalized bulk send)", run: () => (app.mailMergeOpen = true) },
-      { icon: icons.unified, label: "Go to All Inboxes", run: selectUnifiedInbox },
-      { icon: icons.snooze, label: "Go to Snoozed", run: selectSnoozed },
+      // "Go to" must actually leave the current view (Settings/Calendar/…).
+      { icon: icons.unified, label: "Go to All Inboxes", run: () => { app.view = "mail"; selectUnifiedInbox(); } },
+      { icon: icons.snooze, label: "Go to Snoozed", run: () => { app.view = "mail"; selectSnoozed(); } },
       { icon: icons.sync, label: "Sync all accounts", run: syncAllAccounts },
-      { icon: icons.done, label: app.showDone ? "Hide done messages" : "Show done messages", run: toggleShowDone },
+      { icon: icons.done, label: app.showDone ? "Hide done messages" : "Show done messages", run: () => { app.view = "mail"; toggleShowDone(); } },
       { icon: "↔", label: app.settings.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar", run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
       { icon: icons.settings, label: "Open Settings", run: () => (app.view = "settings") },
     ];
@@ -75,10 +76,10 @@
 {/if}
 
 <style>
-  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 200; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; }
-  .palette { width: min(560px, 92vw); max-height: 60vh; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
-  input { border: none; border-bottom: 1px solid var(--border); border-radius: 0; padding: 15px 18px; font-size: 15px; background: transparent; }
-  input:focus { border-color: var(--border); }
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(2px); z-index: 200; display: flex; justify-content: center; align-items: flex-start; padding-top: 12vh; animation: fade-in var(--t) var(--ease); }
+  .palette { width: min(560px, 92vw); max-height: 60vh; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--hairline); border-radius: calc(var(--radius) + 3px); box-shadow: var(--shadow-lg); overflow: hidden; animation: pop-in var(--t) var(--ease); transform-origin: top center; }
+  input { border: none; border-bottom: 1px solid var(--hairline); border-radius: 0; padding: 15px 18px; font-size: 15px; background: transparent; box-shadow: none; }
+  input:focus { border-color: var(--hairline); box-shadow: none; }
   ul { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer; }
   li.active { background: var(--accent); color: #fff; }

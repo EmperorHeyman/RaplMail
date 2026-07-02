@@ -17,6 +17,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from app.core.db import get_engine, index_message_fts
@@ -33,7 +34,7 @@ from app.sync.rules import MessageFields, first_matching_action
 
 log = logging.getLogger("raplmail.sync")
 
-SYNC_INTERVAL_SECONDS = 120
+SYNC_INTERVAL_SECONDS = 60   # fallback poll; IMAP IDLE pushes new mail sooner
 HEADERS_PER_FOLDER_LIMIT = 500  # cap on a single incremental pull
 
 
@@ -351,6 +352,17 @@ class SyncManager:
                 for folder in folders:
                     try:
                         new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted)
+                    except IntegrityError:
+                        # FK failure mid-sync — typically the account (or folder)
+                        # was deleted while this sync was in flight. Roll back so
+                        # the session isn't poisoned for the remaining folders.
+                        fpath = folder.path  # read before rollback expires the object
+                        session.rollback()
+                        if session.get(Account, account_id) is None:
+                            log.info("account %s deleted mid-sync; aborting", account_id)
+                            return {"new": 0}
+                        log.exception("integrity error syncing folder %s (account %s)",
+                                      fpath, account_id)
                     except Exception as exc:
                         # A folder the server says doesn't exist / can't be selected
                         # (e.g. Gmail's "[Gmail]" \Noselect parent, stored by an
@@ -358,7 +370,7 @@ class SyncManager:
                         emsg = str(exc)
                         if "NONEXISTENT" in emsg or "Unknown Mailbox" in emsg:
                             log.info("pruning unselectable folder %r (account %s)", folder.path, account_id)
-                            session.delete(folder)
+                            self._prune_folder(session, folder)
                         else:
                             # One odd folder shouldn't abort the whole account.
                             log.exception("folder sync failed: account %s folder %s", account_id, folder.path)
@@ -381,6 +393,24 @@ class SyncManager:
             previews.sort(key=lambda p: p.get("date") or "", reverse=True)
             preview = previews[0]
         return {"new": new_count, "preview": preview, "account": account_email}
+
+    def _prune_folder(self, session: Session, folder: Folder) -> None:
+        """Drop a folder row plus its children in FK order (events -> messages ->
+        folder); foreign keys are enforced, so deleting the folder alone would
+        fail forever and poison every later sync cycle. Best-effort."""
+        from sqlalchemy import delete as sa_delete
+
+        from app.models import CalendarEvent
+        fpath = folder.path
+        try:
+            msg_ids = select(Message.id).where(Message.folder_id == folder.id)
+            session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id.in_(msg_ids)))
+            session.exec(sa_delete(Message).where(Message.folder_id == folder.id))
+            session.delete(folder)
+            session.flush()
+        except Exception:
+            session.rollback()
+            log.exception("failed to prune folder %s", fpath)
 
     def _sync_folders(self, session: Session, account: Account, provider) -> None:
         existing = {f.path: f for f in session.exec(
@@ -460,6 +490,13 @@ class SyncManager:
             flags = flagmap.get(m.uid)
             if flags is None:
                 continue
+            # \Seen is a standard flag every server keeps, and we push local
+            # changes too — so the server copy is authoritative both ways and
+            # read state converges across devices.
+            server_seen = "\\Seen" in flags
+            if server_seen != m.is_seen:
+                m.is_seen = server_seen
+                session.add(m)
             server_done = _DONE_KW in flags
             if server_done == m.is_done:
                 continue
@@ -507,7 +544,8 @@ class SyncManager:
             message_id=h.message_id, from_addr=h.from_addr, from_name=from_name,
             to_addrs=h.to_addrs, cc_addrs=h.cc_addrs, subject=subject,
             snippet=h.snippet, date=h.date,
-            thread_id=thread_key(account.id, subject, h.uid),
+            thread_id=thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
+                                 participants=[h.from_addr, *(h.to_addrs or [])]),
             is_seen="\\Seen" in h.flags, is_flagged="\\Flagged" in h.flags,
             is_answered="\\Answered" in h.flags, has_attachments=h.has_attachments,
             is_done=_DONE_KW in h.flags,   # cross-device "done" mirrored as an IMAP keyword

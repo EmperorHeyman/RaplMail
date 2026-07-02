@@ -63,7 +63,8 @@ export class ApiError extends Error {
 export const api = {
   get: (p) => request(p),
   post: (p, body) => request(p, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
-  put: (p, body) => request(p, { method: "PUT", body: JSON.stringify(body) }),
+  // opts passthrough (e.g. { keepalive: true } for saves during unload).
+  put: (p, body, opts) => request(p, { method: "PUT", body: JSON.stringify(body), ...(opts || {}) }),
   patch: (p, body) => request(p, { method: "PATCH", body: JSON.stringify(body) }),
   del: (p) => request(p, { method: "DELETE" }),
 };
@@ -166,7 +167,7 @@ export function backendBase() {
 
 export const appSettings = {
   get: () => api.get("/settings"),
-  put: (data) => api.put("/settings", { data }),
+  put: (data, opts) => api.put("/settings", { data }, opts),
   export: () => api.get("/settings/export"),
   import: (bundle) => api.post("/settings/import", bundle),
   exportFull: () => api.get("/settings/export-full"),
@@ -302,10 +303,17 @@ export const debug = {
   health: () => api.get("/debug/health"),
 };
 
-/** Connect to the live event stream. @param {(ev:{event:string,payload:any})=>void} onEvent */
-export function connectEvents(onEvent) {
+/**
+ * Connect to the live event stream.
+ * @param {(ev:{event:string,payload:any})=>void} onEvent
+ * @param {() => void} [onReconnect] called when the socket REopens after a drop
+ *   (not the first connect) — events sent while it was down are lost, so the
+ *   caller should refresh its state.
+ */
+export function connectEvents(onEvent, onReconnect) {
   let ws;
   let closed = false;
+  let wasConnected = false;
   getCfg().then((c) => {
     if (closed) return;
     const url = c.base.startsWith("http")
@@ -314,6 +322,10 @@ export function connectEvents(onEvent) {
     function open() {
       if (closed) return;
       ws = new WebSocket(url);
+      ws.onopen = () => {
+        if (wasConnected && onReconnect) { try { onReconnect(); } catch {} }
+        wasConnected = true;
+      };
       ws.onmessage = (e) => {
         try { onEvent(JSON.parse(e.data)); } catch {}
       };

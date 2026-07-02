@@ -57,8 +57,12 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
 
     # alternative: text + html (+ calendar)
     root.set_content(text_body or "")
+    html_part = None
     if msg.html:
         root.add_alternative(msg.html, subtype="html")
+        # Capture the html part NOW — the calendar part added below becomes the
+        # new last payload element, so [-1] would grab the wrong part.
+        html_part = root.get_payload()[-1]
     if cal:
         # An iMIP text/calendar alternative with METHOD — Gmail/Outlook render an
         # RSVP box and drop the event onto the recipient's calendar.
@@ -68,7 +72,7 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
         cal_part.set_param("method", method)
         cal_part.set_param("component", "VEVENT")
         del cal_part["Content-Disposition"]
-        html_part = root.get_payload()[-1]
+    if html_part is not None and msg.inline_images:
         # Attach inline images onto the html part so they live in a related group.
         for img in msg.inline_images:
             cid = img["cid"].strip("<>")

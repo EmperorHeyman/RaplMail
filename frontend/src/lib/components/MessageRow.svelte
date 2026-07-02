@@ -81,11 +81,18 @@
     if (!dragging) return;
     dx = Math.max(0, e.clientX - startX); // swipe right to mark done
   }
+  // A completed swipe must not ALSO count as a click — dx is reset before the
+  // browser dispatches the click, so the dx===0 guard alone let the row open.
+  let suppressClick = false;
   function onPointerUp() {
     if (!dragging) return;
     dragging = false;
-    if (dx > THRESHOLD) ondone();
+    if (dx > THRESHOLD) { suppressClick = true; ondone(); }
     dx = 0;
+  }
+  function onRowClick() {
+    if (suppressClick) { suppressClick = false; return; }
+    if (dx === 0) onopen();
   }
 </script>
 
@@ -107,7 +114,7 @@
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
-    onclick={() => { if (dx === 0) onopen(); }}
+    onclick={onRowClick}
     oncontextmenu={(e) => onmenu?.(e)}
     onmouseenter={() => prefetchBody(message.id, true)}
   >
@@ -116,7 +123,7 @@
       title="Select" onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
-        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" onerror={onAvatarError} />
+        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" loading="lazy" decoding="async" onerror={onAvatarError} />
         {:else}{initial}{/if}
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>
@@ -172,8 +179,8 @@
   .row {
     position: relative; width: 100%; text-align: left;
     display: flex; gap: 11px; align-items: flex-start;
-    padding: 11px 14px; border-bottom: 1px solid var(--border);
-    background: var(--bg); transition: background 0.1s;
+    padding: 11px 14px; border-bottom: 1px solid var(--hairline);
+    background: var(--bg); transition: background var(--t-fast) var(--ease);
   }
   .wrap.swiping .row { transition: none; }
   .row:hover { background: var(--surface); }
@@ -181,7 +188,7 @@
   .row.isdone .avatar { background: var(--done); color: #06231a; }
   .done-check { font-weight: 800; }
   .row.selected { background: var(--surface-2); }
-  .row.focused { box-shadow: inset 3px 0 0 var(--accent); }
+  .row.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
   .row.unread .from, .row.unread .subject { font-weight: 700; }
 
   .avatar {
@@ -215,7 +222,7 @@
   .snippet { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .marks { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
-  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-soft-2); }
   .star { color: var(--warning); font-size: 13px; }
   .pin { color: var(--accent); font-size: 12px; }
   .vip { color: #e8b923; font-size: 12px; }
@@ -223,10 +230,14 @@
 
   .row-btn {
     flex: none; align-self: center; width: 30px; height: 30px; border-radius: 50%;
-    border: 1.5px solid var(--border); color: var(--muted);
-    display: grid; place-items: center; opacity: 0; transition: opacity 0.12s, background 0.12s, color 0.12s;
+    border: 1.5px solid var(--border); color: var(--muted); background: var(--bg);
+    display: grid; place-items: center; opacity: 0; transform: scale(0.9);
+    transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
+      color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
+      transform var(--t) var(--ease-spring);
   }
-  .row:hover .row-btn, .row.focused .row-btn { opacity: 1; }
+  .row:hover .row-btn, .row.focused .row-btn { opacity: 1; transform: scale(1); }
+  .row-btn:active { transform: scale(0.92); }
   .done-btn:hover { background: var(--done); border-color: var(--done); color: #06231a; }
   .snooze-btn:hover, .read-btn:hover, .arch-btn:hover { background: var(--surface-3); border-color: var(--accent); }
   .flag-btn:hover { background: var(--surface-3); border-color: var(--warning); color: var(--warning); }
@@ -234,8 +245,9 @@
   .del-btn:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
   .snooze-menu {
     position: absolute; right: 14px; top: 50%; z-index: 15;
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 150px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 150px;
+    animation: pop-in var(--t) var(--ease); transform-origin: top right;
   }
   .snooze-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
   .snooze-menu button:hover { background: var(--accent); color: #fff; }

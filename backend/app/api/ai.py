@@ -19,7 +19,7 @@ from sqlmodel import Session, select
 
 from app.api.deps import verify_token
 from app.core.db import get_session
-from app.models import Message, Setting
+from app.models import Folder, FolderRole, Message, Setting
 
 router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(verify_token)])
 
@@ -63,6 +63,7 @@ def _call_anthropic(key: str, model: str, system: str, prompt: str, max_tokens: 
 
 def _thread_text(session: Session, thread_id: str, fallback_id: int | None) -> tuple[str, str]:
     """Build a transcript for the model. Returns (subject, transcript)."""
+    from app.core.atrest import decrypt_field
     msgs: list[Message] = []
     if thread_id:
         msgs = list(session.exec(select(Message).where(Message.thread_id == thread_id)))
@@ -82,7 +83,8 @@ def _thread_text(session: Session, thread_id: str, fallback_id: int | None) -> t
     for m in msgs:
         who = m.from_name or m.from_addr or "?"
         when = m.date.strftime("%Y-%m-%d %H:%M") if m.date else ""
-        text = (m.body_text or m.snippet or "").strip()
+        # Cached bodies may be sealed at rest — never feed ciphertext to the model.
+        text = (decrypt_field(m.body_text) or m.snippet or "").strip()
         lines.append(f"--- From: {who}  ({when})\nSubject: {m.subject}\n{text[:4000]}")
     return subject, "\n\n".join(lines)
 

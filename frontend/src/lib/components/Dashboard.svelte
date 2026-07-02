@@ -8,8 +8,12 @@
   // --- live clock ----------------------------------------------------------
   let now = $state(new Date());
   let timer;
-  onMount(() => { timer = setInterval(() => (now = new Date()), 1000); load(); });
+  let mounted = false;
+  onMount(() => { timer = setInterval(() => (now = new Date()), 1000); load().then(() => (mounted = true)); });
   onDestroy(() => clearInterval(timer));
+  // Live-refresh when new mail syncs (quietly, no loading flash), so Home stays
+  // current without needing to navigate away and back.
+  $effect(() => { void app.syncTick; if (mounted) load(true); });
 
   const greeting = $derived.by(() => {
     const h = now.getHours();
@@ -22,15 +26,18 @@
   // --- data ----------------------------------------------------------------
   let recent = $state([]);
   let events = $state([]);     // events across the next ~2 weeks (for "up next" + week strip)
-  let unread = $state(0);
   let loading = $state(true);
+  // Real inbox unread across all accounts — counting the 6 fetched rows capped
+  // the hero stat at 6.
+  const unread = $derived(
+    app.folders.filter((f) => f.role === "inbox").reduce((n, f) => n + (f.unread_count || 0), 0)
+  );
 
-  async function load() {
-    loading = true;
+  async function load(quiet = false) {
+    if (!quiet) loading = true;
     try {
       const rows = await msgApi.list({ role: "inbox", limit: 6 });
       recent = Array.isArray(rows) ? rows : (rows.items || []);
-      unread = recent.filter((m) => !m.is_seen).length;
     } catch {}
     try {
       const start = new Date(now); start.setHours(0, 0, 0, 0);
@@ -184,10 +191,16 @@
 
 <style>
   .dash { flex: 1; overflow-y: auto; padding: 26px 30px 34px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  /* Staggered entrance: hero, then cards, then quick actions. */
+  .dash > * { animation: rise-in var(--t-slow) var(--ease) backwards; }
+  .dash > *:nth-child(2) { animation-delay: 40ms; }
+  .dash > *:nth-child(3) { animation-delay: 80ms; }
+  .dash > *:nth-child(4) { animation-delay: 120ms; }
 
   /* Hero with a soft animated aurora — feels alive without any external image. */
-  .hero { position: relative; overflow: hidden; border-radius: var(--radius); border: 1px solid var(--border);
-    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--surface)), var(--surface) 70%); padding: 26px 28px; }
+  .hero { position: relative; overflow: hidden; border-radius: calc(var(--radius) + 3px); border: 1px solid var(--hairline);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--surface)), var(--surface) 70%); padding: 26px 28px;
+    box-shadow: var(--shadow-sm); }
   .aurora { position: absolute; inset: 0; z-index: 0; filter: blur(46px); opacity: 0.6; pointer-events: none; }
   .aurora span { position: absolute; width: 240px; height: 240px; border-radius: 50%; }
   .aurora span:nth-child(1) { background: var(--accent); top: -90px; left: 8%; }
@@ -201,7 +214,7 @@
   .stats .dot { color: var(--faint); }
   .clock { font-size: 46px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text); line-height: 1; }
 
-  .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; }
+  .card { background: var(--surface); border: 1px solid var(--hairline); border-radius: calc(var(--radius) + 3px); padding: 16px 18px; box-shadow: var(--shadow-sm); }
   .card-h { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 12px; }
   .card-h .link { margin-left: auto; color: var(--accent); font-size: 12px; }
   .badge { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); font-weight: 600; }
@@ -209,8 +222,8 @@
 
   /* Week strip */
   .weekgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
-  .day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); min-height: 78px; }
-  .day:hover { border-color: var(--accent); }
+  .day { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 4px 8px; border-radius: 10px; border: 1px solid var(--hairline); background: var(--bg); min-height: 78px; transition: border-color var(--t-fast) var(--ease), transform var(--t) var(--ease-spring); }
+  .day:hover { border-color: var(--accent); transform: translateY(-1px); }
   .day.today { background: color-mix(in srgb, var(--accent) 12%, transparent); border-color: var(--accent); }
   .dname { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); }
   .day.today .dname { color: var(--accent); font-weight: 700; }
@@ -235,7 +248,7 @@
   .subj { font-size: 13px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .t { font-size: 11px; color: var(--faint); flex: none; }
   .quick { display: flex; flex-wrap: wrap; gap: 10px; }
-  .qbtn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); font-size: 13px; color: var(--text); }
-  .qbtn:hover { border-color: var(--accent); color: var(--accent); }
+  .qbtn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--hairline); background: var(--surface); font-size: 13px; color: var(--text); transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .qbtn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .qbtn.rapl { margin-left: auto; color: var(--muted); }
 </style>

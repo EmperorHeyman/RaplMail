@@ -1,6 +1,6 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen } from "../store.svelte.js";
+  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen, confirmDialog } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { signatures as sigApi, compose as composeApi } from "../api.js";
   import RecipientInput from "./RecipientInput.svelte";
@@ -126,7 +126,9 @@
     return !!clone.innerText.trim();
   }
   function saveDraft() {
-    if (standalone) return;
+    // `closed` = this compose finished (sent/scheduled/discarded) — the
+    // onDestroy flush must not resurrect it into the drafts list.
+    if (standalone || closed) return;
     const list = loadRecentDrafts().filter((d) => d.id !== draftId);
     if (!userTyped()) { persistDrafts(list); return; }   // nothing worth keeping
     persistDrafts([{
@@ -185,6 +187,7 @@
   // True once the user actually edits something (vs. the seeded reply/forward
   // content), so close() only confirms when there's genuine unsaved work.
   let mounted = false;
+  let closed = false;
   let dirty = $state(false);
   function onBodyInput() { dirty = true; scheduleSave(); }
 
@@ -213,8 +216,14 @@
   }
   function doClose() {
     confirmDiscard = false;
+    closed = true;   // whatever should be kept was already flushed/saved
     if (standalone) { window.close(); return; }
     app.composing = null;
+  }
+  // "Discard": drop the draft close() just flushed, then close for good.
+  function discardAndClose() {
+    clearDraft();
+    doClose();
   }
   async function saveDraftAndClose() {
     confirmDiscard = false;
@@ -344,25 +353,31 @@
     return _ATTACH_HINTS.test(text);
   }
 
-  function send() {
+  async function send() {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
-    if (c.subject.trim() === "" && !confirm("Send this message without a subject?")) return;
-    if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Send anyway?")) return;
+    if (c.subject.trim() === "" &&
+        !(await confirmDialog({ title: "Send without a subject?", confirmLabel: "Send anyway" }))) return;
+    if (attachmentMissing() &&
+        !(await confirmDialog({ title: "No attachment", message: "You mention an attachment but nothing is attached.", confirmLabel: "Send anyway" }))) return;
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", in_reply_to: c.in_reply_to, account_id: accountId, attachments };
     clearDraft();
+    closed = true;   // don't let the unmount flush re-save the sent message
     queueSend(buildPayload(), seed);
   }
 
   async function sendLater(iso, label) {
     if (!accountId) { notify("Pick an account", "error"); return; }
     if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
-    if (c.subject.trim() === "" && !confirm("Schedule this message without a subject?")) return;
-    if (attachmentMissing() && !confirm("You mention an attachment but nothing is attached. Schedule anyway?")) return;
+    if (c.subject.trim() === "" &&
+        !(await confirmDialog({ title: "Schedule without a subject?", confirmLabel: "Schedule anyway" }))) return;
+    if (attachmentMissing() &&
+        !(await confirmDialog({ title: "No attachment", message: "You mention an attachment but nothing is attached.", confirmLabel: "Schedule anyway" }))) return;
     laterMenu = false;
     try {
       await composeApi.send({ ...buildPayload(), send_at: iso });
       clearDraft();
+      closed = true;
       notify(`Scheduled — ${label}`);
       if (standalone) window.close(); else app.composing = null;
     } catch (e) { notify("Couldn't schedule: " + e.message, "error"); }
@@ -497,7 +512,7 @@
         <div class="discard-btns">
           <button class="btn primary" onclick={saveDraftAndClose}>Save to Drafts</button>
           <button class="btn ghost" onclick={() => (confirmDiscard = false)}>Keep editing</button>
-          <button class="btn ghost danger" onclick={doClose}>Discard</button>
+          <button class="btn ghost danger" onclick={discardAndClose}>Discard</button>
         </div>
       </div>
     </div>
@@ -626,13 +641,16 @@
 <style>
   .panel { position: fixed; bottom: 18px; z-index: 50; width: min(720px, 96vw); height: min(640px, 88vh);
     display: flex; flex-direction: column; overflow: hidden; background: var(--surface); color: var(--text);
-    border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow);
-    resize: both; min-width: 380px; min-height: 360px; max-width: 96vw; max-height: 92vh; }
-  .panel.standalone { position: static; width: 100%; height: 100vh; border: none; border-radius: 0; box-shadow: none; resize: none; max-width: none; max-height: none; }
+    border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-lg);
+    resize: both; min-width: 380px; min-height: 360px; max-width: 96vw; max-height: 92vh;
+    animation: rise-in var(--t-slow) var(--ease); }
+  .panel.standalone { position: static; width: 100%; height: 100vh; border: none; border-radius: 0; box-shadow: none; resize: none; max-width: none; max-height: none; animation: none; }
   .discard-veil { position: absolute; inset: 0; z-index: 20; background: rgba(0,0,0,0.4);
-    display: flex; align-items: center; justify-content: center; border-radius: var(--radius); }
-  .discard-box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    box-shadow: var(--shadow); padding: 18px 20px; max-width: 340px; text-align: center; }
+    display: flex; align-items: center; justify-content: center; border-radius: var(--radius);
+    animation: fade-in var(--t) var(--ease); }
+  .discard-box { background: var(--surface); border: 1px solid var(--hairline); border-radius: var(--radius);
+    box-shadow: var(--shadow-lg); padding: 18px 20px; max-width: 340px; text-align: center;
+    animation: pop-in var(--t) var(--ease); }
   .discard-box b { font-size: 15px; }
   .discard-box p { margin: 6px 0 14px; color: var(--muted); font-size: 13px; }
   .discard-btns { display: flex; flex-direction: column; gap: 8px; }
@@ -647,7 +665,8 @@
   .hbtn:hover { background: var(--surface-3); color: var(--text); }
   .dcount { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 5px; }
   .drafts-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 30; min-width: 240px; max-width: 320px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; }
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px;
+    animation: pop-in var(--t) var(--ease); transform-origin: top right; }
   .drow { display: flex; align-items: center; gap: 4px; }
   .dopen { flex: 1; text-align: left; font-size: 13px; font-weight: 400; padding: 7px 9px; border-radius: 6px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dopen:hover { background: var(--surface-3); }
@@ -687,7 +706,7 @@
   footer { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
   footer > .btn, footer .later > .btn, .pgp-btn { flex: none; white-space: nowrap; }
   .later { position: relative; flex: none; }
-  .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 220px; }
+  .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 220px; animation: pop-in var(--t) var(--ease); transform-origin: bottom left; }
   .later-menu > button { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
   .later-menu > button:hover { background: var(--accent); color: #fff; }
   .later-menu .when { color: var(--muted); font-size: 12px; }
@@ -696,7 +715,7 @@
   .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
   .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
   .tpl-pick { position: relative; }
-  .tpl-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 180px; max-height: 260px; overflow-y: auto; }
+  .tpl-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 180px; max-height: 260px; overflow-y: auto; animation: pop-in var(--t) var(--ease); transform-origin: bottom left; }
   .tpl-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
   .tpl-menu button:hover { background: var(--accent); color: #fff; }
   .sigpick { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }

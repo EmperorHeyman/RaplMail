@@ -207,9 +207,10 @@ def list_messages(
     # or cached body) — so partial words like "ertel" match "erteltrading@…".
     if free_text:
         from sqlalchemy import or_
-        for term in free_text.split():
+        from sqlalchemy import text as sa_text
+        for i, term in enumerate(free_text.split()):
             like = f"%{term.lower()}%"
-            stmt = stmt.where(or_(
+            conds = [
                 func.lower(Message.from_addr).like(like),
                 func.lower(Message.from_name).like(like),
                 func.lower(Message.subject).like(like),
@@ -217,7 +218,23 @@ def list_messages(
                 func.lower(cast(Message.to_addrs, String)).like(like),
                 func.lower(cast(Message.cc_addrs, String)).like(like),
                 func.lower(Message.body_text).like(like),
-            ))
+            ]
+            # Also match via FTS — indexed from plaintext, so bodies stay
+            # searchable even when the cached body column is sealed at rest.
+            # The term is double-quoted (a literal FTS5 string); the probe query
+            # catches any FTS error so we fall back to the LIKE clauses only.
+            fts_q = '"' + term.replace('"', '""') + '"'
+            pname = f"ftsq{i}"
+            try:
+                session.exec(sa_text(
+                    f"SELECT rowid FROM message_fts WHERE message_fts MATCH :{pname} LIMIT 1"
+                ).bindparams(**{pname: fts_q}))
+                conds.append(Message.id.in_(sa_text(
+                    f"SELECT rowid FROM message_fts WHERE message_fts MATCH :{pname}"
+                ).bindparams(**{pname: fts_q}).columns(Message.id)))
+            except Exception:
+                session.rollback()
+            stmt = stmt.where(or_(*conds))
 
     # Screener filter pushed into SQL so pagination is correct. Doing it in
     # Python over a capped fetch dropped results and broke page 2 (it re-sliced
@@ -248,7 +265,9 @@ def list_messages(
 def followups(days: int = 3, session: Session = Depends(get_session)) -> list[MessageOut]:
     """Sent messages >= `days` old with no reply yet — nudge to follow up.
     Declared before /{message_id} so the path isn't captured by the int route."""
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    # Message.date is naive LOCAL time (imapclient normalises envelope dates to
+    # local), so these cutoffs must be local-naive too — not UTC.
+    now = datetime.now()
     older_than = now - timedelta(days=days)
     recent = now - timedelta(days=30)
     sent_ids = list(session.exec(select(Folder.id).where(Folder.role == FolderRole.sent)))
@@ -384,6 +403,12 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
     out: dict = {}
     cats = session.exec(scoped(select(Message.category, func.count(), func.max(Message.date)))
                         .group_by(Message.category)).all()
+    # Unread count per category (so the UI can float groups with new mail to the top).
+    unread_map = dict(session.exec(
+        scoped(select(Message.category, func.count()))
+        .where(Message.is_seen == False)  # noqa: E712
+        .group_by(Message.category)
+    ).all())
     for cat, cnt, latest in cats:
         # Order senders by their MOST RECENT message (not total count) so the
         # collapsed chips match the newest-first messages shown when expanded.
@@ -409,6 +434,7 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
                   for addr, nm, subj, dt in recent_rows]
         out[cat] = {
             "count": cnt,
+            "unread": int(unread_map.get(cat, 0)),
             "latest": latest.isoformat() if latest else None,
             "senders": senders,
             "recent": recent,
@@ -472,6 +498,12 @@ def thread(thread_id: str, session: Session = Depends(get_session)) -> list[Mess
     msgs = list(session.exec(select(Message).where(Message.thread_id == thread_id)))
     msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0)
     return [_to_out(m) for m in msgs]
+
+
+# Our own read-receipt pixel (see compose._embed_receipt) — stripped when
+# rendering so viewing your own Sent copy doesn't register an "open".
+_RECEIPT_IMG_RE = re.compile(
+    r'<img\b[^>]*\bsrc=["\']https?://[^"\']*/track/o/[^"\']+["\'][^>]*>', re.IGNORECASE)
 
 
 @router.get("/{message_id}", response_model=MessageDetail)
@@ -549,6 +581,11 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
             pass
         session.commit()
         session.refresh(msg)
+
+    # Never fire our own read-receipt pixel: the Sent copy carries it, and the
+    # reader loading it from this very backend would count as a recipient open.
+    if html and "/track/o/" in html:
+        html = _RECEIPT_IMG_RE.sub("", html)
 
     # Derive a "brand" domain from the body's links so the avatar can fall back
     # to it when the sender's own domain has no favicon (computed from cached
@@ -859,6 +896,30 @@ def _push_done_keywords_bulk(targets: list[tuple], done: bool) -> None:
                     continue
 
 
+def _push_seen_flags_bulk(targets: list[tuple], seen: bool) -> None:
+    """Mirror read/unread to the servers' \\Seen flag (grouped by account+folder),
+    so read state syncs to other devices. Best-effort, like the done keyword."""
+    from collections import defaultdict
+
+    from app.core.db import get_engine
+    from app.providers.pool import pool
+
+    by_folder: dict = defaultdict(list)
+    for acct_id, folder_id, uid in targets:
+        by_folder[(acct_id, folder_id)].append(uid)
+    with Session(get_engine()) as s:
+        for (acct_id, folder_id), uids in by_folder.items():
+            account = s.get(Account, acct_id)
+            folder = s.get(Folder, folder_id)
+            if not account or not folder:
+                continue
+            for uid in uids:
+                try:
+                    pool.set_keyword(account, folder.path, uid, "\\Seen", seen)
+                except Exception:
+                    continue
+
+
 def _persist_state(session: Session, msg: Message, *, done: bool | None = None) -> None:
     if not msg.message_id:
         return
@@ -992,16 +1053,24 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
             elif a == "unseen": m.is_seen = False
             elif a == "flag": m.is_flagged = True
             elif a == "unflag": m.is_flagged = False
-            elif a == "snooze": m.snooze_until = until; _persist_snooze(session, m, until)
+            elif a == "snooze": m.snooze_until = until; m.snooze_presence = False; _persist_snooze(session, m, until)
             session.add(m)
         # Collect (account, folder, uid) for done/undone to mirror as IMAP keywords.
         done_targets = None
         if a in ("done", "undone"):
             done_targets = [(m.account_id, m.folder_id, m.uid) for m in msgs if m.uid and m.message_id]
+        seen_targets = None
+        if a in ("seen", "unseen"):
+            seen_targets = [(m.account_id, m.folder_id, m.uid) for m in msgs if m.uid]
         session.commit()
         if done_targets:
             import asyncio
             task = asyncio.create_task(run_in_threadpool(_push_done_keywords_bulk, done_targets, a == "done"))
+            _bg_tasks.add(task)
+            task.add_done_callback(_bg_tasks.discard)
+        if seen_targets:
+            import asyncio
+            task = asyncio.create_task(run_in_threadpool(_push_seen_flags_bulk, seen_targets, a == "seen"))
             _bg_tasks.add(task)
             task.add_done_callback(_bg_tasks.discard)
         return {"updated": len(msgs)}
@@ -1032,6 +1101,9 @@ def _persist_snooze(session: Session, msg: Message, until) -> None:
         state = MessageState(account_id=msg.account_id, message_id=msg.message_id)
         session.add(state)
     state.snooze_until = until
+    # A dated snooze replaces any "until I'm back" snooze — otherwise the
+    # presence watcher would clear it the moment the user returns.
+    state.snooze_presence = False
 
 
 def _flush_move(ids: list[int], action: str) -> None:
@@ -1039,7 +1111,10 @@ def _flush_move(ids: list[int], action: str) -> None:
     (so the queue retries); commits per-message so partial progress is kept."""
     from collections import defaultdict
 
+    from sqlalchemy import delete as sa_delete
+
     from app.core.db import get_engine
+    from app.models import CalendarEvent
     from app.sync.engine import build_provider
 
     with Session(get_engine()) as session:
@@ -1061,6 +1136,9 @@ def _flush_move(ids: list[int], action: str) -> None:
                         provider.move(folder.path, m.uid, dest)
                     else:
                         provider.delete(folder.path, m.uid)
+                    # Extracted events reference the message (FK enforced) — they
+                    # must go first or the local delete fails forever.
+                    session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id == m.id))
                     session.delete(m)
                     session.commit()
             finally:
@@ -1182,11 +1260,13 @@ def unmute_thread(message_id: int, session: Session = Depends(get_session)) -> d
 def rethread(session: Session = Depends(get_session)) -> dict:
     """Backfill thread ids for mail synced before threading existed (column-only)."""
     from app.sync.threading import thread_key
-    rows = session.exec(select(Message.id, Message.account_id, Message.subject,
-                               Message.uid, Message.thread_id)).all()
+    rows = session.exec(select(Message.id, Message.account_id, Message.folder_id,
+                               Message.subject, Message.uid, Message.from_addr,
+                               Message.to_addrs, Message.thread_id)).all()
     n = 0
-    for mid, acct, subj, uid, tid in rows:
-        new = thread_key(acct, subj or "", uid or 0)
+    for mid, acct, fid, subj, uid, from_addr, to_addrs, tid in rows:
+        new = thread_key(acct, subj or "", uid=uid or 0, folder_id=fid or 0,
+                         participants=[from_addr or "", *(to_addrs or [])])
         if new != tid:
             session.exec(text("UPDATE message SET thread_id = :t WHERE id = :i").bindparams(t=new, i=mid))
             n += 1
@@ -1245,7 +1325,7 @@ def recategorize(session: Session = Depends(get_session)) -> dict:
 
 
 @router.post("/{message_id}/seen", response_model=MessageOut)
-def set_seen(message_id: int, body: BoolValue, session: Session = Depends(get_session)) -> MessageOut:
+async def set_seen(message_id: int, body: BoolValue, session: Session = Depends(get_session)) -> MessageOut:
     msg = session.get(Message, message_id)
     if msg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
@@ -1253,4 +1333,12 @@ def set_seen(message_id: int, body: BoolValue, session: Session = Depends(get_se
     session.add(msg)
     session.commit()
     session.refresh(msg)
+    # Mirror to the server's \Seen flag in the background — same fire-and-forget
+    # pattern as the done keyword, so other devices see the read state too.
+    if msg.account_id and msg.folder_id and msg.uid:
+        import asyncio
+        task = asyncio.create_task(run_in_threadpool(
+            _push_seen_flags_bulk, [(msg.account_id, msg.folder_id, msg.uid)], body.value))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
     return _to_out(msg)

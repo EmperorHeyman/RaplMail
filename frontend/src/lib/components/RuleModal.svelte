@@ -1,4 +1,5 @@
 <script>
+  import { onMount } from "svelte";
   import { app, notify, ruleValueForField, ruleOpForField, confirmDialog } from "../store.svelte.js";
   import { rules as api } from "../api.js";
   import { icons } from "../icons.js";
@@ -28,11 +29,14 @@
 
   let previewTimer;
   function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(runPreview, 350); }
+  let _previewGen = 0;   // latest-request-wins: typing fires overlapping previews
   async function runPreview() {
+    const gen = ++_previewGen;
     if (!draft.match_value.trim()) { preview = null; return; }
     previewing = true;
-    try { preview = await api.preview(draft); } catch { preview = null; }
-    finally { previewing = false; }
+    try { const p = await api.preview(draft); if (gen === _previewGen) preview = p; }
+    catch { if (gen === _previewGen) preview = null; }
+    finally { if (gen === _previewGen) previewing = false; }
   }
 
   async function save() {
@@ -63,8 +67,10 @@
   function manageAll() { close(); app.settingsTab = "rules"; app.view = "settings"; }
   function onKey(e) { if (e.key === "Escape") close(); }
 
-  // Kick off an initial preview for the prefilled draft.
-  $effect(() => { if (app.ruleModal) runPreview(); });
+  // Kick off ONE initial preview for the prefilled draft. onMount (not $effect):
+  // runPreview reads every draft field, so an effect re-fired it un-debounced
+  // on each keystroke, racing the 350ms schedulePreview path.
+  onMount(() => { if (app.ruleModal) runPreview(); });
 </script>
 
 <svelte:window on:keydown={onKey} />
@@ -121,9 +127,12 @@
 
 <style>
   .backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.45);
-    display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
-  .modal { width: min(560px, 94vw); background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+    backdrop-filter: blur(2px);
+    display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
+    animation: fade-in var(--t) var(--ease); }
+  .modal { width: min(560px, 94vw); background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: calc(var(--radius) + 3px); box-shadow: var(--shadow-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+    animation: pop-in var(--t) var(--ease); }
   header { display: flex; align-items: center; }
   header h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; }
   .x { margin-left: auto; color: var(--muted); }

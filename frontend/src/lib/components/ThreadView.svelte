@@ -1,5 +1,5 @@
 <script>
-  import { app, markDone, openCompose, notify } from "../store.svelte.js";
+  import { app, markDone, openCompose, notify, refreshMessages } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc } from "../email.js";
@@ -14,14 +14,16 @@
     list = []; bodies = {}; expanded = new Set();
     if (!key) return;
     loading = true;
+    // Guard against a slow response landing after the user switched threads.
     messagesApi.thread(key).then(async (msgs) => {
+      if (app.threadKey !== key) return;
       list = msgs;
       if (msgs.length) {
         const last = msgs[msgs.length - 1];
         expanded = new Set([last.id]);
         await loadBody(last.id);
       }
-    }).finally(() => { loading = false; });
+    }).finally(() => { if (app.threadKey === key) loading = false; });
   });
 
   async function loadBody(id) {
@@ -53,8 +55,16 @@
                   account_id: last.account_id, html: quote });
   }
   async function doneAll() {
-    const ids = list.map((m) => m.id);
-    try { await messagesApi.bulk(ids, "done"); notify("Conversation done"); app.threadKey = null; app.selectedMessageId = null; }
+    const ids = new Set(list.map((m) => m.id));
+    try {
+      await messagesApi.bulk([...ids], "done");
+      // Drop the completed conversation from the list too — it otherwise sat
+      // there (done-hidden view) until the next sync refresh.
+      if (!app.showDone) app.messages = app.messages.filter((m) => !ids.has(m.id));
+      notify("Conversation done");
+      app.threadKey = null; app.selectedMessageId = null;
+      refreshMessages({ background: true });
+    }
     catch (e) { notify("Couldn't update", "error"); }
   }
 </script>

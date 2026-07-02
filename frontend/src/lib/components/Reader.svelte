@@ -20,11 +20,13 @@
     loadImages = false;
     if (id == null || (app.threadKey && app.settings.threading)) return;
     loading = true;
+    // Only apply the response if this is still the selected message — a slow
+    // fetch for a previous click must not overwrite the one now on screen.
     messagesApi
       .get(id)
-      .then((d) => { detail = d; })
-      .catch((e) => { error = e.message; })
-      .finally(() => { loading = false; });
+      .then((d) => { if (app.selectedMessageId === id) detail = d; })
+      .catch((e) => { if (app.selectedMessageId === id) error = e.message; })
+      .finally(() => { if (app.selectedMessageId === id) loading = false; });
   });
 
   function fmtDate(iso) {
@@ -297,7 +299,8 @@
     const http = parts.find((p) => p.startsWith("http"));
     const mailto = parts.find((p) => p.startsWith("mailto:"));
     if (http) {
-      window.open(http, "_blank");
+      // window.open is a no-op in the desktop webview — route via the OS browser.
+      openExternal(http);
     } else if (mailto) {
       const addr = mailto.slice(7).split("?")[0];
       openCompose({ to: addr, subject: "Unsubscribe", html: "Please unsubscribe me from this list.", account_id: detail.account_id });
@@ -510,13 +513,16 @@
 
 <style>
   .reader { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
-  .placeholder { flex: 1; display: flex; flex-direction: column; gap: 10px; align-items: center; justify-content: center; color: var(--muted); }
-  .placeholder .big { font-size: 46px; }
+  .placeholder { flex: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); animation: rise-in var(--t-slow) var(--ease); }
+  .placeholder .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 22px;
+    background: var(--surface-2); color: var(--muted); font-size: 32px;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent); }
+  .placeholder .big :global(svg) { width: 34px; height: 34px; }
   .placeholder.err { color: var(--danger); }
   .placeholder .rapl-link { margin-top: 2px; font-size: 12px; color: var(--accent); text-decoration: none; opacity: 0.8; }
   .placeholder .rapl-link:hover { opacity: 1; text-decoration: underline; }
-  header { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
-  .subject { font-size: 19px; font-weight: 700; letter-spacing: -0.01em; }
+  header { padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 6px; }
+  .subject { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
   .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; align-items: flex-start; }
   .to { color: var(--faint); font-size: 12px; }
   .more-to { color: var(--accent); font-size: 12px; font-weight: 600; padding: 1px 5px; border-radius: 5px; }
@@ -527,16 +533,18 @@
   .addr.small { color: var(--faint); }
   .menu {
     position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; min-width: 240px;
-    background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    animation: pop-in var(--t) var(--ease); transform-origin: top left;
   }
   .menu button { text-align: left; padding: 8px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
   .menu button:hover { background: var(--accent); color: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   /* Bottom mode: a sticky, right-aligned action bar pinned to the foot of the reader. */
+  /* Solid background — backdrop blur on a sticky bar repaints every scroll frame. */
   .actions.bottom { margin-top: 0; position: sticky; bottom: 0; z-index: 5; justify-content: flex-end;
-    padding: 10px 18px; background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(6px);
-    border-top: 1px solid var(--border); }
+    padding: 10px 18px; background: var(--bg);
+    border-top: 1px solid var(--hairline); }
   .btn.ai { color: var(--accent); }
   .ai-summary { margin: 0 22px 4px; padding: 12px 14px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: var(--radius); }
   .ai-head { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--accent); margin-bottom: 6px; }
@@ -551,13 +559,13 @@
   .actions .btn.on { color: var(--warning); border-color: var(--warning); }
   .unsub-bar { display: flex; align-items: center; gap: 10px; padding: 8px 22px; background: var(--surface); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
   .unsub-bar button { margin-left: auto; color: var(--accent); font-weight: 600; }
-  .auth-bar { display: flex; align-items: center; gap: 8px; padding: 8px 22px; font-size: 13px; border-bottom: 1px solid var(--border); }
-  .auth-bar.bad { background: rgba(229,72,77,0.12); color: var(--danger); }
-  .auth-bar.ok { background: rgba(46,160,67,0.10); color: var(--done); }
+  .auth-bar { display: flex; align-items: center; gap: 8px; padding: 8px 22px; font-size: 13px; border-bottom: 1px solid var(--hairline); }
+  .auth-bar.bad { background: var(--danger-soft); color: var(--danger); }
+  .auth-bar.ok { background: var(--done-soft); color: var(--done); }
   .auth-bar .auth-detail { color: var(--muted); font-size: 12px; margin-left: auto; }
   .auth-bar .trust { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; color: inherit; }
   .auth-bar .trust:hover { background: var(--surface-2); }
-  .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: rgba(91,141,239,0.1); border-bottom: 1px solid var(--border); font-size: 13px; }
+  .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: var(--accent-soft); border-bottom: 1px solid var(--hairline); font-size: 13px; }
   .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
   .screener-bar .no { color: var(--danger); font-weight: 600; }
   .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }

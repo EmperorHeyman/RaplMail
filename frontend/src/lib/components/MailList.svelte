@@ -1,4 +1,5 @@
 <script>
+  import { untrack } from "svelte";
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
@@ -28,47 +29,54 @@
   };
   const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
-  // Messages marked done from *inside* a group/bundle row — markDone only manages
-  // the main list, so we hide these from the grouped views ourselves.
+  // Bulk category-done hides ids we don't hold objects for; single-row done
+  // relies on the row object's own is_done (so the store's undo, which flips
+  // that flag back, also un-hides it here — a separate id set desynced).
   let hiddenDone = $state(new Set());
-  function doneRow(m, doneNow) {
-    markDone(m, doneNow);
-    const next = new Set(hiddenDone);
-    if (doneNow) next.add(m.id); else next.delete(m.id);
-    hiddenDone = next;
-  }
-  const visibleIn = (arr) => (app.showDone ? arr : arr.filter((x) => !hiddenDone.has(x.id)));
+  const visibleIn = (arr) => (app.showDone ? arr : arr.filter((x) => !x.is_done && !hiddenDone.has(x.id)));
   function smartScope() {
     return app.selectedKind === "smart" ? { role: "inbox" } : { folder_id: app.selectedFolderId };
   }
-  async function loadCategory(cat) {
-    if (smartCatMsgs[cat]) return;
+  // Expanded groups fetch a SMALL page (newest first); "Show more" pages in
+  // more on demand. Fetching a whole 500-mail category on expand froze the UI.
+  const CAT_PAGE = 30;
+  async function loadCategory(cat, limit = CAT_PAGE) {
+    const cur = smartCatMsgs[cat];
+    if (cur && cur.limit >= limit) return;
     try {
-      const msgs = await messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit: 500 });
-      smartCatMsgs = { ...smartCatMsgs, [cat]: msgs };
+      const msgs = await messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit });
+      smartCatMsgs = { ...smartCatMsgs, [cat]: { msgs, limit, full: msgs.length < limit } };
     } catch {}
   }
+  function loadMoreCategory(cat) {
+    loadCategory(cat, (smartCatMsgs[cat]?.limit || CAT_PAGE) + 60);
+  }
 
-  // Expanded groups can hold hundreds of mails; render a window and grow it as
-  // the user scrolls to the bottom, so opening a big group stays snappy.
+  // Expanded bundles can hold hundreds of in-memory mails; render a window.
   const CHUNK = 12;
   let catShown = $state({});               // key -> rows currently rendered
   const shownFor = (key) => catShown[key] ?? CHUNK;
   function bumpShown(key) { catShown = { ...catShown, [key]: shownFor(key) + CHUNK }; }
-  // Svelte action: when the sentinel scrolls into view, render the next chunk.
-  function loadMore(node, key) {
+
+  // The MAIN list is windowed too: mount 30 rows, stream in more as you
+  // scroll. Rendering every message meant the flip animation measured hundreds
+  // of rows on each triage action — that was the "whole app lags" feel.
+  const MAIN_CHUNK = 30;
+  let mainShown = $state(30);
+  function mainMore(node) {
     let io;
-    const start = () => {
-      io?.disconnect();
-      io = new IntersectionObserver(
-        (entries) => { if (entries.some((e) => e.isIntersecting)) bumpShown(key); },
-        { root: rowsEl || null, rootMargin: "240px 0px" }
-      );
-      io.observe(node);
-    };
-    start();
+    io = new IntersectionObserver(
+      (entries) => { if (entries.some((e) => e.isIntersecting)) mainShown += MAIN_CHUNK; },
+      { root: rowsEl || null, rootMargin: "500px 0px" }
+    );
+    io.observe(node);
     return { destroy() { io?.disconnect(); } };
   }
+  // Keyboard navigation can outrun the window — grow it before focus hits the edge.
+  $effect(() => {
+    const f = focusIndex;
+    untrack(() => { if (f >= mainShown - 8) mainShown += MAIN_CHUNK; });
+  });
 
   // Spark-style time buckets for the section headers.
   function dateBucket(iso) {
@@ -94,6 +102,31 @@
   }
 
   const NOTIF = new Set(["updates", "social", "newsletters"]);
+
+  // Flatten a group card + (when expanded) its loaded messages into the item
+  // stream. Expanded rows are REAL items: keyboard-navigable, and `e` acts on
+  // the focused row — previously they lived outside `items`, so focus stayed
+  // on the card and `e` marked the ENTIRE group done.
+  function expandGroup(g) {
+    const out = [g];
+    if (!expandedKeys.has(g.key)) return out;
+    if (g.gtype === "category") {
+      const entry = smartCatMsgs[g.category];
+      if (!entry) { out.push({ kind: "groupload", key: "gl:" + g.key }); return out; }
+      for (const m of visibleIn(entry.msgs)) out.push({ kind: "msg", msg: m, inGroup: true });
+      const remaining = Math.max(0, (g.count || 0) - entry.msgs.length);
+      if (!entry.full && remaining > 0)
+        out.push({ kind: "groupmore", key: "gm:" + g.key, cat: g.category, remaining });
+      return out;
+    }
+    // Bundles/threads hold their messages in memory — window the render.
+    const vis = visibleIn(g.msgs);
+    const lim = shownFor(g.key);
+    for (const m of vis.slice(0, lim)) out.push({ kind: "msg", msg: m, inGroup: true });
+    if (vis.length > lim) out.push({ kind: "groupmore", key: "gm:" + g.key, gkey: g.key, remaining: vis.length - lim });
+    return out;
+  }
+
   function buildItems(msgs) {
     if (smartActive()) {
       const items = msgs.map((m) => ({ kind: "msg", msg: m }));
@@ -105,7 +138,7 @@
           const shown = (g.senders || []).slice(0, n);
           const more = Math.max(0, (g.distinct ?? shown.length) - shown.length);
           groups.push({ kind: "group", gtype: "category", key: c, category: c,
-                        count: g.count, senders: shown, more, latest: g.latest, recent: g.recent || [] });
+                        count: g.count, unread: g.unread || 0, senders: shown, more, latest: g.latest, recent: g.recent || [] });
         }
       }
       if (app.settings.smartOrderMode === "custom") {
@@ -119,40 +152,51 @@
       // Where the group cards sit relative to the classic messages.
       const placement = app.settings.smartGroupPlacement || "dateSections";
       if (placement === "dateSections") {
-        // Spark-style: messages split into Today / Yesterday / This week / …
-        // with the category cards parked at the END of Today.
-        const out = [];
+        // Spark-style date sections (Today / Yesterday / This week / …). Groups
+        // with NEW (unread) mail float to the very top so you notice them; quiet
+        // (all-read) groups are tucked at the END of Today, out of the way. When
+        // Today is empty (you've cleared it), the tucked groups surface at top
+        // too instead of sinking below older sections.
+        const hot = groups.filter((g) => g.unread > 0);     // has new mail → top
+        const cold = groups.filter((g) => !(g.unread > 0));  // read → end of Today
+        const hotItems = hot.flatMap(expandGroup);
+        const coldItems = cold.flatMap(expandGroup);
+        const out = [...hotItems];
         let bucket = null;
-        let groupsDone = false;
+        let coldPlaced = false;
+        let sawToday = false;
         for (const it of items) {
           const b = dateBucket(it.msg.date);
           if (b !== bucket) {
-            // Leaving Today → drop the group cards before the next section.
-            if (bucket === "Today" && !groupsDone) { out.push(...groups); groupsDone = true; }
+            if (bucket === "Today" && !coldPlaced) { out.push(...coldItems); coldPlaced = true; }
             out.push({ kind: "header", key: "h:" + b, label: b });
             bucket = b;
           }
+          if (b === "Today") sawToday = true;
           out.push(it);
         }
-        if (!groupsDone) {
-          // No section followed Today (everything is today, or there's no today
-          // mail) — put the cards after today's messages, else at the very top.
-          out.push(...groups);
+        if (!coldPlaced) {
+          // Today was the last (or only) section → cold groups after it. If there
+          // were no Today messages at all, they land right under the hot groups
+          // at the top rather than below Yesterday/older.
+          if (sawToday) out.push(...coldItems);
+          else out.splice(hotItems.length, 0, ...coldItems);
         }
         return out;
       }
-      if (placement === "top") return [...groups, ...items];
+      if (placement === "top") return [...groups.flatMap(expandGroup), ...items];
       if (placement === "afterN") {
         const k = Math.max(0, app.settings.smartGroupsAfter ?? 3);
-        return [...items.slice(0, k), ...groups, ...items.slice(k)];
+        return [...items.slice(0, k), ...groups.flatMap(expandGroup), ...items.slice(k)];
       }
       if (placement === "timeline") {
         // Interleave groups + messages by recency: a group floats to the date of
         // its newest mail, and any newer standalone mail pushes it down.
         const dateOf = (it) => String((it.kind === "group" ? it.latest : it.msg.date) || "");
-        return [...items, ...groups].sort((a, b) => dateOf(b).localeCompare(dateOf(a)));
+        return [...items, ...groups].sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
+          .flatMap((it) => (it.kind === "group" ? expandGroup(it) : [it]));
       }
-      return [...items, ...groups]; // "bottom"
+      return [...items, ...groups.flatMap(expandGroup)]; // "bottom"
     }
     if (app.settings.threading) {
       const map = new Map();
@@ -179,7 +223,7 @@
           map.get(m.from_addr).msgs.push(m);
         } else items.push({ kind: "msg", msg: m });
       }
-      return items;
+      return items.flatMap((it) => (it.kind === "group" ? expandGroup(it) : [it]));
     }
     return msgs.map((m) => ({ kind: "msg", msg: m }));
   }
@@ -189,8 +233,9 @@
     // pinned/VIP to the top or it would orphan the section headers.
     if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
-    const isP = (it) => it.kind === "msg" && it.msg.pinned;
-    const isV = (it) => it.kind === "msg" && !it.msg.pinned && isVip(it.msg.from_addr);
+    // Never hoist rows living inside an expanded group out of their card.
+    const isP = (it) => it.kind === "msg" && !it.inGroup && it.msg.pinned;
+    const isV = (it) => it.kind === "msg" && !it.inGroup && !it.msg.pinned && isVip(it.msg.from_addr);
     const pinned = built.filter(isP);
     const vip = built.filter(isV);
     if (!pinned.length && !vip.length) return built;
@@ -201,7 +246,7 @@
 
   async function doneGroup(item) {
     const ids = item.msgs.map((m) => m.id);
-    if (!app.showDone) app.messages = app.messages.filter((m) => !ids.includes(m.id));
+    if (!app.showDone) { app.messages = app.messages.filter((m) => !ids.includes(m.id)); unselectIfGone(ids); }
     try {
       await messagesApi.bulk(ids, "done");
       notify(`${ids.length} marked done`, "info", () => {
@@ -217,12 +262,16 @@
   // loaded window). Used by the card's "Done all" button and the `e` shortcut.
   async function doneCategory(item) {
     try {
-      let list = smartCatMsgs[item.key];
+      // "Done all" must cover the ENTIRE category — fetch the full id list
+      // unless the paged cache already holds everything.
+      const entry = smartCatMsgs[item.key];
+      let list = entry?.full ? entry.msgs : null;
       if (!list) list = await messagesApi.list({ ...smartScope(), category: item.category, include_done: false, limit: 5000 });
       const ids = list.map((m) => m.id);
       if (!ids.length) return;
       const idset = new Set(ids);
       app.messages = app.messages.filter((m) => !idset.has(m.id));   // optimistic
+      unselectIfGone(ids);
       hiddenDone = new Set([...hiddenDone, ...ids]);
       const s = new Set(expandedKeys); s.delete(item.key); expandedKeys = s;  // collapse
       await messagesApi.bulk(ids, "done");
@@ -269,7 +318,10 @@
     // group's index produced a zero-width range that selected the whole bundle.
     if (e?.shiftKey && lastIdx >= 0 && index >= 0) {
       const [a, b] = [Math.min(lastIdx, index), Math.max(lastIdx, index)];
-      const ids = items.slice(a, b + 1).flatMap((it) => it.kind === "msg" ? [it.msg.id] : it.msgs.map((m) => m.id));
+      // Ranges can span headers, category cards, and group frames — only rows
+      // with actual messages contribute ids.
+      const ids = items.slice(a, b + 1).flatMap((it) =>
+        it.kind === "msg" ? [it.msg.id] : (it.msgs ? it.msgs.map((m) => m.id) : []));
       const set = new Set(selectedIds);
       ids.forEach((id) => set.add(id));
       selectedIds = [...set];
@@ -293,7 +345,8 @@
   // search keywords beyond the label.
   function ctxActions(m) {
     const acts = [
-      { label: "Open", run: () => open(m, focusIndex) },
+      // -1: the right-clicked row isn't necessarily the keyboard-focused one.
+      { label: "Open", run: () => open(m, -1) },
       { label: m.pinned ? "Unpin" : "Pin to top", icon: icons.pin, run: () => pinMessage(m) },
       { label: m.is_done ? "Mark not done" : "Mark done", icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
       { label: m.is_seen ? "Mark unread" : "Mark read", kw: "seen", run: () => toggleSeen(m) },
@@ -340,8 +393,13 @@
     requestAnimationFrame(() => apply(pos));
     return { update: (p) => requestAnimationFrame(() => apply(p)) };
   }
-  function archiveOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); messagesApi.bulk([m.id], "archive").then(refreshQueue); }
-  function deleteOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); messagesApi.bulk([m.id], "delete").then(refreshQueue); }
+  // Removing the open message must also clear the reader, or it keeps showing
+  // (and later re-fetches) mail that's gone.
+  function unselectIfGone(ids) {
+    if (ids.includes(app.selectedMessageId)) { app.selectedMessageId = null; app.threadKey = null; }
+  }
+  function archiveOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); unselectIfGone([m.id]); messagesApi.bulk([m.id], "archive").then(refreshQueue); }
+  function deleteOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); unselectIfGone([m.id]); messagesApi.bulk([m.id], "delete").then(refreshQueue); }
 
   async function bulk(action, until = null) {
     const ids = [...selectedIds];
@@ -349,6 +407,7 @@
     // Optimistic: drop affected rows from the current view for removing actions.
     if (["done", "snooze", "archive", "delete"].includes(action) && !app.showDone) {
       app.messages = app.messages.filter((m) => !ids.includes(m.id));
+      unselectIfGone(ids);
     }
     clearSelection();
     try {
@@ -359,8 +418,32 @@
     } catch (e) { notify("Bulk action failed: " + e.message, "error"); refreshMessages({ background: true }); }
   }
 
-  // Clear selection when the view changes.
-  $effect(() => { void app.selectedFolderId; void app.selectedKind; void app.category; void app.search; clearSelection(); });
+  // Clear selection + per-view caches when the view changes (a different scope
+  // has different category contents).
+  $effect(() => {
+    void app.selectedFolderId; void app.selectedKind; void app.category; void app.search;
+    clearSelection();
+    smartCatMsgs = {};
+    hiddenDone = new Set();
+    expandedKeys = new Set();   // collapsed cards re-fetch on next expand
+    catShown = {};
+    mainShown = 30;
+  });
+
+  // Keep expanded category lists live: refetch them in place when a sync lands
+  // (a cleared cache would flash "Loading…" inside every open card). Refetch
+  // only at each group's CURRENT page size — not the whole category.
+  $effect(() => {
+    void app.syncTick;
+    const entries = untrack(() => Object.entries(smartCatMsgs));
+    for (const [cat, entry] of entries) {
+      untrack(() => messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit: entry.limit }))
+        .then((msgs) => {
+          if (smartCatMsgs[cat]) smartCatMsgs = { ...smartCatMsgs, [cat]: { msgs, limit: entry.limit, full: msgs.length < entry.limit } };
+        })
+        .catch(() => {});
+    }
+  });
 
   // Keep focusIndex in range as the list changes.
   $effect(() => {
@@ -423,7 +506,7 @@
   function onKey(e) {
     // Never hijack keys while composing, in a dialog, or typing in any field
     // (inputs, textareas, or the contenteditable compose/signature editors).
-    if (app.composing || app.paletteOpen) return;
+    if (app.composing || app.paletteOpen || app.confirm) return;
     const t = e.target;
     if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t && t.isContentEditable)) return;
     const kb = app.settings.keybinds;
@@ -433,12 +516,13 @@
       document.querySelector(".list .search")?.focus(); e.preventDefault(); return;
     }
     if (!items.length) return;
-    // Skip non-interactive date-section headers when arrowing.
+    // Skip non-interactive rows (date headers, group loaders) when arrowing.
+    const SKIP = new Set(["header", "groupload"]);
     const step = (dir) => {
       let i = focusIndex;
       for (let n = 0; n < items.length; n++) {
         i = Math.min(items.length - 1, Math.max(0, i + dir));
-        if (items[i]?.kind !== "header") break;
+        if (!SKIP.has(items[i]?.kind)) break;
         if (i === 0 || i === items.length - 1) break;
       }
       focusIndex = i;
@@ -449,16 +533,17 @@
       step(-1); e.preventDefault();
     } else if (combo === kb.open) {
       const it = items[focusIndex];
-      if (it.kind === "msg") open(it.msg, focusIndex); else if (it.kind === "group") activate(it);
+      if (it.kind === "msg") open(it.msg, focusIndex);
+      else if (it.kind === "group") activate(it);
+      else if (it.kind === "groupmore") { if (it.cat) loadMoreCategory(it.cat); else bumpShown(it.gkey); }
     } else if (combo === kb.done) {
       const it = items[focusIndex];
-      if (it.kind === "header") { e.preventDefault(); return; }
+      if (it.kind !== "msg" && it.kind !== "group") { e.preventDefault(); return; }
       if (it.kind === "msg") {
-        const doneNow = !it.msg.is_done;
-        markDone(it.msg, doneNow);
-        if (doneNow && app.settings.openNextOnDone && selectedIds.length === 0) {
-          queueMicrotask(() => { const nx = items[focusIndex]; if (nx?.kind === "msg") open(nx.msg, focusIndex); });
-        }
+        // The store's markDone handles open-next-on-done itself (when the done
+        // message was the open one) — a second advance here picked a DIFFERENT
+        // "next" (items is re-sorted) and marked an unseen message read.
+        markDone(it.msg, !it.msg.is_done);
       } else if (it.gtype === "category") doneCategory(it);
       else doneGroup(it);
       refocusList();
@@ -544,7 +629,7 @@
   </header>
 
   {#if selectedIds.length > 0}
-    <div class="bulkbar">
+    <div class="bulkbar" transition:slide={{ duration: 140, easing: cubicOut }}>
       <span class="count">{selectedIds.length} selected</span>
       <button onclick={() => bulk("done")} title="Mark done">{@html icons.done} Done</button>
       <button onclick={() => bulk("seen")} title="Mark read">Read</button>
@@ -574,8 +659,9 @@
         {emptyState.text}
       </div>
     {:else}
-      {#each items as item, i (item.kind === "msg" ? "m" + item.msg.id : "g" + item.key)}
-        <div animate:flip={{ duration: 220 }} out:fly={{ x: 60, duration: 200 }}>
+      {#each items.slice(0, mainShown) as item, i (item.kind === "msg" ? "m" + item.msg.id : item.kind === "group" ? "g" + item.key : item.key)}
+        <div class:bundled={item.kind === "msg" && item.inGroup} class:cv={item.kind !== "header"}
+             animate:flip={{ duration: 130 }} out:fly={{ x: 48, duration: 140 }}>
           {#if item.kind === "header"}
             <div class="datesep">{item.label}</div>
           {:else if item.kind === "msg"}
@@ -592,40 +678,24 @@
               ondelete={() => deleteOne(item.msg)}
               onmenu={(e) => openCtx(e, item.msg)}
             />
+          {:else if item.kind === "groupload"}
+            <div class="gpart loading"><span class="spin">{@html icons.sync}</span> Loading…</div>
+          {:else if item.kind === "groupmore"}
+            <div class="gpart">
+              <button class="morebtn" onclick={() => (item.cat ? loadMoreCategory(item.cat) : bumpShown(item.gkey))}>
+                Show more ({item.remaining})
+              </button>
+            </div>
           {:else if item.gtype === "category"}
             <SmartGroupCard
               label={CAT_META[item.category]?.label || item.category}
               icon={CAT_META[item.category]?.icon || icons.folder}
-              count={item.count} senders={item.senders} more={item.more}
+              count={item.count} unread={item.unread} senders={item.senders} more={item.more}
               focused={i === focusIndex} expanded={expandedKeys.has(item.key)}
               onToggle={() => { focusIndex = i; activate(item); }}
               onSender={(email) => searchAddress(email)}
               onDoneAll={() => { focusIndex = i; doneCategory(item); }}
             />
-            {#if expandedKeys.has(item.key)}
-              <div class="catbody" transition:slide={{ duration: 160, easing: cubicOut }}>
-                {#if smartCatMsgs[item.key]}
-                  {@const loaded = visibleIn(smartCatMsgs[item.key])}
-                  {#each loaded.slice(0, shownFor(item.key)) as m (m.id)}
-                    <div class="bundled">
-                      <MessageRow message={m} selected={app.selectedMessageId === m.id}
-                        checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                        onselect={(e) => toggleSelect(m, -1, e)}
-                        onopen={() => open(m, -1)} ondone={() => doneRow(m, !m.is_done)}
-                        onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
-                        onmenu={(e) => openCtx(e, m)} />
-                    </div>
-                  {/each}
-                  {#if loaded.length > shownFor(item.key)}
-                    <div class="bundled loadmore" use:loadMore={item.key}>
-                      <span class="spin">{@html icons.sync}</span> Loading {loaded.length - shownFor(item.key)} more…
-                    </div>
-                  {/if}
-                {:else}
-                  <div class="bundled muted" style="padding:10px 22px">Loading…</div>
-                {/if}
-              </div>
-            {/if}
           {:else}
             <GroupRow
               gtype={item.gtype} msgs={item.msgs} latest={item.latest}
@@ -635,31 +705,14 @@
               ondoneall={() => doneGroup(item)}
               onselect={() => selectGroup(item)}
             />
-            {#if item.gtype === "bundle" && expandedKeys.has(item.key)}
-              <div class="catbody" transition:slide={{ duration: 160, easing: cubicOut }}>
-                {#if item.msgs.length}
-                  {@const loaded = visibleIn(item.msgs)}
-                  {#each loaded.slice(0, shownFor(item.key)) as m (m.id)}
-                    <div class="bundled">
-                      <MessageRow message={m} selected={app.selectedMessageId === m.id}
-                        checked={isChecked(m.id)} selecting={selectedIds.length > 0}
-                        onselect={(e) => toggleSelect(m, -1, e)}
-                        onopen={() => open(m, -1)} ondone={() => doneRow(m, !m.is_done)}
-                        onarchive={() => archiveOne(m)} ondelete={() => deleteOne(m)}
-                        onmenu={(e) => openCtx(e, m)} />
-                    </div>
-                  {/each}
-                  {#if loaded.length > shownFor(item.key)}
-                    <div class="bundled loadmore" use:loadMore={item.key}>
-                      <span class="spin">{@html icons.sync}</span> Loading {loaded.length - shownFor(item.key)} more…
-                    </div>
-                  {/if}
-                {/if}
-              </div>
-            {/if}
           {/if}
         </div>
       {/each}
+      {#if items.length > mainShown}
+        <div class="loadmore" use:mainMore>
+          <span class="spin">{@html icons.sync}</span> Loading {items.length - mainShown} more…
+        </div>
+      {/if}
     {/if}
   </div>
 
@@ -669,27 +722,27 @@
 </section>
 
 <style>
-  .list { display: flex; flex-direction: column; border-right: 1px solid var(--border); min-height: 0; background: var(--bg); }
-  header { padding: 14px 16px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 11px; }
+  .list { display: flex; flex-direction: column; border-right: 1px solid var(--hairline); min-height: 0; background: var(--bg); }
+  header { padding: 14px 16px 11px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 10px; }
   .row1 { display: flex; align-items: center; justify-content: space-between; }
-  h2 { margin: 0; font-size: 16px; letter-spacing: -0.01em; }
+  h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; }
   .searchrow { display: flex; gap: 8px; align-items: center; }
   .search { flex: 1; }
-  .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-2); }
-  .savesearch:hover { background: var(--surface-3); }
+  .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); transition: background var(--t-fast) var(--ease); }
+  .savesearch:hover { background: var(--accent-soft-2); }
   .cats { display: flex; gap: 4px; flex-wrap: wrap; }
-  .cat { font-size: 12px; padding: 4px 11px; border-radius: 999px; color: var(--muted); background: var(--surface-2); }
+  .cat { font-size: 12px; font-weight: 550; padding: 4px 11px; border-radius: 999px; color: var(--muted); background: var(--surface-2); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .cat:hover { background: var(--surface-3); color: var(--text); }
   .cat.active { background: var(--accent); color: #fff; }
 
-  .bulkbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .bulkbar .count { font-weight: 600; font-size: 13px; margin-right: 4px; }
-  .bulkbar button { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; font-weight: 550; }
-  .bulkbar button:hover { background: #2f3545; }
-  .bulkbar button.danger:hover { background: #3a1f23; color: var(--danger); }
+  .bulkbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
+  .bulkbar .count { font-weight: 600; font-size: 13px; margin-right: 4px; font-variant-numeric: tabular-nums; }
+  .bulkbar button { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; font-weight: 550; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .bulkbar button:hover { background: color-mix(in srgb, var(--surface-3) 76%, var(--text) 10%); }
+  .bulkbar button.danger:hover { background: var(--danger-soft); color: var(--danger); }
   .bulkbar .clear { margin-left: auto; background: transparent; }
   .snz { position: relative; }
-  .snz-menu { position: absolute; top: 100%; left: 0; z-index: 15; margin-top: 4px; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 150px; }
+  .snz-menu { position: absolute; top: 100%; left: 0; z-index: 15; margin-top: 4px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 150px; animation: pop-in var(--t) var(--ease); transform-origin: top left; }
   .snz-menu button { text-align: left; background: transparent; }
   .snz-menu button:hover { background: var(--accent); color: #fff; }
 
@@ -698,11 +751,13 @@
   .slider input { display: none; }
   .slider .track {
     width: 38px; height: 22px; border-radius: 999px; background: var(--surface-3);
-    position: relative; transition: background 0.16s;
+    position: relative; transition: background var(--t) var(--ease);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
   }
   .slider .knob {
     position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-    background: #fff; transition: transform 0.16s;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform var(--t) var(--ease-spring);
   }
   .slider input:checked + .track { background: var(--done); }
   .slider input:checked + .track .knob { transform: translateX(16px); }
@@ -710,32 +765,43 @@
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   .rows:focus { outline: none; }
-  /* Spark-style date section header */
-  .datesep { position: sticky; top: 0; z-index: 4; padding: 7px 16px 5px; font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
-    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(6px);
-    border-bottom: 1px solid var(--border); }
-  .catbody { overflow: hidden; }
-  .bundled { padding-left: 22px; background: var(--surface); box-shadow: inset 2px 0 0 var(--surface-3); }
-  .loadmore { display: flex; align-items: center; gap: 8px; padding: 11px 22px; color: var(--muted); font-size: 12px; }
-  .loadmore .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
+  /* Skip layout/paint for offscreen rows entirely — the single biggest scroll
+     win. Date headers are excluded: paint containment would clip their sticky
+     positioning. */
+  .cv { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+  /* Spark-style date section header. NOTE: no backdrop-filter here — blur on a
+     sticky element repaints every scroll frame in WebView2 (felt "heavy"). */
+  .datesep { position: sticky; top: 0; z-index: 4; padding: 8px 16px 5px; font-size: 10.5px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint);
+    background: var(--bg);
+    border-bottom: 1px solid var(--hairline); }
+  /* Expanded group content: flat rows with a quiet accent guide on the left. */
+  .bundled :global(.row) { padding-left: 24px; box-shadow: inset 2px 0 0 var(--accent-soft-2); }
+  .bundled :global(.row.focused) { box-shadow: inset 3px 0 0 var(--accent); }
+  .gpart { display: flex; align-items: center; gap: 8px; padding: 6px 24px; color: var(--muted); font-size: 12px;
+    border-bottom: 1px solid var(--hairline); box-shadow: inset 2px 0 0 var(--accent-soft-2); }
+  .gpart.loading { padding: 10px 24px; }
+  .morebtn { color: var(--accent); font-weight: 600; font-size: 12px; padding: 4px 10px; margin: 2px 0; border-radius: 999px; transition: background var(--t-fast) var(--ease); }
+  .morebtn:hover { background: var(--accent-soft); }
+  .loadmore { display: flex; align-items: center; gap: 8px; padding: 10px 22px; color: var(--muted); font-size: 12px; }
+  .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .ctxmenu { position: fixed; z-index: 300; width: 244px; max-height: min(72vh, 560px); background: var(--surface-3);
-    border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 6px;
-    display: flex; flex-direction: column; min-height: 0; }
+  .ctxmenu { position: fixed; z-index: 300; width: 248px; max-height: min(72vh, 560px); background: var(--surface-2);
+    border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 6px;
+    display: flex; flex-direction: column; min-height: 0; animation: pop-in var(--t) var(--ease); }
   .ctx-search { width: 100%; box-sizing: border-box; margin-bottom: 5px; padding: 7px 10px; font-size: 13px;
-    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
-  .ctx-search:focus { border-color: var(--accent); outline: none; }
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 7px; color: var(--text); }
+  .ctx-search:focus { border-color: var(--accent); outline: none; box-shadow: none; }
   .ctx-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
-  .ctx-list > button { text-align: left; padding: 8px 11px; border-radius: 6px; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; }
+  .ctx-list > button { text-align: left; padding: 8px 11px; border-radius: 7px; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .ctx-list > button:hover { background: var(--accent); color: #fff; }
   .ctx-list > button.danger:hover { background: var(--danger); }
-  .ctx-head { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); padding: 8px 11px 3px; }
+  .ctx-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); padding: 9px 11px 3px; }
   .ctx-empty { color: var(--muted); font-size: 13px; padding: 10px 11px; }
 
   /* Loading skeleton */
-  .skel { display: flex; gap: 11px; align-items: center; padding: 13px 14px; border-bottom: 1px solid var(--border); }
+  .skel { display: flex; gap: 11px; align-items: center; padding: 13px 14px; border-bottom: 1px solid var(--hairline); }
   .sk-av { width: 34px; height: 34px; border-radius: 50%; flex: none; }
   .sk-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
   .sk-l { height: 9px; border-radius: 5px; }
@@ -743,12 +809,14 @@
   .sk-av, .sk-l { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   .muted, .empty { color: var(--muted); padding: 24px 16px; text-align: center; }
-  .empty { display: flex; flex-direction: column; gap: 8px; align-items: center; margin-top: 40px; line-height: 1.6; }
-  .big { font-size: 40px; }
+  .empty { display: flex; flex-direction: column; gap: 12px; align-items: center; margin-top: 48px; line-height: 1.6; animation: rise-in var(--t-slow) var(--ease); }
+  .big { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 20px;
+    background: var(--surface-2); color: var(--muted); font-size: 28px; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent); }
+  .big :global(svg) { width: 30px; height: 30px; }
 
-  footer.hint { padding: 9px 14px; border-top: 1px solid var(--border); color: var(--faint); font-size: 11px; }
+  footer.hint { padding: 8px 14px; border-top: 1px solid var(--hairline); color: var(--faint); font-size: 11px; }
   kbd {
     display: inline-block; padding: 1px 6px; margin: 0 1px; border-radius: 5px;
-    background: var(--surface-3); border: 1px solid var(--border); font-size: 10px; font-family: ui-monospace, monospace;
+    background: var(--surface-2); border: 1px solid var(--hairline); font-size: 10px; font-family: ui-monospace, monospace;
   }
 </style>

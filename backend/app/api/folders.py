@@ -100,7 +100,12 @@ async def delete_folder(folder_id: int, session: Session = Depends(get_session))
     except Exception as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Couldn't delete folder: {exc}") from exc
 
-    for m in session.exec(select(Message).where(Message.folder_id == folder_id)):
-        session.delete(m)
+    # Local cleanup in FK order (foreign keys enforced): events -> messages -> folder.
+    from sqlalchemy import delete as sa_delete
+
+    from app.models import CalendarEvent
+    msg_ids = select(Message.id).where(Message.folder_id == folder_id)
+    session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id.in_(msg_ids)))
+    session.exec(sa_delete(Message).where(Message.folder_id == folder_id))
     session.delete(folder)
     session.commit()

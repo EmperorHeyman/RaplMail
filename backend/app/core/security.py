@@ -107,6 +107,13 @@ class SecretStore:
             self._salt = os.urandom(_SALT_LEN)
             self._fernet = Fernet(_derive_key(new_password, self._salt))
             self._flush()
+            # The auto-unlock file stores the (now old) password — refresh it or
+            # the vault silently stops auto-unlocking on the next launch.
+            if self.auto_unlock_enabled:
+                try:
+                    self.enable_auto_unlock(new_password)
+                except Exception:
+                    pass
 
     def lock(self) -> None:
         with self._lock:

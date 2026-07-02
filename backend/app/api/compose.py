@@ -9,7 +9,7 @@ import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_serializer
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -65,6 +65,12 @@ class SendIn(BaseModel):
 async def send(body: SendIn, request: Request, session: Session = Depends(get_session)) -> dict:
     if session.get(Account, body.account_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+
+    # Read-receipt: embed the pixel ONCE, here — retries/scheduled sends rebuild
+    # the message from this payload, so embedding at delivery time minted a new
+    # tracker row per attempt. (PGP turns the body into armored text; skip.)
+    if body.request_receipt and not body.pgp_sign and not body.pgp_encrypt:
+        body.html = _embed_receipt(session, body)
 
     if body.send_at is not None:
         when = body.send_at
@@ -125,6 +131,14 @@ class ScheduledOut(BaseModel):
     to_summary: str
     send_at: datetime
     status: str
+
+    # send_at is stored UTC but SQLite drops the tzinfo, so stamp the offset —
+    # otherwise the frontend's `new Date(...)` reads the UTC wall-clock as local.
+    @field_serializer("send_at")
+    def _as_utc(self, v: datetime):
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=timezone.utc)
+        return v.isoformat()
 
 
 @router.get("/scheduled", response_model=list[ScheduledOut])
@@ -209,8 +223,9 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
     return message
 
 
-def _embed_receipt(session: Session, message: OutgoingMessage, body: SendIn) -> None:
-    """Append a read-receipt pixel to the HTML body and record the tracker."""
+def _embed_receipt(session: Session, body: SendIn) -> str:
+    """Record a tracker and return the compose HTML with the read-receipt pixel
+    appended. Called once per message (in /send), NOT per delivery attempt."""
     import secrets
 
     from app.core.config import get_settings
@@ -220,10 +235,10 @@ def _embed_receipt(session: Session, message: OutgoingMessage, body: SendIn) -> 
     cfg = get_settings()
     base = (blob.get("trackBaseUrl") or f"http://{cfg.host}:{cfg.port}").rstrip("/")
     token = secrets.token_urlsafe(16)
-    message.html += f'<img src="{base}/track/o/{token}.png" width="1" height="1" alt="" style="display:none">'
     session.add(OpenTrack(token=token, subject=body.subject,
                           recipient=", ".join(body.to) or ""))
     session.commit()
+    return body.html + f'<img src="{base}/track/o/{token}.png" width="1" height="1" alt="" style="display:none">'
 
 
 def _deliver_blocking(body_dict: dict) -> None:
@@ -237,10 +252,6 @@ def _deliver_blocking(body_dict: dict) -> None:
         if account is None:
             raise RuntimeError("account not found")
         message = _build_message(session, account, body)
-        # Read-receipt: embed a tracking pixel (only into an HTML body — skip if
-        # the message was PGP-encrypted/signed into a plaintext armored block).
-        if body.request_receipt and message.html:
-            _embed_receipt(session, message, body)
         sent_path = session.exec(
             select(Folder.path).where(Folder.account_id == body.account_id,
                                       Folder.role == FolderRole.sent)
@@ -292,6 +303,10 @@ def _transport_send(provider, message, is_m365: bool, secret_key: str, account_i
                 "to re-enable SMTP AUTH."
             ) from exc
         raise
+    except smtplib.SMTPException:
+        # Other SMTP-protocol failures (recipient refused, disconnect, …) also
+        # subclass OSError — they must not trigger the host re-detection below.
+        raise
     except OSError as exc:   # socket.gaierror "getaddrinfo failed", timeouts, etc.
         # Unreachable SMTP host — the stored server is stale/wrong (common for
         # vanity domains, e.g. a Seznam-hosted rapl-group.eu). Re-detect + retry.
@@ -332,9 +347,12 @@ def _send_via_graph(secret_key: str, message) -> bytes:
     raw = build_mime(message).as_bytes()
     try:
         graph.send_mime(token, raw)
-    except Exception as exc:
-        # A 403 here means the token lacks Mail.Send — a config problem that won't
-        # fix itself on retry, so surface it instead of silently queuing.
+    except graph.GraphSendError as exc:
+        # Only 401/403 (token lacks Mail.Send) is a config problem that won't fix
+        # itself on retry. 5xx/throttling — and network errors, which aren't
+        # GraphSendError at all — stay ordinary exceptions so the send is queued.
+        if exc.status_code not in (401, 403):
+            raise
         raise PermanentSendError(
             "Microsoft Graph refused the send (the account's token is missing the "
             "'Mail.Send' permission). Ask your admin to grant Graph 'Mail.Send' to the "

@@ -1,7 +1,8 @@
 <script>
   import { icons } from "../icons.js";
-  let { label, icon, count = 0, unread = 0, senders = [], more = 0, expanded = false, focused = false,
-        onToggle, onSender, onDoneAll } = $props();
+  let { label, icon, count = 0, unread = 0, newCount = 0, senders = [], more = 0,
+        expanded = false, focused = false, mode = "all",
+        onToggle, onNewBadge, onSender, onDoneAll } = $props();
 
   // One quiet line: "Netflix, GitHub, Medium +9"
   const sendersLine = $derived.by(() => {
@@ -12,13 +13,17 @@
   });
 </script>
 
-<div class="sg" class:focused class:open={expanded} class:hasnew={unread > 0}>
+<div class="sg" class:focused class:open={expanded} class:hasnew={newCount > 0}>
   <button class="sg-head" onclick={onToggle}>
     <span class="ic">{@html icon}</span>
     <span class="main">
       <span class="l1">
         <span class="lbl">{label}</span>
-        {#if unread > 0}<span class="new tnum">{unread} new</span>{/if}
+        {#if newCount > 0}
+          <button class="new tnum" class:active={expanded && mode === "new"}
+            title="Show just the new mail in this group"
+            onclick={(e) => { e.stopPropagation(); onNewBadge?.(); }}>{newCount} new</button>
+        {/if}
         <span class="count tnum">{count.toLocaleString()}</span>
       </span>
       {#if !expanded && sendersLine}
@@ -55,7 +60,11 @@
   .l1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
   .lbl { font-weight: 650; font-size: 13.5px; letter-spacing: -0.01em; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .new { flex: none; font-size: 10.5px; font-weight: 700; color: #fff; background: var(--accent);
-    border-radius: 999px; padding: 1.5px 7px; }
+    border-radius: 999px; padding: 2px 8px; cursor: pointer;
+    box-shadow: 0 0 0 0 var(--accent-soft-2);
+    transition: box-shadow var(--t-fast) var(--ease), filter var(--t-fast) var(--ease); }
+  .new:hover { filter: brightness(1.08); box-shadow: 0 0 0 3px var(--accent-soft-2); }
+  .new.active { box-shadow: 0 0 0 2px var(--accent-soft-2); outline: 1px solid #fff3; }
   .count { flex: none; color: var(--faint); font-weight: 600; font-size: 12px; }
   .who { color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 

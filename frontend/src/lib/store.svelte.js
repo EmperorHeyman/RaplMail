@@ -1,5 +1,6 @@
 // Central reactive app state using Svelte 5 runes.
 import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi } from "./api.js";
+import { playSound } from "./sound.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
 export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
@@ -90,6 +91,7 @@ const DEFAULT_SETTINGS = {
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
+  notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
   quietHoursEnabled: false,      // suppress notifications during a nightly window
   quietStart: 22,                // quiet hours start hour (local)
@@ -110,6 +112,7 @@ const DEFAULT_SETTINGS = {
   smartInbox: false,            // Spark-style smart inbox: group chosen categories
   smartGroups: { newsletters: true, social: true, updates: true, promotions: true, invitations: false, invitation_responses: true },
   smartPreviewCount: 4,         // sender chips shown per group card
+  smartNewDays: 3,              // "new" = unread AND received within this many days
   smartOrderMode: "recency",    // "recency" | "custom"
   smartOrder: [],               // category ids, top→bottom, when custom
 };
@@ -451,6 +454,29 @@ export async function updateBadge() {
     const { invoke } = await import("@tauri-apps/api/core");
     await invoke("set_unread_badge", { count });
   } catch {}
+}
+
+// Mark a message seen/unseen and reflect it EVERYWHERE instantly — the row,
+// the folder unread badge, and the Smart Inbox group counts — instead of
+// waiting for the next sync to correct the numbers. The server call is
+// fire-and-forget; a sync later reconciles the exact counts.
+export function setMessageSeen(message, seen) {
+  if (!message || message.is_seen === seen) return;
+  message.is_seen = seen;
+  const inList = app.messages.find((m) => m.id === message.id);
+  if (inList) inList.is_seen = seen;
+  const delta = seen ? -1 : 1;
+  // Folder badge (sidebar + Home hero read from app.folders).
+  const folder = app.folders.find((f) => f.id === message.folder_id);
+  if (folder) folder.unread_count = Math.max(0, (folder.unread_count || 0) + delta);
+  // Smart Inbox group counts (the "N new" / unread badges).
+  const g = app.smartGroupData?.[message.category];
+  if (g) {
+    if (typeof g.unread === "number") g.unread = Math.max(0, g.unread + delta);
+    if (typeof g.new === "number") g.new = Math.max(0, g.new + delta);
+  }
+  updateBadge();
+  messages.setSeen(message.id, seen).catch(() => {});
 }
 
 // Close-to-tray toggle: tell the Rust shell whether the window-close button
@@ -925,7 +951,7 @@ export function openThread(latest) {
   app.view = "mail";
   app.threadKey = latest.thread_id;
   app.selectedMessageId = latest.id;
-  if (!latest.is_seen) { latest.is_seen = true; messages.setSeen(latest.id, true).catch(() => {}); }
+  if (!latest.is_seen) setMessageSeen(latest, true);
 }
 
 // Open a message in the reader by id (used by the AI inbox assistant). The
@@ -937,8 +963,8 @@ export function openMessageById(id) {
   app.selectedMessageId = id;
   // Opening a message marks it read (matches clicking it in the list).
   const m = app.messages.find((x) => x.id === id);
-  if (m) m.is_seen = true;
-  messages.setSeen(id, true).catch(() => {});
+  if (m) setMessageSeen(m, true);
+  else messages.setSeen(id, true).catch(() => {});
 }
 
 // Latest-request-wins: overlapping loads (fast navigation, background refresh
@@ -971,7 +997,8 @@ export async function refreshMessages({ background = false } = {}) {
           if (ws) list = list.filter((m) => ws.includes(m.account_id));
         }
         app.messages = list;
-        messages.smartGroups(scope).then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
+        messages.smartGroups({ ...scope, new_days: app.settings.smartNewDays ?? 3 })
+          .then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
       } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;
@@ -1217,8 +1244,11 @@ function desktopNotify(payload, count) {
   if (app.settings.notifyNewMail === false) return;
   // VIP mail always breaks through quiet hours and the focused-window rule.
   const vip = isVip(payload?.from_addr);
+  if (!vip && inQuietHours()) return;
+  // The ding plays even when the window is focused (audible feedback that mail
+  // landed) — only the OS notification honors the "only when unfocused" rule.
+  playSound(app.settings.notifySound || "ding");
   if (!vip) {
-    if (inQuietHours()) return;
     if (app.settings.notifyOnlyUnfocused !== false && typeof document !== "undefined"
         && document.hasFocus && document.hasFocus()) return;
   }

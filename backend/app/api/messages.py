@@ -107,6 +107,7 @@ def list_messages(
     include_done: bool = False,
     only_done: bool = False,
     unread_only: bool = False,
+    new_days: int | None = None,   # only mail received within the last N days ("new")
     flagged_only: bool = False,
     snoozed_only: bool = False,
     screener: str | None = None,   # "only" (unknown senders) | "exclude" (known only)
@@ -188,6 +189,10 @@ def list_messages(
         stmt = stmt.where(Message.is_done == False)  # noqa: E712
     if unread_only or op_filters.get("unread"):
         stmt = stmt.where(Message.is_seen == False)  # noqa: E712
+    if new_days and new_days > 0:
+        from datetime import timedelta
+        cutoff = now - timedelta(days=new_days)
+        stmt = stmt.where(Message.date != None, Message.date >= cutoff)  # noqa: E711
     if op_filters.get("read"):
         stmt = stmt.where(Message.is_seen == True)  # noqa: E712
     if flagged_only or op_filters.get("flagged"):
@@ -385,10 +390,13 @@ def category_counts(role: FolderRole | None = None, folder_id: int | None = None
 
 @router.get("/smart-groups")
 def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
+                 new_days: int = 3,
                  session: Session = Depends(get_session)) -> dict:
     """Per-category preview for the Smart Inbox: count, latest activity, and top senders."""
+    from datetime import timedelta
     from sqlalchemy import distinct
     now = datetime.now(timezone.utc).replace(tzinfo=None)
+    new_cutoff = now - timedelta(days=max(1, new_days))
 
     def scoped(stmt):
         stmt = stmt.where(Message.pending_action == "", Message.is_done == False,  # noqa: E712
@@ -407,6 +415,13 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
     unread_map = dict(session.exec(
         scoped(select(Message.category, func.count()))
         .where(Message.is_seen == False)  # noqa: E712
+        .group_by(Message.category)
+    ).all())
+    # "New" = unread AND received within the last new_days days — what the badge
+    # shows and what the "N new" quick-filter opens.
+    new_map = dict(session.exec(
+        scoped(select(Message.category, func.count()))
+        .where(Message.is_seen == False, Message.date != None, Message.date >= new_cutoff)  # noqa: E711,E712
         .group_by(Message.category)
     ).all())
     for cat, cnt, latest in cats:
@@ -435,6 +450,7 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
         out[cat] = {
             "count": cnt,
             "unread": int(unread_map.get(cat, 0)),
+            "new": int(new_map.get(cat, 0)),
             "latest": latest.isoformat() if latest else None,
             "senders": senders,
             "recent": recent,

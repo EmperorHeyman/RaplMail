@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen } from "../store.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
@@ -41,7 +41,7 @@
   }
 
   function toggleFlag() { const v = !message.is_flagged; message.is_flagged = v; messagesApi.setFlag(message.id, v).catch(() => {}); }
-  function toggleSeen() { const v = !message.is_seen; message.is_seen = v; messagesApi.setSeen(message.id, v).catch(() => {}); }
+  function toggleSeen() { setMessageSeen(message, !message.is_seen); }
 
   // The two hover buttons are user-configurable (settings.rowActions).
   function actionDef(key) {

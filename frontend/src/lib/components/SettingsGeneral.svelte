@@ -3,6 +3,7 @@
   import { vault, backendBase } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
+  import { playSound, SOUND_OPTIONS } from "../sound.js";
 
   // --- Local API / metrics for LAN devices ---------------------------------
   function randomKey() {
@@ -333,7 +334,7 @@
 
       <p class="hint" style="margin-top:14px">Preview</p>
       <div class="preview-box">
-        <SmartGroupCard label="Newsletters" icon={icons.newspaper} count={5471} senders={previewSenders}
+        <SmartGroupCard label="Newsletters" icon={icons.newspaper} count={5471} newCount={4} senders={previewSenders}
           more={Math.max(0, 40 - previewSenders.length)} />
       </div>
     {/if}
@@ -508,6 +509,13 @@
           </select>
         </label>
       {/if}
+      <label class="inline" style="margin-top:10px">Sound
+        <select value={app.settings.notifySound || "ding"} onchange={(e) => { saveSettings({ notifySound: e.currentTarget.value }); playSound(e.currentTarget.value); }}>
+          {#each SOUND_OPTIONS as s}<option value={s.id}>{s.label}</option>{/each}
+        </select>
+        <button class="btn sm" onclick={() => playSound(app.settings.notifySound || "ding")}>▶ Play</button>
+      </label>
+      <span class="hint" style="margin:2px 0 0 2px">A short chime plays when new mail arrives (even while the app is focused).</span>
       <button class="btn" style="margin-top:10px" onclick={sendTest}>Send test notification</button>
       <p class="hint" style="margin-top:8px">No popup? It's almost always the OS: Windows <b>Settings → Notifications</b> must allow this app, and <b>Focus Assist / Do Not Disturb</b> must be off.</p>
     {:else}

@@ -11,6 +11,29 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.2.17] — 2026-07-02
+
+### Changed
+- **"New" now means recent unread.** The Smart Inbox "N new" badge counts mail
+  that's **unread AND arrived in the last 3 days** — not every unread message
+  ever. So a group with 4 mails from today reads "4 new" instead of "75".
+- **Click the "N new" badge** to open just those new mails inline; a **"See all
+  in this group"** link below them jumps to the whole category (read included).
+  The group header (or chevron) still opens everything directly.
+- Groups float to the top based on **new** mail now (recent unread), matching
+  what the badge shows.
+
+### Fixed
+- **Unread counts update instantly.** Opening or reading a message now
+  decrements the group badge, the sidebar folder count, and the taskbar badge
+  **immediately**, instead of waiting for the next sync to catch up.
+
+### Added
+- **New-mail sound.** A short chime plays when new mail arrives (even while the
+  app is focused). Pick from several tones — Ding, Chime, Marimba, Pop, Glass —
+  or turn it off, in Settings → General → Notifications, with a Play button to
+  preview. Sounds are generated on the fly (no files, works offline).
+
 ## [0.2.16] — 2026-07-02
 
 The design + deep-sweep release: a full design overhaul plus a logical sweep

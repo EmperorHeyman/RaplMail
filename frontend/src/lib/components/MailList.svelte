@@ -3,7 +3,7 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen } from "../store.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
@@ -39,18 +39,34 @@
   }
   // Expanded groups fetch a SMALL page (newest first); "Show more" pages in
   // more on demand. Fetching a whole 500-mail category on expand froze the UI.
+  // Each group has a MODE: "new" (unread + recent only, from the badge) or
+  // "all" (the full category, from the header). Cache is keyed by cat|mode.
   const CAT_PAGE = 30;
+  let groupMode = $state({});   // category -> "new" | "all"
+  const modeOf = (cat) => groupMode[cat] || "all";
+  const catKey = (cat) => cat + "|" + modeOf(cat);
   async function loadCategory(cat, limit = CAT_PAGE) {
-    const cur = smartCatMsgs[cat];
+    const key = catKey(cat);
+    const cur = smartCatMsgs[key];
     if (cur && cur.limit >= limit) return;
+    const params = { ...smartScope(), category: cat, include_done: app.showDone, limit };
+    if (modeOf(cat) === "new") { params.unread_only = true; params.new_days = app.settings.smartNewDays ?? 3; }
     try {
-      const msgs = await messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit });
-      smartCatMsgs = { ...smartCatMsgs, [cat]: { msgs, limit, full: msgs.length < limit } };
+      const msgs = await messagesApi.list(params);
+      smartCatMsgs = { ...smartCatMsgs, [key]: { msgs, limit, full: msgs.length < limit, mode: modeOf(cat) } };
     } catch {}
   }
   function loadMoreCategory(cat) {
-    loadCategory(cat, (smartCatMsgs[cat]?.limit || CAT_PAGE) + 60);
+    loadCategory(cat, (smartCatMsgs[catKey(cat)]?.limit || CAT_PAGE) + 60);
   }
+  // Expand a category group in a given mode (from the header = "all", from the
+  // "N new" badge = "new"). Switching mode on an already-open group re-filters.
+  function openCategory(cat, mode) {
+    groupMode = { ...groupMode, [cat]: mode };
+    const s = new Set(expandedKeys); s.add(cat); expandedKeys = s;
+    loadCategory(cat);
+  }
+  function seeAll(cat) { openCategory(cat, "all"); }
 
   // Expanded bundles can hold hundreds of in-memory mails; render a window.
   const CHUNK = 12;
@@ -111,12 +127,17 @@
     const out = [g];
     if (!expandedKeys.has(g.key)) return out;
     if (g.gtype === "category") {
-      const entry = smartCatMsgs[g.category];
+      const mode = modeOf(g.category);
+      const entry = smartCatMsgs[g.category + "|" + mode];
       if (!entry) { out.push({ kind: "groupload", key: "gl:" + g.key }); return out; }
       for (const m of visibleIn(entry.msgs)) out.push({ kind: "msg", msg: m, inGroup: true });
-      const remaining = Math.max(0, (g.count || 0) - entry.msgs.length);
+      const total = mode === "new" ? (g.new || 0) : (g.count || 0);
+      const remaining = Math.max(0, total - entry.msgs.length);
       if (!entry.full && remaining > 0)
         out.push({ kind: "groupmore", key: "gm:" + g.key, cat: g.category, remaining });
+      // In "new" mode, offer a jump to the whole category (read mail included).
+      if (mode === "new")
+        out.push({ kind: "groupseeall", key: "sa:" + g.key, cat: g.category, total: g.count || 0 });
       return out;
     }
     // Bundles/threads hold their messages in memory — window the render.
@@ -138,7 +159,8 @@
           const shown = (g.senders || []).slice(0, n);
           const more = Math.max(0, (g.distinct ?? shown.length) - shown.length);
           groups.push({ kind: "group", gtype: "category", key: c, category: c,
-                        count: g.count, unread: g.unread || 0, senders: shown, more, latest: g.latest, recent: g.recent || [] });
+                        count: g.count, unread: g.unread || 0, new: g.new || 0,
+                        senders: shown, more, latest: g.latest, recent: g.recent || [] });
         }
       }
       if (app.settings.smartOrderMode === "custom") {
@@ -157,8 +179,8 @@
         // (all-read) groups are tucked at the END of Today, out of the way. When
         // Today is empty (you've cleared it), the tucked groups surface at top
         // too instead of sinking below older sections.
-        const hot = groups.filter((g) => g.unread > 0);     // has new mail → top
-        const cold = groups.filter((g) => !(g.unread > 0));  // read → end of Today
+        const hot = groups.filter((g) => g.new > 0);     // has NEW mail → top
+        const cold = groups.filter((g) => !(g.new > 0));  // no new → end of Today
         const hotItems = hot.flatMap(expandGroup);
         const coldItems = cold.flatMap(expandGroup);
         const out = [...hotItems];
@@ -264,7 +286,7 @@
     try {
       // "Done all" must cover the ENTIRE category — fetch the full id list
       // unless the paged cache already holds everything.
-      const entry = smartCatMsgs[item.key];
+      const entry = smartCatMsgs[item.category + "|all"];
       let list = entry?.full ? entry.msgs : null;
       if (!list) list = await messagesApi.list({ ...smartScope(), category: item.category, include_done: false, limit: 5000 });
       const ids = list.map((m) => m.id);
@@ -292,7 +314,13 @@
     expandedKeys = s;
   }
   function activate(item) {
-    if (item.gtype === "category") { toggleExpand(item.key); loadCategory(item.category); return; }
+    if (item.gtype === "category") {
+      // Header click always means "the whole category". Toggle closed if it's
+      // already open in all-mode; otherwise (re)open in all-mode.
+      if (expandedKeys.has(item.key) && modeOf(item.category) === "all") toggleExpand(item.key);
+      else openCategory(item.category, "all");
+      return;
+    }
     if (selectedIds.length > 0) { selectGroup(item); return; }
     if (item.gtype === "thread") openThread(item.latest);
     else toggleExpand(item.key);
@@ -338,7 +366,7 @@
   function openCtx(e, msg) { e.preventDefault(); ctxSearch = ""; ctx = { x: e.clientX, y: e.clientY, msg }; }
   function closeCtx() { ctx = null; }
   function ctxDo(fn) { const m = ctx?.msg; closeCtx(); if (m) fn(m); }
-  function toggleSeen(m) { const v = !m.is_seen; m.is_seen = v; messagesApi.setSeen(m.id, v).catch(() => {}); }
+  function toggleSeen(m) { setMessageSeen(m, !m.is_seen); }
   function toggleFlag(m) { const v = !m.is_flagged; m.is_flagged = v; messagesApi.setFlag(m.id, v).catch(() => {}); }
 
   // Flat, searchable action list for the right-click menu. `kw` adds extra
@@ -426,6 +454,7 @@
     smartCatMsgs = {};
     hiddenDone = new Set();
     expandedKeys = new Set();   // collapsed cards re-fetch on next expand
+    groupMode = {};
     catShown = {};
     mainShown = 30;
   });
@@ -436,10 +465,13 @@
   $effect(() => {
     void app.syncTick;
     const entries = untrack(() => Object.entries(smartCatMsgs));
-    for (const [cat, entry] of entries) {
-      untrack(() => messagesApi.list({ ...smartScope(), category: cat, include_done: app.showDone, limit: entry.limit }))
+    for (const [key, entry] of entries) {
+      const cat = key.split("|")[0];
+      const params = { ...smartScope(), category: cat, include_done: app.showDone, limit: entry.limit };
+      if (entry.mode === "new") { params.unread_only = true; params.new_days = app.settings.smartNewDays ?? 3; }
+      untrack(() => messagesApi.list(params))
         .then((msgs) => {
-          if (smartCatMsgs[cat]) smartCatMsgs = { ...smartCatMsgs, [cat]: { msgs, limit: entry.limit, full: msgs.length < entry.limit } };
+          if (smartCatMsgs[key]) smartCatMsgs = { ...smartCatMsgs, [key]: { msgs, limit: entry.limit, full: msgs.length < entry.limit, mode: entry.mode } };
         })
         .catch(() => {});
     }
@@ -496,10 +528,7 @@
     if (index >= 0) focusIndex = index;
     app.threadKey = null;
     app.selectedMessageId = message.id;
-    if (!message.is_seen) {
-      message.is_seen = true;
-      messagesApi.setSeen(message.id, true).catch(() => {});
-    }
+    if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
     refocusList();
   }
 
@@ -536,6 +565,7 @@
       if (it.kind === "msg") open(it.msg, focusIndex);
       else if (it.kind === "group") activate(it);
       else if (it.kind === "groupmore") { if (it.cat) loadMoreCategory(it.cat); else bumpShown(it.gkey); }
+      else if (it.kind === "groupseeall") seeAll(it.cat);
     } else if (combo === kb.done) {
       const it = items[focusIndex];
       if (it.kind !== "msg" && it.kind !== "group") { e.preventDefault(); return; }
@@ -686,13 +716,18 @@
                 Show more ({item.remaining})
               </button>
             </div>
+          {:else if item.kind === "groupseeall"}
+            <div class="gpart">
+              <button class="morebtn" onclick={() => seeAll(item.cat)}>See all in this group ({item.total.toLocaleString()}) →</button>
+            </div>
           {:else if item.gtype === "category"}
             <SmartGroupCard
               label={CAT_META[item.category]?.label || item.category}
               icon={CAT_META[item.category]?.icon || icons.folder}
-              count={item.count} unread={item.unread} senders={item.senders} more={item.more}
-              focused={i === focusIndex} expanded={expandedKeys.has(item.key)}
+              count={item.count} unread={item.unread} newCount={item.new} senders={item.senders} more={item.more}
+              focused={i === focusIndex} expanded={expandedKeys.has(item.key)} mode={modeOf(item.category)}
               onToggle={() => { focusIndex = i; activate(item); }}
+              onNewBadge={() => { focusIndex = i; openCategory(item.category, "new"); }}
               onSender={(email) => searchAddress(email)}
               onDoneAll={() => { focusIndex = i; doneCategory(item); }}
             />

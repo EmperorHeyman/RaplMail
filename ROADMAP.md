@@ -168,3 +168,15 @@ _Add your own items below._
 
 12. **Trust No One: Local Security**
    - ✅ **Local DMARC/DKIM visualizer** — shipped. A red/green shield on the sender avatar: the backend reads the Authentication-Results stamped at your mailbox provider's trust boundary (full SPF/DKIM/DMARC w/ DNS) and surfaces pass (green) / fail (red, likely spoof). The reader shows the breakdown (DKIM/SPF/DMARC) and a "may be spoofed" banner — flagging spoofed `a123systems.eu` / RAPL mail before you read it.
+
+
+----------------------
+version 0.2.17:
+Loading animation
+
+"onboarding" -- Settings preview step by step "do you want this..pick your theme..."
+
+make the smart box as default
+
+localization -- Eng, Czech
+

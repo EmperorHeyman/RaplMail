@@ -36,6 +36,7 @@ class HeaderInfo:
     size: int = 0
     has_attachments: bool = False
     snippet: str = ""
+    in_reply_to: str = ""   # RFC 5322 In-Reply-To (parent Message-ID), for threading
 
 
 # Custom IMAP keyword used to mirror the local "done" state to the server, so
@@ -58,6 +59,12 @@ class OutgoingMessage:
     inline_images: list[dict] = field(default_factory=list)
     # Regular attachments: {"filename", "content_type", "data": bytes}
     attachments: list[dict] = field(default_factory=list)
+    # S/MIME: sign / encrypt the fully-assembled MIME (applied in build_mime).
+    smime_sign: bool = False
+    smime_encrypt: bool = False
+    smime_cert: str = ""            # your S/MIME certificate PEM (for signing)
+    smime_key: str = ""             # your S/MIME private key PEM
+    smime_recip_certs: list[str] = field(default_factory=list)  # recipient cert PEMs
     # iMIP: an iCalendar payload sent as a text/calendar part with this METHOD,
     # so Gmail/Outlook show an interactive RSVP and add it to the calendar.
     calendar_ics: str = ""

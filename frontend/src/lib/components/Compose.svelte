@@ -4,6 +4,8 @@
   import { icons } from "../icons.js";
   import { signatures as sigApi, compose as composeApi } from "../api.js";
   import RecipientInput from "./RecipientInput.svelte";
+  import { t } from "../i18n.svelte.js";
+  import { mdToHtml } from "../markdown.js";
 
   let { standalone = false } = $props();
 
@@ -27,6 +29,9 @@
   let panelW = $state(null), panelH = $state(null);  // preserve manual resize across re-renders
   let sigs = $state([]);
   let signatureId = $state("none"); // "none" | <signature id>
+  let mdMode = $state(false);       // compose in Markdown (compiled to HTML on send)
+  let mdSource = $state("");        // raw markdown body while mdMode is on
+  let seededQuote = "";             // reply/forward quoted block, kept aside in md mode
 
   function defaultSigFor(acctId) {
     return sigs.find((s) => s.account_id === acctId && s.is_default)
@@ -72,6 +77,38 @@
       editor.insertBefore(lead, editor.firstChild);
     }
   }
+  // --- Markdown compose mode ---------------------------------------------
+  // The current body as plain text, minus the quoted thread + signature (those
+  // are re-attached separately), used to seed the markdown editor.
+  function bodyPlainNoQuote() {
+    if (!editor) return "";
+    const clone = editor.cloneNode(true);
+    clone.querySelectorAll(".rapl-quoted-block, .rapl-sig-wrap").forEach((n) => n.remove());
+    return (clone.innerText || "").trim();
+  }
+  // On send: compiled markdown + the chosen signature + the reply/forward quote.
+  function composeMdHtml() {
+    let out = mdToHtml(mdSource);
+    if (signatureId !== "none") {
+      const sig = sigs.find((s) => String(s.id) === String(signatureId));
+      if (sig) out += `<div><br></div><div class="rapl-sig">${sigHtml(sig)}</div>`;
+    }
+    if (seededQuote) out += seededQuote;
+    return out;
+  }
+  function toggleMd() {
+    if (!mdMode) {
+      mdSource = bodyPlainNoQuote();
+      mdMode = true;
+    } else {
+      // Back to rich text: render the markdown into the editor + restore the quote.
+      if (editor) { editor.innerHTML = mdToHtml(mdSource) + (seededQuote || ""); applySignature(); }
+      mdMode = false;
+    }
+    dirty = true;
+    scheduleSave();
+  }
+
   // Collapse/expand the quoted thread when its "•••" pill is clicked (the pill is
   // contenteditable=false, so this delegated handler drives it).
   function onEditorClick(e) {
@@ -165,8 +202,15 @@
       c = { ...c, ...(app.composing || {}) };
     }
     accountId = c.account_id ?? app.accounts[0]?.id ?? null;
+    // Honor a seeded send-as identity (the address the mail was addressed to) so
+    // replies / new mail go out from the right alias, not just the primary.
+    if (c.from_addr) {
+      const opts = identitiesFor(accountId).map((o) => o.value);
+      if (opts.includes(c.from_addr)) fromIdentity = c.from_addr;
+    }
     if (c.cc) showCc = true;
     if (Array.isArray(c.attachments)) attachments = c.attachments;
+    seededQuote = c.html || "";   // reply/forward quote — re-appended after markdown on send
     if (editor && c.html) editor.innerHTML = c.html;
     try {
       sigs = await sigApi.list();
@@ -240,7 +284,7 @@
     editor?.focus();
   }
   function addLink() {
-    const url = prompt("Link URL:", "https://");
+    const url = prompt(t("compose.linkUrlPrompt"), "https://");
     if (url) exec("createLink", url);
   }
 
@@ -291,19 +335,22 @@
 
   let pgpSign = $state(false);
   let pgpEncrypt = $state(false);
+  let smimeSign = $state(false);
+  let smimeEncrypt = $state(false);
+  const smimeConfigured = $derived(!!(app.settings.smimeCert || (app.settings.smimeCerts || []).length));
   let requestReceipt = $state(false);
   const pgpConfigured = $derived(!!(app.settings.pgpPrivateKey || (app.settings.pgpPublicKeys || []).length));
 
   let savingDraft = $state(false);
   let draftUid = $state(null);   // IMAP UID of the last server-saved draft (for replace)
   async function saveToDrafts() {
-    if (!accountId) { notify("Pick an account", "error"); return; }
+    if (!accountId) { notify(t("compose.pickAccount"), "error"); return; }
     savingDraft = true;
     try {
       const r = await composeApi.saveDraft({ ...buildPayload(), replace_uid: draftUid });
       draftUid = r.uid ?? draftUid;
       clearDraft();   // server now holds it; drop the local autosave copy
-      notify(`Saved to Drafts (${r.folder})`);
+      notify(t("compose.savedToDrafts", { folder: r.folder }));
     } catch (e) {
       notify(e.message, "error");
     } finally { savingDraft = false; }
@@ -330,12 +377,14 @@
       from_addr: fromIdentity || "",
       pgp_sign: pgpSign,
       pgp_encrypt: pgpEncrypt,
+      smime_sign: smimeSign,
+      smime_encrypt: smimeEncrypt,
       request_receipt: requestReceipt,
       to,
       cc,
       bcc: autoBccFor([...to, ...cc]),
       subject: c.subject,
-      html: outgoingHtml(),
+      html: mdMode ? composeMdHtml() : outgoingHtml(),
       in_reply_to: c.in_reply_to || "",
       // Signature is rendered directly in the body now, so don't let the server
       // append it again (its data: images become inline CID on send).
@@ -349,17 +398,17 @@
   const _ATTACH_HINTS = /\b(attach(ed|ment|ing)?|enclosed|in the attachment|see attached|find attached|p[řr]ipoj|p[řr]iloh|v p[řr]íloze|p[řr]ikládám)\b/i;
   function attachmentMissing() {
     if (attachments.length > 0) return false;
-    const text = `${c.subject} ${editor?.innerText || ""}`;
+    const text = `${c.subject} ${mdMode ? mdSource : (editor?.innerText || "")}`;
     return _ATTACH_HINTS.test(text);
   }
 
   async function send() {
-    if (!accountId) { notify("Pick an account", "error"); return; }
-    if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (!accountId) { notify(t("compose.pickAccount"), "error"); return; }
+    if (c.to.trim() === "") { notify(t("compose.addRecipient"), "error"); return; }
     if (c.subject.trim() === "" &&
-        !(await confirmDialog({ title: "Send without a subject?", confirmLabel: "Send anyway" }))) return;
+        !(await confirmDialog({ title: t("compose.sendNoSubjectTitle"), confirmLabel: t("compose.sendAnyway") }))) return;
     if (attachmentMissing() &&
-        !(await confirmDialog({ title: "No attachment", message: "You mention an attachment but nothing is attached.", confirmLabel: "Send anyway" }))) return;
+        !(await confirmDialog({ title: t("compose.noAttachmentTitle"), message: t("compose.noAttachmentMsg"), confirmLabel: t("compose.sendAnyway") }))) return;
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", in_reply_to: c.in_reply_to, account_id: accountId, attachments };
     clearDraft();
     closed = true;   // don't let the unmount flush re-save the sent message
@@ -367,20 +416,20 @@
   }
 
   async function sendLater(iso, label) {
-    if (!accountId) { notify("Pick an account", "error"); return; }
-    if (c.to.trim() === "") { notify("Add a recipient", "error"); return; }
+    if (!accountId) { notify(t("compose.pickAccount"), "error"); return; }
+    if (c.to.trim() === "") { notify(t("compose.addRecipient"), "error"); return; }
     if (c.subject.trim() === "" &&
-        !(await confirmDialog({ title: "Schedule without a subject?", confirmLabel: "Schedule anyway" }))) return;
+        !(await confirmDialog({ title: t("compose.scheduleNoSubjectTitle"), confirmLabel: t("compose.scheduleAnyway") }))) return;
     if (attachmentMissing() &&
-        !(await confirmDialog({ title: "No attachment", message: "You mention an attachment but nothing is attached.", confirmLabel: "Schedule anyway" }))) return;
+        !(await confirmDialog({ title: t("compose.noAttachmentTitle"), message: t("compose.noAttachmentMsg"), confirmLabel: t("compose.scheduleAnyway") }))) return;
     laterMenu = false;
     try {
       await composeApi.send({ ...buildPayload(), send_at: iso });
       clearDraft();
       closed = true;
-      notify(`Scheduled — ${label}`);
+      notify(t("compose.scheduled", { label }));
       if (standalone) window.close(); else app.composing = null;
-    } catch (e) { notify("Couldn't schedule: " + e.message, "error"); }
+    } catch (e) { notify(t("compose.couldntSchedule", { error: e.message }), "error"); }
   }
 
   // datetime-local needs "YYYY-MM-DDTHH:MM" in local time.
@@ -389,9 +438,9 @@
     return d.toISOString().slice(0, 16);
   }
   function sendCustom() {
-    if (!customWhen) { notify("Pick a date & time", "error"); return; }
+    if (!customWhen) { notify(t("compose.pickDateTime"), "error"); return; }
     const d = new Date(customWhen);
-    if (isNaN(d.getTime()) || d <= new Date()) { notify("Pick a future time", "error"); return; }
+    if (isNaN(d.getTime()) || d <= new Date()) { notify(t("compose.pickFutureTime"), "error"); return; }
     sendLater(d.toISOString(), d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }));
   }
 
@@ -457,13 +506,13 @@
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-        new WebviewWindow(`compose-${Date.now()}`, { url, title: "New message", width: 720, height: 680 });
+        new WebviewWindow(`compose-${Date.now()}`, { url, title: t("compose.newMessage"), width: 720, height: 680 });
       } else {
         window.open(url, "_blank", "width=720,height=680");
       }
       clearDraft();
       app.composing = null;   // close the docked panel; the window now owns it
-    } catch (e) { notify(e.message || "Couldn't open a window", "error"); }
+    } catch (e) { notify(e.message || t("compose.couldntOpenWindow"), "error"); }
   }
 
   function onHeaderDown(e) {
@@ -501,36 +550,40 @@
     { cmd: "insertUnorderedList", label: "• List" },
     { cmd: "insertOrderedList", label: "1. List" },
   ];
+  // Localized tooltip for each formatting tool (the button faces stay symbolic:
+  // B / I / U / • / 1.). A helper keeps the i18n t() out of the {#each TOOLS as t}
+  // block, where `t` is the loop item and would otherwise shadow it.
+  const toolTitle = (cmd) => t(`compose.tool.${cmd}`);
 </script>
 
 <div class="panel" class:standalone style={dockStyle} bind:this={panelEl} onkeydown={onComposeKey}>
   {#if confirmDiscard}
-    <div class="discard-veil" role="dialog" aria-modal="true" aria-label="Unsaved message">
+    <div class="discard-veil" role="dialog" aria-modal="true" aria-label={t("compose.unsavedMessage")}>
       <div class="discard-box">
-        <b>Keep this draft?</b>
-        <p>You have unsaved changes.</p>
+        <b>{t("compose.keepDraft")}</b>
+        <p>{t("compose.unsavedChanges")}</p>
         <div class="discard-btns">
-          <button class="btn primary" onclick={saveDraftAndClose}>Save to Drafts</button>
-          <button class="btn ghost" onclick={() => (confirmDiscard = false)}>Keep editing</button>
-          <button class="btn ghost danger" onclick={discardAndClose}>Discard</button>
+          <button class="btn primary" onclick={saveDraftAndClose}>{t("compose.saveToDrafts")}</button>
+          <button class="btn ghost" onclick={() => (confirmDiscard = false)}>{t("compose.keepEditing")}</button>
+          <button class="btn ghost danger" onclick={discardAndClose}>{t("compose.discard")}</button>
         </div>
       </div>
     </div>
   {/if}
   <header onpointerdown={onHeaderDown}>
-    <span>New message</span>
+    <span>{t("compose.newMessage")}</span>
     <div class="hbtns" onpointerdown={(e) => e.stopPropagation()}>
       {#if !standalone && recentDrafts.length}
         <div class="drafts-pick">
-          <button class="hbtn" title="Restore a saved draft" onclick={() => (draftsMenu = !draftsMenu)}>
-            {@html icons.drafts || icons.edit || ""} Drafts <span class="dcount">{recentDrafts.length}</span> ⌄
+          <button class="hbtn" title={t("compose.restoreSavedDraft")} onclick={() => (draftsMenu = !draftsMenu)}>
+            {@html icons.drafts || icons.edit || ""} {t("compose.drafts")} <span class="dcount">{recentDrafts.length}</span> ⌄
           </button>
           {#if draftsMenu}
             <div class="drafts-menu">
               {#each recentDrafts as d (d.id)}
                 <div class="drow">
-                  <button class="dopen" onclick={() => restoreDraft(d)} title="Restore this draft">{draftLabel(d)}</button>
-                  <button class="ddel" title="Delete draft" onclick={() => removeDraft(d.id)}>{@html icons.close}</button>
+                  <button class="dopen" onclick={() => restoreDraft(d)} title={t("compose.restoreThisDraft")}>{draftLabel(d)}</button>
+                  <button class="ddel" title={t("compose.deleteDraft")} onclick={() => removeDraft(d.id)}>{@html icons.close}</button>
                 </div>
               {/each}
             </div>
@@ -538,43 +591,46 @@
         </div>
       {/if}
       {#if !standalone}
-        <button class="x" title="Open in a separate window" onclick={popOut}>{@html icons.window || icons.external || "⧉"}</button>
+        <button class="x" title={t("compose.openSeparateWindow")} onclick={popOut}>{@html icons.window || icons.external || "⧉"}</button>
       {/if}
       <button class="x" onclick={close}>{@html icons.close}</button>
     </div>
   </header>
 
   <div class="fields">
-    <label class="f"><span>From</span>
+    <label class="f"><span>{t("compose.from")}</span>
       <div class="from-row">
         <select bind:value={accountId} onchange={() => (fromIdentity = "")}>
           {#each app.accounts as a}<option value={a.id}>{a.display_name && a.display_name !== a.email ? `${a.display_name} <${a.email}>` : a.email}</option>{/each}
         </select>
         {#if identitiesFor(accountId).length > 1}
-          <select class="ident" bind:value={fromIdentity} title="Send as identity">
+          <select class="ident" bind:value={fromIdentity} title={t("compose.sendAsIdentity")}>
             {#each identitiesFor(accountId) as id}<option value={id.value}>{id.label}</option>{/each}
           </select>
         {/if}
       </div>
     </label>
-    <div class="f"><span>To</span>
-      <RecipientInput bind:value={c.to} placeholder="Start typing a name or email…" />
-      {#if !showCc}<button class="cc-toggle" onclick={() => (showCc = true)}>Cc</button>{/if}
+    <div class="f"><span>{t("compose.to")}</span>
+      <RecipientInput bind:value={c.to} placeholder={t("compose.toPlaceholder")} />
+      {#if !showCc}<button class="cc-toggle" onclick={() => (showCc = true)}>{t("compose.cc")}</button>{/if}
     </div>
-    {#if showCc}<div class="f"><span>Cc</span><RecipientInput bind:value={c.cc} /></div>{/if}
-    <label class="f"><span>Subject</span><input bind:value={c.subject} /></label>
+    {#if showCc}<div class="f"><span>{t("compose.cc")}</span><RecipientInput bind:value={c.cc} /></div>{/if}
+    <label class="f"><span>{t("compose.subject")}</span><input bind:value={c.subject} /></label>
   </div>
 
   <div class="toolbar">
-    {#each TOOLS as t}
-      <button class="tool" title={t.cmd} style={t.style || ""} onmousedown={(e) => { e.preventDefault(); exec(t.cmd); }}>{t.label}</button>
-    {/each}
-    <button class="tool" title="Insert link" onmousedown={(e) => { e.preventDefault(); addLink(); }}>{@html icons.link}</button>
-    <button class="tool" title="Clear formatting" onmousedown={(e) => { e.preventDefault(); exec("removeFormat"); }}>{@html icons.clearFormat}</button>
+    {#if !mdMode}
+      {#each TOOLS as t}
+        <button class="tool" title={toolTitle(t.cmd)} style={t.style || ""} onmousedown={(e) => { e.preventDefault(); exec(t.cmd); }}>{t.label}</button>
+      {/each}
+      <button class="tool" title={t("compose.insertLink")} onmousedown={(e) => { e.preventDefault(); addLink(); }}>{@html icons.link}</button>
+      <button class="tool" title={t("compose.clearFormatting")} onmousedown={(e) => { e.preventDefault(); exec("removeFormat"); }}>{@html icons.clearFormat}</button>
+    {/if}
+    <button class="tool md-toggle" class:on={mdMode} title={t("compose.markdownMode")} onclick={toggleMd}>{t("compose.markdown")}</button>
     <span class="tspace"></span>
-    {#if (app.settings.templates || []).length}
+    {#if !mdMode && (app.settings.templates || []).length}
       <div class="tpl-pick">
-        <button class="tool" title="Insert a template" onclick={() => (tplMenu = !tplMenu)}>{@html icons.drafts} Templates ⌄</button>
+        <button class="tool" title={t("compose.insertTemplate")} onclick={() => (tplMenu = !tplMenu)}>{@html icons.drafts} {t("compose.templates")} ⌄</button>
         {#if tplMenu}
           <div class="tpl-menu">
             {#each app.settings.templates as t}
@@ -584,13 +640,17 @@
         {/if}
       </div>
     {/if}
-    <button class="tool" title="Attach file" onclick={() => fileInput.click()}>{@html icons.attachment} Attach</button>
+    <button class="tool" title={t("compose.attachFile")} onclick={() => fileInput.click()}>{@html icons.attachment} {t("compose.attach")}</button>
     <input bind:this={fileInput} type="file" multiple hidden onchange={(e) => readFiles(e.currentTarget.files)} />
   </div>
 
-  <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label="Message body"
+  <div class="editor" class:hidden={mdMode} contenteditable="true" role="textbox" tabindex="0" aria-label={t("compose.messageBody")}
     bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} onclick={onEditorClick} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
-    data-placeholder="Write your message…  (Ctrl+Enter to send)"></div>
+    data-placeholder={t("compose.bodyPlaceholder")}></div>
+  {#if mdMode}
+    <textarea class="editor mdbody" bind:value={mdSource} oninput={onBodyInput}
+      aria-label={t("compose.messageBody")} placeholder={t("compose.markdownPlaceholder")}></textarea>
+  {/if}
 
   {#if attachments.length}
     <div class="attachments">
@@ -601,12 +661,12 @@
   {/if}
 
   <footer>
-    <button class="btn primary" onclick={send}>Send</button>
-    <button class="btn" onclick={saveToDrafts} disabled={savingDraft} title="Save to your Drafts folder (syncs across devices)">
-      {@html icons.save || icons.folder} {savingDraft ? "Saving…" : "Save draft"}
+    <button class="btn primary" onclick={send}>{t("compose.send")}</button>
+    <button class="btn" onclick={saveToDrafts} disabled={savingDraft} title={t("compose.saveDraftTitle")}>
+      {@html icons.save || icons.folder} {savingDraft ? t("compose.saving") : t("compose.saveDraft")}
     </button>
     <div class="later">
-      <button class="btn" onclick={() => (laterMenu = !laterMenu)} title="Send later">{@html icons.clock} Later ⌄</button>
+      <button class="btn" onclick={() => (laterMenu = !laterMenu)} title={t("compose.sendLater")}>{@html icons.clock} {t("compose.later")} ⌄</button>
       {#if laterMenu}
         <div class="later-menu">
           {#each snoozePresets().filter((p) => p.iso) as p}
@@ -614,27 +674,33 @@
           {/each}
           <div class="custom">
             <input type="datetime-local" bind:value={customWhen} min={nowLocal()} />
-            <button class="btn primary sm" onclick={sendCustom}>Schedule</button>
+            <button class="btn primary sm" onclick={sendCustom}>{t("compose.schedule")}</button>
           </div>
         </div>
       {/if}
     </div>
     {#if pgpConfigured}
       <span class="pgp" title="OpenPGP">
-        <button class="pgp-btn" class:on={pgpSign} onclick={() => (pgpSign = !pgpSign)} title="Sign with your PGP key">{@html icons.signature} Sign</button>
-        <button class="pgp-btn" class:on={pgpEncrypt} onclick={() => (pgpEncrypt = !pgpEncrypt)} title="Encrypt to recipients' PGP keys">{@html icons.shieldCheck || icons.shield} Encrypt</button>
+        <button class="pgp-btn" class:on={pgpSign} onclick={() => (pgpSign = !pgpSign)} title={t("compose.signTitle")}>{@html icons.signature} {t("compose.sign")}</button>
+        <button class="pgp-btn" class:on={pgpEncrypt} onclick={() => (pgpEncrypt = !pgpEncrypt)} title={t("compose.encryptTitle")}>{@html icons.shieldCheck || icons.shield} {t("compose.encrypt")}</button>
       </span>
     {/if}
-    <button class="pgp-btn" class:on={requestReceipt} onclick={() => (requestReceipt = !requestReceipt)} title="Embed a read-receipt tracking pixel (recipient must be able to reach this app)">{@html icons.eye || icons.mail} Receipt</button>
+    {#if smimeConfigured}
+      <span class="pgp" title="S/MIME">
+        <button class="pgp-btn" class:on={smimeSign} onclick={() => (smimeSign = !smimeSign)} title={t("compose.smimeSignTitle")}>{@html icons.signature} {t("compose.smimeSign")}</button>
+        <button class="pgp-btn" class:on={smimeEncrypt} onclick={() => (smimeEncrypt = !smimeEncrypt)} title={t("compose.smimeEncryptTitle")}>{@html icons.shield || icons.shieldCheck} {t("compose.smimeEncrypt")}</button>
+      </span>
+    {/if}
+    <button class="pgp-btn" class:on={requestReceipt} onclick={() => (requestReceipt = !requestReceipt)} title={t("compose.receiptTitle")}>{@html icons.eye || icons.mail} {t("compose.receipt")}</button>
     {#if sigs.length}
-      <label class="sigpick" title="Signature">{@html icons.signature}
+      <label class="sigpick" title={t("compose.signature")}>{@html icons.signature}
         <select bind:value={signatureId} onchange={applySignature}>
-          <option value="none">No signature</option>
+          <option value="none">{t("compose.noSignature")}</option>
           {#each sigs as s}<option value={s.id}>{s.name}</option>{/each}
         </select>
       </label>
     {/if}
-    <span class="hint">Ctrl+Enter to send</span>
+    <span class="hint">{t("compose.ctrlEnterHint")}</span>
   </footer>
 </div>
 
@@ -687,8 +753,12 @@
   .toolbar { display: flex; align-items: center; gap: 4px; padding: 7px 12px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .tool { min-width: 28px; padding: 5px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; }
   .tool:hover { background: var(--surface-3); color: var(--text); }
+  .tool.md-toggle { font-weight: 700; font-family: ui-monospace, Consolas, monospace; }
+  .tool.md-toggle.on { background: var(--accent-soft); color: var(--accent); }
   .tspace { flex: 1; }
   .editor { flex: 1; padding: 14px; overflow-y: auto; outline: none; line-height: 1.6; color: var(--text); caret-color: var(--accent); }
+  .editor.hidden { display: none; }
+  textarea.editor.mdbody { border: none; background: transparent; width: 100%; resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; white-space: pre-wrap; }
   .editor:empty::before { content: attr(data-placeholder); color: var(--faint); }
   .editor :global(a) { color: var(--accent); }
   /* Spark-style collapsible quoted thread: a "•••" pill you type above. */

@@ -146,4 +146,32 @@ Covers the API surface (health, settings, metrics auth, AI graceful-degradation,
 
 ---
 
+## ⚖️ Why RaplMail? (Comparison Matrix)
+
+Most modern email clients force you to choose between two compromises: **fast UI workflows trapped inside a paid cloud middleman** (Superhuman, Spark), or **local privacy bundled with heavy legacy/bloated UI frameworks** (Thunderbird, Mailspring).
+
+RaplMail is built to give you the speed and triage workflows of modern SaaS email clients while keeping 100% of your data, keys, and credentials on your own machine.
+
+| Feature / Architecture | **RaplMail** | **Spark** | **Thunderbird** | **Superhuman** | **Mimestream** | **Hey** | **MS Outlook** |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Pricing** | **Free / Local** | Freemium / Paid | Free | $30 / mo | $50 / yr | $99 / yr | Included w/ Bloatware |
+| **Any IMAP/SMTP Support** | ✅ **Yes** | ✅ Yes | ✅ Yes | ❌ *No* | ❌ *No* | ❌ *No* | 🟡 *Yes, if you survive the 4 nested wizards* |
+| **Zero Cloud Middleman** | ✅ **100% Local** | ❌ *No* | ✅ 100% Local | ❌ *No* | ✅ Direct API | ❌ *No* | ❌ *No (routes everything to Microsoft)* |
+| **UI Stack & Performance** | **Tauri 2 + Svelte 5** | Web / Electron | C++ / Gecko | Web Wrapper | Native macOS | Web Wrapper | **Win32 Legacy Layer Cake / Web-Wrap Frankenstein** |
+| **Spark-Style Triage (`e` to Done)** | ✅ **Yes** | ✅ Yes | ❌ *No* | ✅ Yes | 🟡 *Partial* | 🟡 *Partial* | ❌ *No (Only `Delete` or archive loops)* |
+| **Hey-Style Defense Tools** | ✅ **Yes** <br>*(Screener, Feed, Receipts)* | ❌ *No* | ❌ *No* | ❌ *No* | ❌ *No* | ✅ **Yes** | ❌ *No (Prepare for infinite spam)* |
+| **Custom IMAP Auto-Discovery** | ✅ **Instant (DNS/MX/ISPDB)** | ✅ Yes | ✅ Yes | ❌ *N/A* | ❌ *N/A* | ❌ *N/A* | ❌ *Fails entirely, drops you into an M365 upsell funnel* |
+| **Offline Action Queue** | ✅ **Instant local UX** <br>*(Background retry)* | 🟡 *Partial* | ❌ *Blocking UI* | ✅ Yes | ✅ Yes | ❌ *No* | ❌ **"Outlook is not responding" (Sync Freeze)** |
+| **RAM Footprint** | **~100-200 MB** | ~400+ MB | ~200+ MB | ~300+ MB | ~60 MB | ~300+ MB | **Your Entire Available Memory Pool** |
+
+---
+
+### TL;DR vs. The Industry
+
+* **vs. Spark & Superhuman:** You get the exact same keyboard-first triage (`e` to complete, snooze, bundle cards, split inboxes) without routing your sensitive emails through a third-party server proxy or paying $30+/month.
+* **vs. Thunderbird:** You get a lightweight, modern design system with fast SQLite FTS5 search, inline WYSIWYG/Markdown compose, and advanced workflows out of the box—without battling 20-year-old UI paradigms.
+* **vs. Hey (Basecamp):** You get modern inbox defenses (first-time sender Screener, newsletter feeds, order receipt paper trails) directly on your **existing custom domains and IMAP accounts**, rather than being locked into an `@hey.com` walled garden.
+* **vs. Microsoft Outlook:** Outlook wasn't designed for the person sitting at the keyboard; it was designed for corporate IT compliance lawyers. If you enjoy manual port configurations hidden behind four legacy Win32 modal dialogs, loading spinner crashes while syncing a local `.ost` file, and an interface that looks like it was optimized for Windows 2000, keep using Outlook. If you want an app that instantly auto-discovers custom domain SMTP settings and lets you triage via keyboard chords, use RaplMail.
+
+
 Made by [RAPL Group](https://rapl-group.eu/).

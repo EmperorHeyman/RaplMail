@@ -3,24 +3,33 @@
   import { messages as messagesApi } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc } from "../email.js";
+  import { t } from "../i18n.svelte.js";
 
   let list = $state([]);          // thread messages, oldest first
   let bodies = $state({});        // id -> detail
   let expanded = $state(new Set());
   let loading = $state(false);
+  let _key = null;   // previous threadKey — to tell a switch apart from a live refresh
 
   $effect(() => {
     const key = app.threadKey;
-    list = []; bodies = {}; expanded = new Set();
+    void app.syncTick;                 // re-fetch when a sync lands (new reply arrives)
+    // Only wipe state on an actual conversation switch, not on a sync refresh, so
+    // the user's expanded messages / loaded bodies survive a live update.
+    if (key !== _key) { _key = key; list = []; bodies = {}; expanded = new Set(); }
     if (!key) return;
     loading = true;
     // Guard against a slow response landing after the user switched threads.
     messagesApi.thread(key).then(async (msgs) => {
       if (app.threadKey !== key) return;
+      const firstLoad = list.length === 0;
       list = msgs;
-      if (msgs.length) {
-        const last = msgs[msgs.length - 1];
-        expanded = new Set([last.id]);
+      if (!msgs.length) return;
+      const last = msgs[msgs.length - 1];
+      // On first open expand the newest; on a live refresh, expand a newly-arrived
+      // newest message (e.g. the reply you just sent) so it shows without a click.
+      if (firstLoad || !expanded.has(last.id)) {
+        expanded = new Set([...expanded, last.id]);
         await loadBody(last.id);
       }
     }).finally(() => { if (app.threadKey === key) loading = false; });
@@ -38,7 +47,7 @@
   }
   function fmt(iso) { return iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""; }
 
-  const subject = $derived(list.length ? (list[list.length - 1].subject || "(no subject)") : "");
+  const subject = $derived(list.length ? (list[list.length - 1].subject || t("reader.noSubject")) : "");
   function reply() {
     const last = list[list.length - 1];
     if (!last) return;
@@ -61,24 +70,24 @@
       // Drop the completed conversation from the list too — it otherwise sat
       // there (done-hidden view) until the next sync refresh.
       if (!app.showDone) app.messages = app.messages.filter((m) => !ids.has(m.id));
-      notify("Conversation done");
+      notify(t("reader.conversationDone"));
       app.threadKey = null; app.selectedMessageId = null;
       refreshMessages({ background: true });
     }
-    catch (e) { notify("Couldn't update", "error"); }
+    catch (e) { notify(t("reader.couldntUpdate"), "error"); }
   }
 </script>
 
 <section class="thread">
   {#if loading && list.length === 0}
-    <div class="placeholder">Loading conversation…</div>
+    <div class="placeholder">{t("reader.loadingConversation")}</div>
   {:else if list.length}
     <header>
       <div class="subject">{subject}</div>
-      <div class="sub">{list.length} messages in this conversation</div>
+      <div class="sub">{list.length === 1 ? t("reader.messagesInConversationOne") : t("reader.messagesInConversation", { n: list.length })}</div>
       <div class="actions">
-        <button class="btn" onclick={reply}>{@html icons.reply} Reply</button>
-        <button class="btn" onclick={doneAll}>{@html icons.done} Done all</button>
+        <button class="btn" onclick={reply}>{@html icons.reply} {t("reader.reply")}</button>
+        <button class="btn" onclick={doneAll}>{@html icons.done} {t("reader.doneAll")}</button>
       </div>
     </header>
     <div class="scroll">
@@ -92,11 +101,11 @@
           {#if expanded.has(m.id)}
             {#if bodies[m.id]}
               {@const s = sanitizeTrackers(bodies[m.id].html || "", app.settings.blockTrackers)}
-              {#if s.blocked > 0}<div class="tnote">{@html icons.shield} Blocked {s.blocked} tracking pixel{s.blocked === 1 ? "" : "s"}</div>{/if}
-              <iframe title="msg" sandbox="allow-popups allow-popups-to-escape-sandbox"
+              {#if s.blocked > 0}<div class="tnote">{@html icons.shield} {s.blocked === 1 ? t("reader.blockedPixelOne") : t("reader.blockedPixelN", { n: s.blocked })}</div>{/if}
+              <iframe title={t("reader.messageFrameTitle")} sandbox="allow-popups allow-popups-to-escape-sandbox"
                 srcdoc={emailDoc(s.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(bodies[m.id].text || "")}</pre>`)}></iframe>
             {:else}
-              <div class="loadingbody">Loading…</div>
+              <div class="loadingbody">{t("reader.loading")}</div>
             {/if}
           {:else}
             <div class="collapsed-snip">{m.snippet}</div>

@@ -1,6 +1,7 @@
 // Central reactive app state using Svelte 5 runes.
 import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi } from "./api.js";
 import { playSound } from "./sound.js";
+import { setLocale } from "./i18n.svelte.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
 export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
@@ -59,8 +60,10 @@ const DEFAULT_SETTINGS = {
   highlightCode: true,           // syntax-highlight <pre> code blocks in the reader
   localApiEnabled: false,        // expose read-only /metrics for LAN devices
   localApiKey: "",               // stable API key for the local metrics endpoint
-  aiApiKey: "",                  // BYOK: your own Anthropic API key (stays local)
-  aiModel: "",                   // optional model override (blank = sensible default)
+  aiProvider: "anthropic",       // AI provider: anthropic | openai | openai-compatible
+  aiApiKey: "",                  // BYOK: your own provider API key (stays local)
+  aiBaseUrl: "",                 // base URL for an OpenAI-compatible endpoint (Groq/OpenRouter/Ollama/…)
+  aiModel: "",                   // optional model override (blank = per-provider default)
   aiButtons: true,               // show AI buttons (only relevant once a key is set)
   digestEnabled: false,          // deliver a daily AI "morning briefing" of unread mail
   digestHour: 8,                 // local hour (0-23) to deliver the briefing
@@ -72,6 +75,10 @@ const DEFAULT_SETTINGS = {
   pgpPrivateKey: "",             // your armored OpenPGP private key (for decrypt/sign)
   pgpPassphrase: "",             // passphrase for the private key (if protected)
   pgpPublicKeys: [],             // armored public keys of correspondents (verify/encrypt)
+  smimeCert: "",                 // your S/MIME certificate (PEM, from an imported .p12)
+  smimeKey: "",                  // your S/MIME private key (PEM, from the .p12)
+  smimeEmail: "",                // the address on your S/MIME cert (for display)
+  smimeCerts: [],                // recipients' S/MIME certs (PEM) to encrypt to them
   encryptCache: false,           // seal cached message bodies at rest with the vault key
   trackBaseUrl: "",              // public base URL for read-receipt pixels (else localhost)
   caldavUrl: "",                 // CalDAV collection URL (events)
@@ -92,6 +99,7 @@ const DEFAULT_SETTINGS = {
   scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
   notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"
+  notifyVolume: 80,              // notification sound volume, 0–100
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
   quietHoursEnabled: false,      // suppress notifications during a nightly window
   quietStart: 22,                // quiet hours start hour (local)
@@ -109,7 +117,9 @@ const DEFAULT_SETTINGS = {
   keybinds: { next: "ArrowDown", prev: "ArrowUp", open: "Enter", done: "e",
               compose: "Ctrl+n", search: "/", palette: "Ctrl+k", help: "?" },
   openNextOnDone: true,          // after marking the open message done, open the next one
-  smartInbox: false,            // Spark-style smart inbox: group chosen categories
+  language: "auto",             // UI language: "auto" (system) | "en" | "cs"
+  onboarded: false,             // has the first-run onboarding wizard been completed?
+  smartInbox: true,             // Spark-style smart inbox: group chosen categories (default view)
   smartGroups: { newsletters: true, social: true, updates: true, promotions: true, invitations: false, invitation_responses: true },
   smartPreviewCount: 4,         // sender chips shown per group card
   smartNewDays: 3,              // "new" = unread AND received within this many days
@@ -185,9 +195,17 @@ function effectiveTheme() {
   return s.theme || {};
 }
 
+/** Apply the active UI language from settings (reactive; live-switches). */
+export function setLanguage(lang) {
+  saveSettings({ language: lang });
+  setLocale(lang);
+}
+
 /** Apply the active theme to CSS custom properties (clears unset ones). */
 export function applyTheme() {
   if (typeof document === "undefined") return;
+  // Keep the UI language in sync whenever we re-apply appearance (boot, import…).
+  setLocale(app.settings.language);
   const root = document.documentElement;
   const t = effectiveTheme();
   for (const [k] of THEME_TOKENS) {
@@ -365,8 +383,47 @@ export function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/** Pull the bare, lowercased email out of "Name <addr>" or a raw address. */
+function extractEmail(s) {
+  if (!s) return "";
+  const m = /<([^>]+)>/.exec(String(s));
+  return (m ? m[1] : String(s)).trim().toLowerCase();
+}
+
+/**
+ * Given a message row (its account_id + to/cc recipients), work out which account
+ * it belongs to and which of that account's identities (primary address or an
+ * alias) it was addressed to. Lets compose default the From — and therefore the
+ * signature — to the address the mail actually arrived on, instead of account #1.
+ */
+export function identityForMessage(msg) {
+  if (!msg) return {};
+  const acct = app.accounts.find((a) => a.id === msg.account_id);
+  if (!acct) return { account_id: msg?.account_id ?? null };
+  const rcpts = [...(msg.to_addrs || []), ...(msg.cc_addrs || [])].map(extractEmail);
+  if (rcpts.includes(extractEmail(acct.email))) return { account_id: acct.id, from_addr: "" };
+  for (const alias of acct.aliases || []) {
+    if (rcpts.includes(extractEmail(alias))) return { account_id: acct.id, from_addr: alias };
+  }
+  return { account_id: acct.id, from_addr: "" };
+}
+
 /** Open a compose surface honoring the user's setting (docked panel vs separate window). */
 export async function openCompose(seed = {}) {
+  const merged = { ...seed };
+  // Default the From (and therefore the signature) to the identity of the message
+  // you're currently reading: a reply — or a blank compose opened while a mail is
+  // open — should go out from the address it was addressed to, not always the
+  // first account. Explicit seed fields (set by reply/forward) always win.
+  const om = app.selectedMessageId ? app.messages.find((m) => m.id === app.selectedMessageId) : null;
+  if (om) {
+    const idn = identityForMessage(om);
+    if (merged.account_id == null && idn.account_id != null) merged.account_id = idn.account_id;
+    if (merged.from_addr == null && idn.from_addr && merged.account_id === idn.account_id) {
+      merged.from_addr = idn.from_addr;
+    }
+  }
+  seed = merged;
   if (app.settings.composeMode === "window") {
     // localStorage (not sessionStorage) so the seed is readable in the new window.
     try { localStorage.setItem("raplmail.compose.seed", JSON.stringify(seed)); } catch {}
@@ -503,6 +560,20 @@ export async function setAutostart(on) {
     const { enable, disable } = await import("@tauri-apps/plugin-autostart");
     if (on) await enable(); else await disable();
   } catch (e) { notify(`Couldn't change startup setting: ${e.message || e}`, "error"); }
+}
+// On boot, reconcile the saved preference with the OS autostart registration —
+// they're two sources of truth and can drift (e.g. the entry was removed
+// externally, or a prior enable() silently failed). The plugin's live state wins.
+export async function syncAutostart() {
+  if (!isTauri()) return;
+  try {
+    const { isEnabled, enable, disable } = await import("@tauri-apps/plugin-autostart");
+    const want = !!app.settings.launchOnStartup;
+    const have = await isEnabled();
+    if (want === have) return;
+    // The user's saved intent is authoritative; make the OS match it.
+    if (want) await enable(); else await disable();
+  } catch { /* plugin unavailable (dev/browser) — ignore */ }
 }
 
 export async function loadAccountsAndFolders() {
@@ -665,6 +736,20 @@ export async function blockSender(message) {
     await messages.mute(message.id);  // also clear current mail from this sender
     notify(`Blocked ${message.from_addr}`);
   } catch (e) { notify("Couldn't block", "error"); refreshMessages({ background: true }); }
+}
+
+// Silence future desktop notifications from a sender WITHOUT touching the mail
+// itself — unlike "Mute sender" (which auto-marks it done), the message still
+// arrives in the inbox, unread; it just doesn't ding. A "mute_notifications"
+// rule the sync engine honors when deciding whether new mail is notify-worthy.
+export async function muteNotificationsFromSender(message) {
+  const addr = message?.from_addr || "";
+  if (!addr) return;
+  try {
+    await rules.create({ name: `Muted notifications: ${addr}`, match_field: "from",
+                         match_op: "equals", match_value: addr, action: "mute_notifications" });
+    notify(`Muted notifications from ${message.from_name || addr}`);
+  } catch (e) { notify("Couldn't mute notifications", "error"); }
 }
 
 // The value a rule should match for a given field, pulled from the clicked
@@ -1089,6 +1174,9 @@ export function prefetchVisible(ids) {
 const _avatarWarmed = new Set();
 function preloadAvatars() {
   if (app.settings.senderAvatars === false || typeof Image === "undefined") return;
+  // Bound the memo set over a marathon session (domains are HTTP-cached anyway,
+  // so re-warming a handful after a reset is cheap).
+  if (_avatarWarmed.size > 4000) _avatarWarmed.clear();
   for (const m of app.messages.slice(0, 80)) {
     for (const d of [(m.from_addr || "").split("@")[1], m.brand_domain]) {
       const dom = (d || "").toLowerCase().trim();
@@ -1242,12 +1330,16 @@ export function inQuietHours() {
 }
 function desktopNotify(payload, count) {
   if (app.settings.notifyNewMail === false) return;
+  // Never fire without a real message preview — a notification with no sender/
+  // subject is the "empty notification" bug. Genuine new inbox mail always has
+  // one now (the backend only counts notify-worthy inbox arrivals).
+  if (!payload) return;
   // VIP mail always breaks through quiet hours and the focused-window rule.
   const vip = isVip(payload?.from_addr);
   if (!vip && inQuietHours()) return;
   // The ding plays even when the window is focused (audible feedback that mail
   // landed) — only the OS notification honors the "only when unfocused" rule.
-  playSound(app.settings.notifySound || "ding");
+  playSound(app.settings.notifySound || "ding", (app.settings.notifyVolume ?? 80) / 100);
   if (!vip) {
     if (app.settings.notifyOnlyUnfocused !== false && typeof document !== "undefined"
         && document.hasFocus && document.hasFocus()) return;
@@ -1294,9 +1386,13 @@ export function startEvents() {
       // Bump a tick so other views (Home/Dashboard, Calendar) can refresh live
       // when new mail lands, instead of only updating on navigation.
       app.syncTick = (app.syncTick || 0) + 1;
-      if (ev.payload && ev.payload.new) {
-        notify(`${ev.payload.new} new message(s)`);
-        desktopNotify(ev.payload.preview, ev.payload.new);
+      // `notify` = genuinely notify-worthy new inbox mail (unread, survived
+      // rules, not notification-muted). Older payloads without it fall back to
+      // `new` only when a preview exists, so we never fire an empty popup.
+      const n = ev.payload?.notify ?? (ev.payload?.preview ? ev.payload?.new : 0);
+      if (n > 0) {
+        notify(`${n} new message(s)`);
+        desktopNotify(ev.payload.preview, n);
       }
     } else if (ev.event === "sync:error") {
       app.syncing = false;

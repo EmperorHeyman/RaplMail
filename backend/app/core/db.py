@@ -20,6 +20,12 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
     cur.execute("PRAGMA synchronous=NORMAL")
     cur.execute("PRAGMA foreign_keys=ON")
     cur.execute("PRAGMA busy_timeout=30000")
+    # Cap the per-connection page cache so idle pooled connections (one per account
+    # poller) don't each pin an unbounded amount of RAM. Negative = KiB, so
+    # -10000 ≈ 10 MB/connection. temp_store=MEMORY keeps transient sorts/indices
+    # off disk without growing the persistent cache.
+    cur.execute("PRAGMA cache_size=-10000")
+    cur.execute("PRAGMA temp_store=MEMORY")
     cur.close()
 
 

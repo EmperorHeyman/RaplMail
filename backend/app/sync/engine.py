@@ -392,7 +392,12 @@ class SyncManager:
         if previews:
             previews.sort(key=lambda p: p.get("date") or "", reverse=True)
             preview = previews[0]
-        return {"new": new_count, "preview": preview, "account": account_email}
+        # `notify` = count of genuinely notify-worthy new inbox mail (drives the
+        # desktop notification); `new` = all newly-synced rows across every folder
+        # (drives sync bookkeeping / health). Keeping them separate is what stops
+        # a Sent/Archive/Junk arrival from firing a phantom empty notification.
+        return {"new": new_count, "notify": len(previews), "preview": preview,
+                "account": account_email}
 
     def _prune_folder(self, session: Session, folder: Folder) -> None:
         """Drop a folder row plus its children in FK order (events -> messages ->
@@ -456,10 +461,17 @@ class SyncManager:
             # side filter often files list/automated mail into a subfolder
             # (role "other"); a muted/blocked sender must be caught there too, not
             # only in the inbox. Sent/drafts/trash/junk/archive are left alone.
+            notify_ok = True
             if folder.role in (FolderRole.inbox, FolderRole.other) and not msg.is_done:
-                self._apply_rules(session, account, folder, msg, provider, rules)
-            # Collect a preview for desktop notifications (inbox, still-unread).
-            if previews is not None and folder.role == FolderRole.inbox and not msg.is_done:
+                notify_ok = self._apply_rules(session, account, folder, msg, provider, rules)
+            # Collect a preview for desktop notifications — ONLY for mail the user
+            # will actually see arrive: a still-unread inbox message that survived
+            # the rules (not moved/deleted/auto-done) and isn't notification-muted.
+            # `previews` doubles as the notify count (len), so notifications track
+            # genuine inbox arrivals — not new mail that landed in Sent/Archive/Junk
+            # or was filtered away, which used to fire empty "New message" popups.
+            if (previews is not None and folder.role == FolderRole.inbox
+                    and not msg.is_done and notify_ok):
                 previews.append({
                     "from": msg.from_name or msg.from_addr or "",
                     "from_addr": msg.from_addr or "",
@@ -539,13 +551,27 @@ class SyncManager:
         from_name = decode_mime_words(h.from_name)
         category = (overrides or {}).get((h.from_addr or "").lower()) \
             or categorize(h.from_addr, from_name, subject, h.snippet)
+        # Prefer real reply-chain threading: a message with In-Reply-To inherits
+        # its parent's thread_id (so a Sent reply joins the original's thread even
+        # when the recipient set differs). Fall back to subject+participant keying.
+        thread_id = ""
+        irt = getattr(h, "in_reply_to", "") or ""
+        if irt:
+            parent = session.exec(
+                select(Message).where(Message.account_id == account.id,
+                                      Message.message_id == irt)
+            ).first()
+            if parent is not None and parent.thread_id:
+                thread_id = parent.thread_id
+        if not thread_id:
+            thread_id = thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
+                                   participants=[h.from_addr, *(h.to_addrs or [])])
         msg = Message(
             account_id=account.id, folder_id=folder.id, uid=h.uid,
             message_id=h.message_id, from_addr=h.from_addr, from_name=from_name,
             to_addrs=h.to_addrs, cc_addrs=h.cc_addrs, subject=subject,
             snippet=h.snippet, date=h.date,
-            thread_id=thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
-                                 participants=[h.from_addr, *(h.to_addrs or [])]),
+            thread_id=thread_id,
             is_seen="\\Seen" in h.flags, is_flagged="\\Flagged" in h.flags,
             is_answered="\\Answered" in h.flags, has_attachments=h.has_attachments,
             is_done=_DONE_KW in h.flags,   # cross-device "done" mirrored as an IMAP keyword
@@ -642,12 +668,23 @@ class SyncManager:
                 pass
 
     def _apply_rules(self, session: Session, account: Account, folder: Folder,
-                     msg: Message, provider, rules: list[Rule]) -> None:
+                     msg: Message, provider, rules: list[Rule]) -> bool:
+        """Apply the first matching rule to a freshly-synced message.
+
+        Returns whether the message should still trigger a desktop notification.
+        A matched rule always suppresses the "you've got new mail" ding: the mail
+        was moved/deleted/read/marked-done, or the user explicitly muted its
+        notifications. `mute_notifications` is the only action that leaves the
+        message fully delivered (still unread, still in the inbox) — it just
+        doesn't ping.
+        """
         rule = first_matching_action(rules, MessageFields.from_message(msg))
         if rule is None:
-            return
+            return True
         try:
-            if rule.action == RuleAction.mark_read:
+            if rule.action == RuleAction.mute_notifications:
+                pass  # deliver as normal; only the notification is suppressed
+            elif rule.action == RuleAction.mark_read:
                 provider.set_flags(folder.path, msg.uid, [b"\\Seen"], add=True)
                 msg.is_seen = True
             elif rule.action == RuleAction.mark_done:
@@ -669,8 +706,73 @@ class SyncManager:
                 else:
                     provider.delete(folder.path, msg.uid)
                 session.delete(msg)
+            elif rule.action == RuleAction.webhook:
+                self._fire_webhook(rule.action_arg, msg, account)
+            elif rule.action == RuleAction.run_script:
+                self._run_script(rule.action_arg, msg, account)
         except Exception:
             log.exception("rule action %s failed on uid %s", rule.action, msg.uid)
+        # Webhook/script are side-effects that leave the mail fully delivered, so
+        # they still fire the normal new-mail notification; every other action has
+        # moved/hidden/muted the message, so it shouldn't ding.
+        return rule.action in (RuleAction.webhook, RuleAction.run_script)
+
+    @staticmethod
+    def _rule_payload(msg: Message, account: Account) -> dict:
+        return {
+            "account": account.email or "",
+            "from_addr": msg.from_addr or "", "from_name": msg.from_name or "",
+            "to": list(msg.to_addrs or []), "cc": list(msg.cc_addrs or []),
+            "subject": msg.subject or "", "snippet": msg.snippet or "",
+            "date": msg.date.isoformat() if msg.date else "",
+            "category": msg.category or "", "message_id": msg.message_id or "",
+            "has_attachments": bool(msg.has_attachments),
+        }
+
+    def _fire_webhook(self, url: str, msg: Message, account: Account) -> None:
+        """POST a small JSON payload to a local automation webhook (n8n / Node-RED
+        / Home Assistant). Fire-and-forget with a short timeout; http(s) only."""
+        import json as _json
+        import urllib.request
+        url = (url or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return
+        data = _json.dumps(self._rule_payload(msg, account)).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, method="POST",
+            headers={"content-type": "application/json", "user-agent": "RaplMail-rule-webhook"})
+        try:
+            urllib.request.urlopen(req, timeout=8).close()
+        except Exception:
+            log.warning("rule webhook POST failed: %s", url)
+
+    def _run_script(self, cmd: str, msg: Message, account: Account) -> None:
+        """Launch a user-authored local command on match. The mail context is
+        passed via RAPLMAIL_* environment variables (never interpolated into the
+        command) so hostile email content can't inject into the shell. The command
+        itself is trusted (the user typed it). Fire-and-forget, detached."""
+        import os
+        import subprocess
+        cmd = (cmd or "").strip()
+        if not cmd:
+            return
+        env = dict(os.environ)
+        payload = self._rule_payload(msg, account)
+        env.update({
+            "RAPLMAIL_ACCOUNT": payload["account"],
+            "RAPLMAIL_FROM": payload["from_addr"],
+            "RAPLMAIL_FROM_NAME": payload["from_name"],
+            "RAPLMAIL_SUBJECT": payload["subject"],
+            "RAPLMAIL_SNIPPET": payload["snippet"],
+            "RAPLMAIL_CATEGORY": payload["category"],
+            "RAPLMAIL_MESSAGE_ID": payload["message_id"],
+        })
+        try:
+            subprocess.Popen(cmd, shell=True, env=env,  # noqa: S602 — user-authored command
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL)
+        except Exception:
+            log.warning("rule script failed to launch: %s", cmd)
 
     def _persist_state(self, session: Session, account: Account, msg: Message,
                        *, done: bool | None = None, blocked: bool | None = None) -> None:

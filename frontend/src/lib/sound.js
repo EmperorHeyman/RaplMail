@@ -13,6 +13,10 @@ function ctx() {
   return _ctx;
 }
 
+// Master volume multiplier (0..1), applied to every tone's peak gain. Set by
+// playSound() from the user's notifyVolume setting just before a recipe runs.
+let _vol = 1;
+
 // One tone: frequency ramp + a quick attack / exponential decay envelope.
 function tone(ac, { freq, type = "sine", start = 0, dur = 0.3, gain = 0.18, glideTo = null }) {
   const t0 = ac.currentTime + start;
@@ -21,8 +25,10 @@ function tone(ac, { freq, type = "sine", start = 0, dur = 0.3, gain = 0.18, glid
   osc.type = type;
   osc.frequency.setValueAtTime(freq, t0);
   if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + dur);
+  // exponentialRampToValueAtTime can't hit 0, so floor the scaled peak.
+  const peak = Math.max(0.0002, gain * _vol);
   g.gain.setValueAtTime(0.0001, t0);
-  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);           // fast attack
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);           // fast attack
   g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);           // decay
   osc.connect(g).connect(ac.destination);
   osc.start(t0);
@@ -50,12 +56,16 @@ export const SOUND_OPTIONS = [
   { id: "glass", label: "Glass" },
 ];
 
-/** Play a named notification sound. No-op for "none"/unknown or if audio is unavailable. */
-export function playSound(name) {
+/** Play a named notification sound at `vol` (0..1). No-op for "none"/unknown,
+ *  for vol<=0, or if audio is unavailable. */
+export function playSound(name, vol = 1) {
   if (!name || name === "none") return;
+  const v = Math.max(0, Math.min(1, Number(vol)));
+  if (v <= 0) return;
   const recipe = SOUNDS[name];
   if (!recipe) return;
   const ac = ctx();
   if (!ac) return;
+  _vol = v;
   try { recipe(ac); } catch {}
 }

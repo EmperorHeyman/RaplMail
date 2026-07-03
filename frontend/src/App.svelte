@@ -1,9 +1,11 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
+  import { t } from "./lib/i18n.svelte.js";
+  import Onboarding from "./lib/components/Onboarding.svelte";
   import CommandPalette from "./lib/components/CommandPalette.svelte";
   import VaultGate from "./lib/components/VaultGate.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
@@ -175,7 +177,7 @@
   $effect(() => {
     if (app.vault.unlocked && !_booted && !composeWindow) {
       _booted = true;
-      (async () => { await initSettings(); syncTrayPref(); await loadAccountsAndFolders(); startCalendarServices(); })();
+      (async () => { await initSettings(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();
       recategorizeOnce();
       recoverPendingSend();  // redeliver a send interrupted by a quit mid-undo-countdown
@@ -190,12 +192,20 @@
     {#if bootError}
       <div class="boot-err">
         <div class="big">{@html icons.warning}</div>
-        <p>Couldn't reach the RaplMail backend.</p>
+        <p>{t("boot.cantReach")}</p>
         <code>{bootError}</code>
-        <button class="btn primary" onclick={boot}>Retry</button>
+        <button class="btn primary" onclick={boot}>{t("common.retry")}</button>
       </div>
     {:else}
-      Starting RaplMail…
+      <div class="boot-anim" role="status" aria-label={t("boot.starting")}>
+        <div class="mark">
+          <span class="ring"></span>
+          <span class="glyph">{@html icons.mail}</span>
+        </div>
+        <div class="word">RaplMail</div>
+        <div class="dots" aria-hidden="true"><i></i><i></i><i></i></div>
+        <div class="hint">{t("boot.starting")}</div>
+      </div>
     {/if}
   </div>
 {:else if !app.vault.unlocked}
@@ -250,6 +260,9 @@
 {#if app.ruleModal}
   <RuleModal />
 {/if}
+{#if !composeWindow && app.vault.unlocked && !app.settings.onboarded}
+  <Onboarding />
+{/if}
 <SendingIndicator />
 <svelte:window on:keydown={onGlobalKey} />
 <svelte:document on:click={onDocClick} />
@@ -291,6 +304,45 @@
     display: grid;
     place-items: center;
     color: var(--muted);
+    background:
+      radial-gradient(120% 90% at 50% 22%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 60%),
+      var(--bg);
+  }
+  .boot-anim { display: flex; flex-direction: column; align-items: center; gap: 18px; animation: fade-in 0.4s var(--ease) both; }
+  /* Emblem: the mail glyph inside a slowly rotating conic-gradient ring. */
+  .boot-anim .mark { position: relative; width: 76px; height: 76px; display: grid; place-items: center; }
+  .boot-anim .ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0 55%, var(--accent) 88%, transparent 100%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    animation: boot-spin 1.15s linear infinite;
+  }
+  .boot-anim .glyph {
+    width: 52px; height: 52px; border-radius: 16px; display: grid; place-items: center;
+    background: var(--surface); border: 1px solid var(--border); color: var(--accent);
+    box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 22%, transparent);
+    animation: boot-pulse 1.8s var(--ease) infinite;
+  }
+  .boot-anim .glyph :global(svg) { width: 26px; height: 26px; }
+  .boot-anim .word {
+    font-size: 19px; font-weight: 750; letter-spacing: -0.02em; color: var(--text);
+    background: linear-gradient(100deg, var(--text) 30%, var(--accent) 50%, var(--text) 70%);
+    background-size: 220% 100%; -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; animation: boot-sheen 2.4s linear infinite;
+  }
+  .boot-anim .dots { display: flex; gap: 6px; }
+  .boot-anim .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); opacity: 0.35; animation: boot-bounce 1.1s var(--ease) infinite; }
+  .boot-anim .dots i:nth-child(2) { animation-delay: 0.16s; }
+  .boot-anim .dots i:nth-child(3) { animation-delay: 0.32s; }
+  .boot-anim .hint { font-size: 12.5px; color: var(--muted); }
+  @keyframes boot-spin { to { transform: rotate(360deg); } }
+  @keyframes boot-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+  @keyframes boot-sheen { to { background-position: -220% 0; } }
+  @keyframes boot-bounce { 0%, 100% { transform: translateY(0); opacity: 0.35; } 40% { transform: translateY(-5px); opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) {
+    .boot-anim .ring, .boot-anim .glyph, .boot-anim .word, .boot-anim .dots i { animation: none; }
+    .boot-anim .word { -webkit-text-fill-color: var(--text); }
   }
   .boot-err { display: flex; flex-direction: column; gap: 12px; align-items: center; text-align: center; max-width: 460px; }
   .boot-err .big { font-size: 40px; }

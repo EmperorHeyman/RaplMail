@@ -5,6 +5,7 @@
     syncAllAccounts, toggleShowDone, saveSettings, setCategory,
   } from "../store.svelte.js";
   import { icons, folderIcon } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let query = $state("");
   let active = $state(0);
@@ -16,22 +17,22 @@
   // Build the command list from current state.
   const commands = $derived.by(() => {
     const cmds = [
-      { icon: icons.compose, label: "Compose new message", run: () => openCompose({ to: "", subject: "", html: "" }) },
-      { icon: icons.sent, label: "Mail merge (personalized bulk send)", run: () => (app.mailMergeOpen = true) },
+      { icon: icons.compose, label: t("cmd.composeNew"), run: () => openCompose({ to: "", subject: "", html: "" }) },
+      { icon: icons.sent, label: t("cmd.mailMerge"), run: () => (app.mailMergeOpen = true) },
       // "Go to" must actually leave the current view (Settings/Calendar/…).
-      { icon: icons.unified, label: "Go to All Inboxes", run: () => { app.view = "mail"; selectUnifiedInbox(); } },
-      { icon: icons.snooze, label: "Go to Snoozed", run: () => { app.view = "mail"; selectSnoozed(); } },
-      { icon: icons.sync, label: "Sync all accounts", run: syncAllAccounts },
-      { icon: icons.done, label: app.showDone ? "Hide done messages" : "Show done messages", run: () => { app.view = "mail"; toggleShowDone(); } },
-      { icon: "↔", label: app.settings.sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar", run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
-      { icon: icons.settings, label: "Open Settings", run: () => (app.view = "settings") },
+      { icon: icons.unified, label: t("cmd.goAllInboxes"), run: () => { app.view = "mail"; selectUnifiedInbox(); } },
+      { icon: icons.snooze, label: t("cmd.goSnoozed"), run: () => { app.view = "mail"; selectSnoozed(); } },
+      { icon: icons.sync, label: t("cmd.syncAll"), run: syncAllAccounts },
+      { icon: icons.done, label: app.showDone ? t("cmd.hideDone") : t("cmd.showDone"), run: () => { app.view = "mail"; toggleShowDone(); } },
+      { icon: "↔", label: app.settings.sidebarCollapsed ? t("cmd.expandSidebar") : t("cmd.collapseSidebar"), run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
+      { icon: icons.settings, label: t("cmd.openSettings"), run: () => (app.view = "settings") },
     ];
     // AI command only when a key is configured.
     if ((app.settings.aiApiKey || "").trim() && app.settings.aiButtons !== false) {
-      cmds.splice(2, 0, { icon: icons.bolt, label: "AI: catch me up on my inbox", run: () => (app.aiInboxOpen = true) });
+      cmds.splice(2, 0, { icon: icons.bolt, label: t("cmd.aiCatchUp"), run: () => (app.aiInboxOpen = true) });
     }
     for (const c of ["primary", "newsletters", "social", "updates", "promotions"]) {
-      cmds.push({ icon: icons.tag, label: `Category: ${c[0].toUpperCase() + c.slice(1)}`, run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(c); } });
+      cmds.push({ icon: icons.tag, label: t("cmd.category", { name: t("cmd.cat." + c) }), run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(c); } });
     }
     for (const f of app.folders) {
       const acct = app.accounts.find((a) => a.id === f.account_id);
@@ -60,7 +61,7 @@
   <div class="overlay" transition:fade={{ duration: 120 }} onclick={close}>
     <div class="palette" transition:fly={{ y: -12, duration: 150 }} onclick={(e) => e.stopPropagation()}>
       <input bind:this={inputEl} bind:value={query} onkeydown={onKey}
-        placeholder="Type a command or search…  (Esc to close)" />
+        placeholder={t("cmd.searchPlaceholder")} />
       <ul>
         {#each filtered as c, i}
           <li class:active={i === active} onmousedown={() => run(c.run)} onmouseenter={() => (active = i)}>
@@ -69,7 +70,7 @@
             {#if c.hint}<span class="hint">{c.hint}</span>{/if}
           </li>
         {/each}
-        {#if filtered.length === 0}<li class="none">No matching commands</li>{/if}
+        {#if filtered.length === 0}<li class="none">{t("cmd.noResults")}</li>{/if}
       </ul>
     </div>
   </div>

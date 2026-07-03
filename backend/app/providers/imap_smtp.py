@@ -157,6 +157,8 @@ class ImapSmtpProvider:
             cc_addrs = [_addr_to_str(a)[0] for a in (env.cc or [])]
             subject = decode_mime_words(env.subject)
             msg_id = (env.message_id or b"").decode("utf-8", "replace") if isinstance(env.message_id, bytes) else (env.message_id or "")
+            irt = getattr(env, "in_reply_to", None)
+            irt = irt.decode("utf-8", "replace") if isinstance(irt, bytes) else (irt or "")
             when = env.date if isinstance(env.date, datetime) else None
             flags = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
             out.append(HeaderInfo(
@@ -165,6 +167,7 @@ class ImapSmtpProvider:
                 to_addrs=to_addrs, cc_addrs=cc_addrs, date=when, flags=flags,
                 size=info.get(b"RFC822.SIZE", 0),
                 has_attachments=_bodystructure_has_attachment(info.get(b"BODYSTRUCTURE")),
+                in_reply_to=irt.strip(),
             ))
         return out
 

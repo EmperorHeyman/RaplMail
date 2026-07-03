@@ -22,6 +22,7 @@ class MessageFields:
     to_addrs: list[str]
     subject: str
     body: str = ""
+    category: str = ""
 
     @property
     def from_domain(self) -> str:
@@ -30,7 +31,8 @@ class MessageFields:
     @classmethod
     def from_message(cls, m: Message) -> "MessageFields":
         return cls(from_addr=m.from_addr or "", to_addrs=list(m.to_addrs or []),
-                   subject=m.subject or "", body=m.snippet or "")
+                   subject=m.subject or "", body=m.snippet or "",
+                   category=m.category or "")
 
 
 def _field_value(rule: Rule, f: MessageFields) -> str | list[str]:
@@ -40,6 +42,7 @@ def _field_value(rule: Rule, f: MessageFields) -> str | list[str]:
         RuleField.to_addr: f.to_addrs,
         RuleField.subject: f.subject,
         RuleField.body: f.body,
+        RuleField.category: f.category,
     }[rule.match_field]
 
 

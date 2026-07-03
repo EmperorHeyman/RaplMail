@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import re
 from email.message import EmailMessage
+from email.policy import SMTP as SMTP_POLICY
 from email.utils import formatdate, make_msgid
 
 from app.providers.base import OutgoingMessage
@@ -34,7 +35,11 @@ def _html_to_text(html: str) -> str:
 
 
 def build_mime(msg: OutgoingMessage) -> EmailMessage:
-    root = EmailMessage()
+    # SMTP policy => linesep='\r\n'. Without it, quoted-printable soft line breaks
+    # serialize as bare '=\n', which strict QP decoders mis-parse — dropping the
+    # byte after each soft break and mangling UTF-8 diacritics/markup (e.g.
+    # "Lukáš" -> "Luká…=A1", "Republic" -> "=epublic", "<span>" -> "<=pan>").
+    root = EmailMessage(policy=SMTP_POLICY)
     root["From"] = msg.from_addr
     root["To"] = ", ".join(msg.to)
     if msg.cc:
@@ -88,7 +93,34 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
             att["data"], maintype=maintype or "application", subtype=subtype or "octet-stream",
             filename=att.get("filename", "attachment"),
         )
+    if getattr(msg, "smime_sign", False) or getattr(msg, "smime_encrypt", False):
+        return _apply_smime(root, msg)
     return root
+
+
+def _apply_smime(root: EmailMessage, msg: OutgoingMessage) -> EmailMessage:
+    """Sign and/or encrypt the assembled body as S/MIME, moving the addressing
+    headers onto the resulting multipart/signed or application/pkcs7-mime outer.
+    The body entity (Content-Type + parts, without From/To/Subject) is what's
+    signed/encrypted — the standard S/MIME structure."""
+    import email as _email
+
+    from app.sync import smime as _sm
+    addr_headers = {}
+    for h in ("From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"):
+        if root[h] is not None:
+            addr_headers[h] = root[h]
+            del root[h]
+    body_bytes = root.as_bytes()
+    if msg.smime_sign and msg.smime_cert and msg.smime_key:
+        body_bytes = _sm.sign(body_bytes, msg.smime_cert, msg.smime_key)
+    if msg.smime_encrypt and msg.smime_recip_certs:
+        body_bytes = _sm.encrypt(body_bytes, msg.smime_recip_certs)
+    outer = _email.message_from_bytes(body_bytes, policy=SMTP_POLICY)
+    for h, v in addr_headers.items():
+        del outer[h]
+        outer[h] = v
+    return outer
 
 
 def inject_signature(body_html: str, signature_html: str,

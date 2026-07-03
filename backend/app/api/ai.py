@@ -23,31 +23,68 @@ from app.models import Folder, FolderRole, Message, Setting
 
 router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(verify_token)])
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+# BYOK, any provider. Default model per provider (used when the user leaves the
+# model field blank). "openai-compatible" covers Groq / OpenRouter / Together /
+# LM Studio / Ollama / vLLM etc. — anything speaking the OpenAI chat API.
+DEFAULT_MODELS = {
+    "anthropic": "claude-haiku-4-5-20251001",
+    "openai": "gpt-4o-mini",
+    "openai-compatible": "gpt-4o-mini",
+}
+_PROVIDERS = ("anthropic", "openai", "openai-compatible")
 _ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
+_OPENAI_URL = "https://api.openai.com"
 
 
 def _ai_config(session: Session) -> dict:
     row = session.get(Setting, 1)
     data = dict(row.data) if row and row.data else {}
+    provider = str(data.get("aiProvider") or "anthropic").strip().lower()
+    if provider not in _PROVIDERS:
+        provider = "anthropic"
     return {
+        "provider": provider,
         "key": str(data.get("aiApiKey") or "").strip(),
-        "model": str(data.get("aiModel") or "").strip() or DEFAULT_MODEL,
+        "model": str(data.get("aiModel") or "").strip() or DEFAULT_MODELS[provider],
+        "base_url": str(data.get("aiBaseUrl") or "").strip().rstrip("/"),
     }
 
 
-def _call_anthropic(key: str, model: str, system: str, prompt: str, max_tokens: int = 700) -> str:
-    body = json.dumps({
-        "model": model,
-        "max_tokens": max_tokens,
-        "system": system,
-        "messages": [{"role": "user", "content": prompt}],
-    }).encode("utf-8")
-    req = urllib.request.Request(_ANTHROPIC_URL, data=body, method="POST", headers={
-        "x-api-key": key,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    })
+def _openai_chat_url(base: str) -> str:
+    """Normalize a user-supplied base URL to the chat-completions endpoint."""
+    b = (base or _OPENAI_URL).rstrip("/")
+    if b.endswith("/chat/completions"):
+        return b
+    if b.endswith("/v1"):
+        return b + "/chat/completions"
+    return b + "/v1/chat/completions"
+
+
+def _call_provider(cfg: dict, system: str, prompt: str, max_tokens: int = 700) -> str:
+    """One provider-agnostic call. Branches on cfg['provider'] for the request
+    shape, auth header, and response parsing; shares timeout/error handling."""
+    provider, key, model = cfg.get("provider", "anthropic"), cfg["key"], cfg["model"]
+    if provider == "anthropic":
+        url = _ANTHROPIC_URL
+        headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+        body = json.dumps({
+            "model": model, "max_tokens": max_tokens, "system": system,
+            "messages": [{"role": "user", "content": prompt}],
+        }).encode("utf-8")
+    else:  # openai / openai-compatible
+        base = cfg.get("base_url") or (_OPENAI_URL if provider == "openai" else "")
+        if not base:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "Set the API base URL for the OpenAI-compatible provider in "
+                                "Settings → General → AI assistant.")
+        url = _openai_chat_url(base)
+        headers = {"authorization": f"Bearer {key}", "content-type": "application/json"}
+        body = json.dumps({
+            "model": model, "max_tokens": max_tokens,
+            "messages": [{"role": "system", "content": system},
+                         {"role": "user", "content": prompt}],
+        }).encode("utf-8")
+    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
     ctx = ssl.create_default_context()
     try:
         with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
@@ -57,8 +94,13 @@ def _call_anthropic(key: str, model: str, system: str, prompt: str, max_tokens: 
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"AI provider error ({e.code}): {detail}")
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Couldn't reach the AI provider: {e}")
-    parts = payload.get("content") or []
-    return "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
+    if provider == "anthropic":
+        parts = payload.get("content") or []
+        return "".join(p.get("text", "") for p in parts if p.get("type") == "text").strip()
+    try:
+        return (payload["choices"][0]["message"]["content"] or "").strip()
+    except (KeyError, IndexError, TypeError):
+        return ""
 
 
 def _thread_text(session: Session, thread_id: str, fallback_id: int | None) -> tuple[str, str]:
@@ -97,7 +139,7 @@ class SummarizeIn(BaseModel):
 @router.get("/status")
 def ai_status(session: Session = Depends(get_session)) -> dict:
     cfg = _ai_config(session)
-    return {"configured": bool(cfg["key"]), "model": cfg["model"]}
+    return {"configured": bool(cfg["key"]), "model": cfg["model"], "provider": cfg["provider"]}
 
 
 @router.post("/summarize")
@@ -115,7 +157,7 @@ def summarize(body: SummarizeIn, session: Session = Depends(get_session)) -> dic
         "bullet points of key facts/decisions, then a short 'Action items' list "
         "(or 'No action needed'). Use plain text, no preamble."
     )
-    summary = _call_anthropic(cfg["key"], cfg["model"], system,
+    summary = _call_provider(cfg, system,
                               f"Thread subject: {subject}\n\n{transcript[:24000]}")
     return {"summary": summary, "model": cfg["model"]}
 
@@ -149,7 +191,7 @@ def draft_reply(body: DraftIn, session: Session = Depends(get_session)) -> dict:
         "line, output exactly: ###CHIPS### followed by up to 3 very short (2-5 word) quick-reply "
         "options separated by ' | '. Output plain text."
     )
-    raw = _call_anthropic(cfg["key"], cfg["model"], system,
+    raw = _call_provider(cfg, system,
                           f"Thread subject: {subject}\n\n{transcript[:24000]}{steer}", max_tokens=900)
     draft, chips = raw, []
     if "###CHIPS###" in raw:
@@ -182,7 +224,7 @@ def build_inbox_digest(session: Session, cfg: dict) -> dict:
         "'⚪ Low priority / newsletters'. One concise line per item, newest context first. "
         "Skip empty groups. Plain text, no preamble."
     )
-    digest = _call_anthropic(cfg["key"], cfg["model"], system,
+    digest = _call_provider(cfg, system,
                              "Unread messages:\n" + "\n".join(lines), max_tokens=1000)
     return {"digest": digest, "count": len(rows), "model": cfg["model"]}
 
@@ -231,7 +273,7 @@ def triage_priority(body: TriageIn, session: Session = Depends(get_session)) -> 
         "0 = bulk/newsletter). Return ONLY a JSON array of objects "
         '{"id": <message id>, "score": <0-100>, "reason": "<=8 words"}. No other text.'
     )
-    raw = _call_anthropic(cfg["key"], cfg["model"], system, "\n".join(lines), max_tokens=1500)
+    raw = _call_provider(cfg, system, "\n".join(lines), max_tokens=1500)
     try:
         start, end = raw.find("["), raw.rfind("]")
         scores = json.loads(raw[start:end + 1]) if start >= 0 else []

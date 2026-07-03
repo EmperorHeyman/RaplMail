@@ -11,6 +11,125 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.3.3] — 2026-07-03
+
+### Added
+- **Export .eml (Safe Export).** From a message's sender menu, download it as a
+  `.eml` with internal routing headers (Received / X-Originating-IP / provider
+  internals) and hidden tracking pixels stripped out first.
+- **S/MIME — end to end.** Building on the 0.3.2 foundation: the reader now shows
+  an S/MIME shield for signed mail (with the signer) and decrypts encrypted mail
+  with your imported certificate, and the composer gained **S/MIME sign / encrypt**
+  toggles (shown once a certificate is set up) that send a proper signed/encrypted
+  message. Sits alongside OpenPGP.
+
+## [0.3.2] — 2026-07-03
+
+### Added
+- **Markdown compose.** A new **MD** button in the composer lets you write in
+  Markdown (headings, bold/italic, inline + fenced code, links, lists, quotes);
+  it's compiled to clean, inline-styled HTML on send, with a plain-text version
+  attached automatically. Toggle back to rich text anytime.
+- **S/MIME (X.509) — foundation.** A new **Settings → S/MIME** tab imports your
+  `.p12`/`.pfx` certificate + key and stores correspondents' certificates. Under
+  the hood, the crypto engine (sign, encrypt, decrypt, inspect signed mail) is in
+  place and unit-tested. Reading/writing S/MIME mail from the reader and composer
+  is wired up in a follow-up.
+
+## [0.3.1] — 2026-07-03
+
+### Added
+- **Multiple AI providers.** Settings → General → AI assistant now lets you pick
+  Anthropic (Claude), OpenAI, or any OpenAI-compatible endpoint (Groq, OpenRouter,
+  Together, Ollama, LM Studio — with a base-URL field). Your key still stays local
+  and calls go straight to the provider.
+- **Inline first-time screener.** Opening inbox mail from a sender you've never
+  heard from now shows an "accept this sender?" bar right in the reader (Approve
+  adds them to contacts, Block creates a block rule) — no need to live in the
+  separate Screener view.
+- **Webhook & script rule actions.** Rules can now **POST to a webhook** (sends a
+  JSON summary of the message to a local URL — n8n / Node-RED / Home Assistant) or
+  **run a local script** (your command, with the mail details in `RAPLMAIL_*`
+  environment variables). The mail is still delivered normally.
+- **Subscription Audit** (Settings → Utility). Lists every mailing list you get
+  with how much you've actually read in the last 30 days (dormant ones first), plus
+  one-click unsubscribe and one-click / batch auto-archive.
+
+### Changed
+- **Safer forwarding.** Forwarding a message now strips hidden 1×1 tracking pixels
+  from the body by default, so you don't re-arm the sender's trackers for whoever
+  you forward to.
+
+## [0.3.0] — 2026-07-03
+
+### Fixed
+- **Signature diacritics no longer mangled on send.** Outgoing mail was serialized
+  with `\n` line endings, so quoted-printable soft breaks went out as bare `=\n`;
+  strict decoders then corrupted the byte after each break ("Lukáš" → "Luká…=A1",
+  "Republic" → "=epublic", `<span>` → `<=pan>`). Mail is now built with the SMTP
+  policy (`\r\n`), so Czech characters and markup survive intact.
+- **Compose picks the right From.** Composing while reading a message now defaults
+  the From to the account/alias the mail was addressed to (not always account #1),
+  and inserts that account's signature automatically.
+- **Your reply shows up in the conversation.** Replies reliably thread onto the
+  original (threaded via In-Reply-To), and the reader gained a **View conversation**
+  banner — works in Smart Inbox too — that live-updates when a sync lands, so a
+  reply you just sent appears without reopening the message.
+- **Smart Inbox groups stay put while you read.** Opening the last unread message
+  of a group no longer makes the group card jump to the end of the day mid-read.
+
+### Added
+- **Link hygiene / tracking-parameter stripper.** Links in mail are cleaned before
+  you click: `utm_*`, `fbclid`, `gclid`, `mc_eid`, `mkt_tok`, HubSpot/Meta/Matomo
+  params, etc. are removed, and redirect wrappers (Google `/url?q=`, Outlook
+  SafeLinks, `l.facebook.com`, …) are unwrapped to — and hover-previewed as — the
+  real destination. On by default; "Show original" leaves links untouched.
+- **Git patch / diff rendering in the reader.** `<pre>` blocks and pasted patches
+  that look like a unified diff are auto-detected and color-coded (added / removed /
+  hunk / file headers).
+
+### Changed
+- **Lower memory footprint.** Per-connection SQLite page cache capped (`cache_size`
+  ≈ 10 MB, `temp_store=MEMORY`); idle IMAP pool connections are dropped after 10
+  minutes instead of kept warm forever; the avatar warm-set is bounded.
+
+## [0.2.18] — 2026-07-03
+
+### Added
+- **English + Czech localization.** A new in-app language setting (Auto / English
+  / Čeština) in Settings → General and in onboarding. The UI switches language
+  live - no restart. Primary chrome is translated (sidebar, settings, notifications,
+  rules, command palette, mail list, reader, compose, onboarding, boot screen);
+  anything not yet translated falls back to English.
+- **First-run onboarding.** A short welcome wizard on a fresh install: pick your
+  language, pick a theme (live preview), and flip on Smart Inbox / notifications /
+  Start with Windows. Everything applies as you go and can be changed later; press
+  Skip anytime.
+- **Boot loading animation.** Starting RaplMail now shows an animated splash
+  (ring + wordmark + dots) instead of a blank "Starting…" line while the backend
+  warms up. Respects reduced-motion.
+- **"Mute notifications" mail rule.** A new rule action that lets mail arrive
+  normally but stops the ding + popup — mute by sender, domain, subject, or a
+  whole **category** (e.g. "mute notifications from newsletters"). Also a one-click
+  **Mute notifications from sender** in the right-click menu. Different from "Mute
+  sender", which hides the mail entirely.
+- **Notification volume.** A volume slider for the new-mail sound in
+  Settings → General → Notifications (the Play preview and live ding follow it).
+
+### Changed
+- **Smart Inbox is the default view.** New installs open straight into the grouped
+  Smart Inbox instead of a flat list (existing preferences are respected).
+- **Start with Windows** is reconciled with the OS on every launch, so the toggle
+  and the real startup registration can't drift out of sync; it's also offered
+  during onboarding.
+
+### Fixed
+- **No more empty notifications.** RaplMail sometimes popped a blank "New message"
+  with nothing new in the inbox — it was counting mail that landed in Sent /
+  Archive / Junk / other folders (including copies synced from another device).
+  Notifications now fire only for genuinely new **inbox** mail that you'll actually
+  see (unread, not filtered away by a rule, not notification-muted).
+
 ## [0.2.17] — 2026-07-02
 
 ### Changed

@@ -40,6 +40,7 @@ class RuleField(str, enum.Enum):
     to_addr = "to"
     subject = "subject"
     body = "body"
+    category = "category"       # smart category: newsletters/social/updates/…
 
 
 class RuleOp(str, enum.Enum):
@@ -56,6 +57,9 @@ class RuleAction(str, enum.Enum):
     mark_read = "mark_read"
     mark_done = "mark_done"
     block = "block"             # block sender/domain: quarantine on arrival
+    mute_notifications = "mute_notifications"  # deliver normally but no ding/popup
+    webhook = "webhook"         # action_arg = URL; POST a JSON payload on match
+    run_script = "run_script"   # action_arg = local command; run it with mail context in env
 
 
 class Account(SQLModel, table=True):

@@ -3,7 +3,8 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen } from "../store.svelte.js";
+  import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
@@ -19,14 +20,14 @@
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
-  const CAT_META = {
-    updates: { label: "Notifications", icon: icons.bell },
-    newsletters: { label: "Newsletters", icon: icons.newspaper },
-    social: { label: "Social", icon: icons.chat },
-    promotions: { label: "Promotions", icon: icons.tag },
-    invitations: { label: "Invitations", icon: icons.calendar },
-    invitation_responses: { label: "Invitation responses", icon: icons.done },
-  };
+  const CAT_META = $derived.by(() => ({
+    updates: { label: t("list.catNotifications"), icon: icons.bell },
+    newsletters: { label: t("list.catNewsletters"), icon: icons.newspaper },
+    social: { label: t("list.catSocial"), icon: icons.chat },
+    promotions: { label: t("list.catPromotions"), icon: icons.tag },
+    invitations: { label: t("list.catInvitations"), icon: icons.calendar },
+    invitation_responses: { label: t("list.catInvitationResponses"), icon: icons.done },
+  }));
   const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
   // Bulk category-done hides ids we don't hold objects for; single-row done
@@ -116,6 +117,10 @@
     if (t >= startLastMonth) return "Last month";
     return "Older";
   }
+  // Date-bucket ids stay in English (grouping logic compares them); translate
+  // only for display.
+  const BUCKET_KEYS = { "Today": "list.today", "Yesterday": "list.yesterday", "This week": "list.thisWeek", "Last week": "list.lastWeek", "This month": "list.thisMonth", "Last month": "list.lastMonth", "Older": "list.older" };
+  const bucketLabel = (b) => t(BUCKET_KEYS[b] || "list.older");
 
   const NOTIF = new Set(["updates", "social", "newsletters"]);
 
@@ -179,8 +184,18 @@
         // (all-read) groups are tucked at the END of Today, out of the way. When
         // Today is empty (you've cleared it), the tucked groups surface at top
         // too instead of sinking below older sections.
-        const hot = groups.filter((g) => g.new > 0);     // has NEW mail → top
-        const cold = groups.filter((g) => !(g.new > 0));  // no new → end of Today
+        // Pin the group you're currently reading to its hot spot: opening the
+        // last unread of a group drops its g.new to 0, which would otherwise make
+        // the card fall to the end of Today while the message is still open.
+        // Keeping the open category hot holds the list stable under the reader;
+        // it settles back once you close/leave (selectedMessageId changes).
+        const openId = app.selectedMessageId;
+        const openCat = openId == null ? null
+          : (msgs.find((m) => m.id === openId)?.category
+             ?? groups.find((g) => (g.recent || []).some((r) => r.id === openId))?.category
+             ?? null);
+        const hot = groups.filter((g) => g.new > 0 || g.category === openCat);   // NEW mail or being read → top
+        const cold = groups.filter((g) => !(g.new > 0 || g.category === openCat)); // otherwise → end of Today
         const hotItems = hot.flatMap(expandGroup);
         const coldItems = cold.flatMap(expandGroup);
         const out = [...hotItems];
@@ -271,13 +286,13 @@
     if (!app.showDone) { app.messages = app.messages.filter((m) => !ids.includes(m.id)); unselectIfGone(ids); }
     try {
       await messagesApi.bulk(ids, "done");
-      notify(`${ids.length} marked done`, "info", () => {
+      notify(t("list.markedDone", { n: ids.length }), "info", () => {
         messagesApi.bulk(ids, "undone")
           .then(() => refreshMessages({ background: true }))
-          .catch(() => notify("Couldn't undo", "error"));
+          .catch(() => notify(t("list.couldntUndo"), "error"));
       });
       refreshMessages({ background: true });
-    } catch (e) { notify("Couldn't update", "error"); refreshMessages({ background: true }); }
+    } catch (e) { notify(t("list.couldntUpdate"), "error"); refreshMessages({ background: true }); }
   }
 
   // Mark an entire Smart Inbox category done (every mail in it, not just the
@@ -299,14 +314,14 @@
       await messagesApi.bulk(ids, "done");
       // A category-done can touch hundreds/thousands of messages — always offer
       // undo (single-message done already does; this destructive bulk must too).
-      notify(`${ids.length} marked done`, "info", () => {
+      notify(t("list.markedDone", { n: ids.length }), "info", () => {
         hiddenDone = new Set([...hiddenDone].filter((id) => !idset.has(id)));
         messagesApi.bulk(ids, "undone")
           .then(() => refreshMessages({ background: true }))
-          .catch(() => notify("Couldn't undo", "error"));
+          .catch(() => notify(t("list.couldntUndo"), "error"));
       });
       refreshMessages({ background: true });   // also refreshes the group counts
-    } catch { notify("Couldn't mark group done", "error"); refreshMessages({ background: true }); }
+    } catch { notify(t("list.couldntMarkGroupDone"), "error"); refreshMessages({ background: true }); }
   }
   function toggleExpand(key) {
     const s = new Set(expandedKeys);
@@ -374,27 +389,28 @@
   function ctxActions(m) {
     const acts = [
       // -1: the right-clicked row isn't necessarily the keyboard-focused one.
-      { label: "Open", run: () => open(m, -1) },
-      { label: m.pinned ? "Unpin" : "Pin to top", icon: icons.pin, run: () => pinMessage(m) },
-      { label: m.is_done ? "Mark not done" : "Mark done", icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
-      { label: m.is_seen ? "Mark unread" : "Mark read", kw: "seen", run: () => toggleSeen(m) },
-      { label: m.is_flagged ? "Unflag" : "Flag", icon: icons.flag, kw: "star", run: () => toggleFlag(m) },
-      { label: isVip(m.from_addr) ? "Remove VIP" : "Mark sender VIP", icon: icons.star, run: () => toggleVip(m.from_addr) },
-      { label: isTrustedSender(m.from_addr) ? "Unmark safe" : "Mark sender safe", icon: icons.shieldCheck, run: () => toggleTrusted(m.from_addr) },
-      { sep: "Move to category", kw: "" },
-      { label: "Move to Primary (normal inbox)", icon: icons.inbox, kw: "move out newsletter normal queue", run: () => setSenderCategory(m, "primary") },
-      ...Object.entries(CAT_META).map(([id, meta]) => ({ label: `Move to ${meta.label}`, icon: meta.icon, kw: "move category " + id, run: () => setSenderCategory(m, id) })),
-      { label: "Reset category (auto)", icon: icons.reset, kw: "move category", run: () => setSenderCategory(m, "auto") },
-      { sep: "Snooze" },
-      ...snoozePresets().map((p) => ({ label: `Snooze: ${p.label}`, icon: icons.snooze, kw: "snooze remind later", run: () => snoozeMessage(m, p.iso, p.presence) })),
-      { sep: "More" },
-      { label: "Archive", icon: icons.archive, run: () => archiveOne(m) },
-      { label: "Delete", icon: icons.trash, danger: true, run: () => deleteOne(m) },
-      { label: "Show mail from sender", kw: "filter from", run: () => searchAddress(m.from_addr) },
-      { label: "Mute sender", icon: icons.mute, run: () => muteSender(m) },
-      { label: "Mute conversation", icon: icons.mute, kw: "thread", run: () => muteThread(m) },
-      { label: "Block sender", icon: icons.junk, danger: true, run: () => blockSender(m) },
-      { label: "Create rule…", icon: icons.bolt, run: () => createRuleFromSender(m) },
+      { label: t("list.open"), run: () => open(m, -1) },
+      { label: m.pinned ? t("list.unpin") : t("list.pinToTop"), icon: icons.pin, run: () => pinMessage(m) },
+      { label: m.is_done ? t("list.markNotDone") : t("list.markDone"), icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
+      { label: m.is_seen ? t("list.markUnread") : t("list.markRead"), kw: "seen", run: () => toggleSeen(m) },
+      { label: m.is_flagged ? t("list.unflag") : t("list.flag"), icon: icons.flag, kw: "star", run: () => toggleFlag(m) },
+      { label: isVip(m.from_addr) ? t("list.removeVip") : t("list.markSenderVip"), icon: icons.star, run: () => toggleVip(m.from_addr) },
+      { label: isTrustedSender(m.from_addr) ? t("list.unmarkSafe") : t("list.markSenderSafe"), icon: icons.shieldCheck, run: () => toggleTrusted(m.from_addr) },
+      { sep: t("list.moveToCategory"), kw: "" },
+      { label: t("list.moveToPrimary"), icon: icons.inbox, kw: "move out newsletter normal queue", run: () => setSenderCategory(m, "primary") },
+      ...Object.entries(CAT_META).map(([id, meta]) => ({ label: t("list.moveTo", { cat: meta.label }), icon: meta.icon, kw: "move category " + id, run: () => setSenderCategory(m, id) })),
+      { label: t("list.resetCategory"), icon: icons.reset, kw: "move category", run: () => setSenderCategory(m, "auto") },
+      { sep: t("list.snooze") },
+      ...snoozePresets().map((p) => ({ label: t("list.snoozePrefix", { label: p.label }), icon: icons.snooze, kw: "snooze remind later", run: () => snoozeMessage(m, p.iso, p.presence) })),
+      { sep: t("list.more") },
+      { label: t("list.archive"), icon: icons.archive, run: () => archiveOne(m) },
+      { label: t("list.delete"), icon: icons.trash, danger: true, run: () => deleteOne(m) },
+      { label: t("list.showMailFromSender"), kw: "filter from", run: () => searchAddress(m.from_addr) },
+      { label: t("list.muteSender"), icon: icons.mute, run: () => muteSender(m) },
+      { label: t("rules.muteFromSender"), icon: icons.bell, kw: "notification notify silence", run: () => muteNotificationsFromSender(m) },
+      { label: t("list.muteConversation"), icon: icons.mute, kw: "thread", run: () => muteThread(m) },
+      { label: t("list.blockSender"), icon: icons.junk, danger: true, run: () => blockSender(m) },
+      { label: t("list.createRule"), icon: icons.bolt, run: () => createRuleFromSender(m) },
     ];
     const q = ctxSearch.trim().toLowerCase();
     if (!q) return acts;
@@ -440,10 +456,11 @@
     clearSelection();
     try {
       await messagesApi.bulk(ids, action, until);
-      notify(`${ids.length} ${action === "delete" ? "deleted" : action === "archive" ? "archived" : action + "d"}`);
+      const doneKey = { done: "list.markedDone", seen: "list.bulkRead", flag: "list.bulkFlagged", snooze: "list.bulkSnoozed", archive: "list.bulkArchived", delete: "list.bulkDeleted" }[action] || "list.bulkUpdated";
+      notify(t(doneKey, { n: ids.length }));
       refreshMessages({ background: true });
       if (action === "archive" || action === "delete") refreshQueue();
-    } catch (e) { notify("Bulk action failed: " + e.message, "error"); refreshMessages({ background: true }); }
+    } catch (e) { notify(t("list.bulkFailed", { error: e.message }), "error"); refreshMessages({ background: true }); }
   }
 
   // Clear selection + per-view caches when the view changes (a different scope
@@ -504,7 +521,7 @@
     searchTimer = setTimeout(() => refreshMessages(), 220);
   }
   function saveSearch() {
-    const name = prompt("Name this saved search:", app.search);
+    const name = prompt(t("list.namePrompt"), app.search);
     if (name) saveCurrentSearch(name.trim());
   }
 
@@ -582,37 +599,37 @@
   }
 
   const title = $derived(
-    app.search ? `Search: "${app.search}"` :
-    app.selectedKind === "smart" ? "Smart Inbox" :
-    app.selectedKind === "unified" ? "All Inboxes" :
-    app.selectedKind === "sent" ? "All Sent" :
-    app.selectedKind === "snoozed" ? "Snoozed" :
-    app.selectedKind === "screener" ? "Screener" :
-    app.selectedKind === "papertrail" ? "Paper Trail" :
-    app.selectedKind === "followups" ? "Follow-ups" :
-    (app.folders.find((f) => f.id === app.selectedFolderId)?.name || "Inbox")
+    app.search ? t("list.titleSearch", { q: app.search }) :
+    app.selectedKind === "smart" ? t("list.smartInbox") :
+    app.selectedKind === "unified" ? t("list.allInboxes") :
+    app.selectedKind === "sent" ? t("list.allSent") :
+    app.selectedKind === "snoozed" ? t("list.snoozed") :
+    app.selectedKind === "screener" ? t("list.screener") :
+    app.selectedKind === "papertrail" ? t("list.paperTrail") :
+    app.selectedKind === "followups" ? t("list.followUps") :
+    (app.folders.find((f) => f.id === app.selectedFolderId)?.name || t("list.inbox"))
   );
 
-  const CATS = [
-    { id: null, label: "All" },
-    { id: "primary", label: "Primary" },
-    { id: "newsletters", label: "Newsletters" },
-    { id: "social", label: "Social" },
-    { id: "updates", label: "Updates" },
-    { id: "promotions", label: "Promotions" },
-  ];
+  const CATS = $derived.by(() => ([
+    { id: null, label: t("list.catAll") },
+    { id: "primary", label: t("list.catPrimary") },
+    { id: "newsletters", label: t("list.catNewsletters") },
+    { id: "social", label: t("list.catSocial") },
+    { id: "updates", label: t("list.catUpdates") },
+    { id: "promotions", label: t("list.catPromotions") },
+  ]));
   const showCats = $derived(
     !app.search && !smartActive() && app.selectedKind !== "snoozed" && app.selectedKind !== "screener" &&
     (app.selectedKind === "unified" || app.selectedFolderRole === "inbox")
   );
 
   const emptyState = $derived(
-    app.search ? { icon: icons.search, text: "No matches for that search." } :
-    app.selectedKind === "snoozed" ? { icon: icons.snooze, text: "Nothing snoozed." } :
-    app.selectedKind === "screener" ? { icon: icons.screener, text: "Screener's clear — no first-time senders waiting." } :
-    app.selectedKind === "papertrail" ? { icon: icons.receipt, text: "No receipts or invoices here yet." } :
-    app.selectedKind === "followups" ? { icon: icons.done, text: "Nothing's waiting on a reply." } :
-    { icon: icons.inboxZero, text: "Inbox zero. You're all caught up." }
+    app.search ? { icon: icons.search, text: t("list.emptySearch") } :
+    app.selectedKind === "snoozed" ? { icon: icons.snooze, text: t("list.emptySnoozed") } :
+    app.selectedKind === "screener" ? { icon: icons.screener, text: t("list.emptyScreener") } :
+    app.selectedKind === "papertrail" ? { icon: icons.receipt, text: t("list.emptyPapertrail") } :
+    app.selectedKind === "followups" ? { icon: icons.done, text: t("list.emptyFollowups") } :
+    { icon: icons.inboxZero, text: t("list.emptyInbox") }
   );
 </script>
 
@@ -620,7 +637,7 @@
 
 {#if ctx}
   <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
-    <input class="ctx-search" placeholder="Search actions…" bind:value={ctxSearch} autofocus
+    <input class="ctx-search" placeholder={t("list.searchActions")} bind:value={ctxSearch} autofocus
       onkeydown={(e) => { if (e.key === "Enter") ctxEnter(); else if (e.key === "Escape") closeCtx(); }} />
     <div class="ctx-list">
       {#each ctxActions(ctx.msg) as a}
@@ -630,7 +647,7 @@
           <button class:danger={a.danger} onclick={() => runCtx(a)}>{#if a.icon}{@html a.icon} {/if}{a.label}</button>
         {/if}
       {/each}
-      {#if ctxActions(ctx.msg).length === 0}<div class="ctx-empty">No matching action</div>{/if}
+      {#if ctxActions(ctx.msg).length === 0}<div class="ctx-empty">{t("list.noMatchingAction")}</div>{/if}
     </div>
   </div>
 {/if}
@@ -639,15 +656,15 @@
   <header>
     <div class="row1">
       <h2>{title}</h2>
-      <label class="slider" title="Show messages you've marked done alongside the rest">
+      <label class="slider" title={t("list.showDoneTip")}>
         <input type="checkbox" checked={app.showDone} onchange={toggleShowDone} />
         <span class="track"><span class="knob"></span></span>
-        <span class="lbl">{app.showDone ? "Showing all" : "Show done"}</span>
+        <span class="lbl">{app.showDone ? t("list.showingAll") : t("list.showDone")}</span>
       </label>
     </div>
     <div class="searchrow">
       <SearchBar value={app.search} oninput={onSearch} />
-      {#if app.search.trim()}<button class="savesearch" title="Save as smart folder" onclick={saveSearch}>{@html icons.star} Save</button>{/if}
+      {#if app.search.trim()}<button class="savesearch" title={t("list.saveSmartFolder")} onclick={saveSearch}>{@html icons.star} {t("list.save")}</button>{/if}
     </div>
     {#if showCats}
       <div class="cats">
@@ -660,20 +677,20 @@
 
   {#if selectedIds.length > 0}
     <div class="bulkbar" transition:slide={{ duration: 140, easing: cubicOut }}>
-      <span class="count">{selectedIds.length} selected</span>
-      <button onclick={() => bulk("done")} title="Mark done">{@html icons.done} Done</button>
-      <button onclick={() => bulk("seen")} title="Mark read">Read</button>
-      <button onclick={() => bulk("flag")} title="Flag">{@html icons.flag} Flag</button>
+      <span class="count">{t("list.nSelected", { n: selectedIds.length })}</span>
+      <button onclick={() => bulk("done")} title={t("list.markDone")}>{@html icons.done} {t("list.done")}</button>
+      <button onclick={() => bulk("seen")} title={t("list.markRead")}>{t("list.read")}</button>
+      <button onclick={() => bulk("flag")} title={t("list.flag")}>{@html icons.flag} {t("list.flag")}</button>
       <div class="snz">
-        <button onclick={() => (bulkSnooze = !bulkSnooze)}>{@html icons.snooze} Snooze</button>
+        <button onclick={() => (bulkSnooze = !bulkSnooze)}>{@html icons.snooze} {t("list.snooze")}</button>
         {#if bulkSnooze}
           <div class="snz-menu">
             {#each snoozePresets().filter((p) => p.iso) as p}<button onclick={() => bulk("snooze", p.iso)}>{p.label}</button>{/each}
           </div>
         {/if}
       </div>
-      <button onclick={() => bulk("archive")} title="Archive">{@html icons.archive} Archive</button>
-      <button class="danger" onclick={() => bulk("delete")} title="Delete">{@html icons.trash} Delete</button>
+      <button onclick={() => bulk("archive")} title={t("list.archive")}>{@html icons.archive} {t("list.archive")}</button>
+      <button class="danger" onclick={() => bulk("delete")} title={t("list.delete")}>{@html icons.trash} {t("list.delete")}</button>
       <button class="clear" onclick={clearSelection}>{@html icons.close}</button>
     </div>
   {/if}
@@ -693,7 +710,7 @@
         <div class:bundled={item.kind === "msg" && item.inGroup} class:cv={item.kind !== "header"}
              animate:flip={{ duration: 130 }} out:fly={{ x: 48, duration: 140 }}>
           {#if item.kind === "header"}
-            <div class="datesep">{item.label}</div>
+            <div class="datesep">{bucketLabel(item.label)}</div>
           {:else if item.kind === "msg"}
             <MessageRow
               message={item.msg}
@@ -709,16 +726,16 @@
               onmenu={(e) => openCtx(e, item.msg)}
             />
           {:else if item.kind === "groupload"}
-            <div class="gpart loading"><span class="spin">{@html icons.sync}</span> Loading…</div>
+            <div class="gpart loading"><span class="spin">{@html icons.sync}</span> {t("list.loading")}</div>
           {:else if item.kind === "groupmore"}
             <div class="gpart">
               <button class="morebtn" onclick={() => (item.cat ? loadMoreCategory(item.cat) : bumpShown(item.gkey))}>
-                Show more ({item.remaining})
+                {t("list.showMore", { n: item.remaining })}
               </button>
             </div>
           {:else if item.kind === "groupseeall"}
             <div class="gpart">
-              <button class="morebtn" onclick={() => seeAll(item.cat)}>See all in this group ({item.total.toLocaleString()}) →</button>
+              <button class="morebtn" onclick={() => seeAll(item.cat)}>{t("list.seeAllInGroup", { n: item.total.toLocaleString() })}</button>
             </div>
           {:else if item.gtype === "category"}
             <SmartGroupCard
@@ -745,14 +762,14 @@
       {/each}
       {#if items.length > mainShown}
         <div class="loadmore" use:mainMore>
-          <span class="spin">{@html icons.sync}</span> Loading {items.length - mainShown} more…
+          <span class="spin">{@html icons.sync}</span> {t("list.loadingMore", { n: items.length - mainShown })}
         </div>
       {/if}
     {/if}
   </div>
 
   <footer class="hint">
-    <kbd>↓</kbd><kbd>↑</kbd> move · <kbd>e</kbd> toggle done · <kbd>↵</kbd> open
+    <kbd>↓</kbd><kbd>↑</kbd> {t("list.hintMove")} · <kbd>e</kbd> {t("list.hintToggleDone")} · <kbd>↵</kbd> {t("list.hintOpen")}
   </footer>
 </section>
 

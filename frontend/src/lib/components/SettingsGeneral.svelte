@@ -1,9 +1,12 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray } from "../store.svelte.js";
+  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray, setLanguage } from "../store.svelte.js";
   import { vault, backendBase } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
   import { playSound, SOUND_OPTIONS } from "../sound.js";
+  import { t, LANGUAGES } from "../i18n.svelte.js";
+
+  const notifVol = $derived(app.settings.notifyVolume ?? 80);
 
   // --- Local API / metrics for LAN devices ---------------------------------
   function randomKey() {
@@ -203,6 +206,17 @@
 </script>
 
 <div class="wrap">
+  <h2 class="group-head">{t("settings.language")}</h2>
+  <section class="card">
+    <h3>{t("settings.language")}</h3>
+    <p class="hint">{t("settings.languageHint")}</p>
+    <label class="inline">{t("settings.language")}
+      <select value={app.settings.language || "auto"} onchange={(e) => setLanguage(e.currentTarget.value)}>
+        {#each LANGUAGES as l}<option value={l.id}>{l.label}</option>{/each}
+      </select>
+    </label>
+  </section>
+
   <h2 class="group-head">Mail behavior</h2>
   <section class="card">
     <h3>Compose window</h3>
@@ -435,15 +449,30 @@
 
   <section class="card">
     <h3>AI assistant <span class="tag">bring your own key</span></h3>
-    <p class="hint">Powers the “Catch me up” thread summary in the reader. Your API key is stored locally and
-      calls go straight from this app to the provider — there's no RaplMail server in between. Get a key at
-      <code>console.anthropic.com</code>.</p>
-    <label class="fieldrow"><span>Anthropic API key</span>
-      <input type="password" placeholder="sk-ant-…" value={app.settings.aiApiKey || ""}
+    <p class="hint">Powers “Catch me up”, AI reply, and inbox triage. Your key is stored locally and calls go
+      straight from this app to the provider you choose — there's no RaplMail server in between.</p>
+    <label class="fieldrow"><span>Provider</span>
+      <select value={app.settings.aiProvider || "anthropic"}
+        onchange={(e) => saveSettings({ aiProvider: e.currentTarget.value })}>
+        <option value="anthropic">Anthropic (Claude)</option>
+        <option value="openai">OpenAI</option>
+        <option value="openai-compatible">OpenAI-compatible (Groq, OpenRouter, Ollama, …)</option>
+      </select>
+    </label>
+    <label class="fieldrow"><span>API key</span>
+      <input type="password" placeholder={(app.settings.aiProvider || "anthropic") === "anthropic" ? "sk-ant-…" : "sk-…"}
+        value={app.settings.aiApiKey || ""}
         onchange={(e) => saveSettings({ aiApiKey: e.currentTarget.value.trim() })} />
     </label>
+    {#if (app.settings.aiProvider || "anthropic") === "openai-compatible"}
+      <label class="fieldrow"><span>API base URL</span>
+        <input placeholder="https://api.groq.com/openai/v1" value={app.settings.aiBaseUrl || ""}
+          onchange={(e) => saveSettings({ aiBaseUrl: e.currentTarget.value.trim() })} />
+      </label>
+    {/if}
     <label class="fieldrow"><span>Model (optional)</span>
-      <input placeholder="claude-haiku-4-5-20251001" value={app.settings.aiModel || ""}
+      <input placeholder={(app.settings.aiProvider || "anthropic") === "anthropic" ? "claude-haiku-4-5-20251001" : "gpt-4o-mini"}
+        value={app.settings.aiModel || ""}
         onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
     </label>
     <p class="hint">{app.settings.aiApiKey ? "✓ Key set — AI actions are active." : "No key — AI buttons stay hidden until you add one."}</p>
@@ -509,14 +538,22 @@
           </select>
         </label>
       {/if}
-      <label class="inline" style="margin-top:10px">Sound
-        <select value={app.settings.notifySound || "ding"} onchange={(e) => { saveSettings({ notifySound: e.currentTarget.value }); playSound(e.currentTarget.value); }}>
+      <label class="inline" style="margin-top:10px">{t("notif.sound")}
+        <select value={app.settings.notifySound || "ding"} onchange={(e) => { saveSettings({ notifySound: e.currentTarget.value }); playSound(e.currentTarget.value, notifVol / 100); }}>
           {#each SOUND_OPTIONS as s}<option value={s.id}>{s.label}</option>{/each}
         </select>
-        <button class="btn sm" onclick={() => playSound(app.settings.notifySound || "ding")}>▶ Play</button>
+        <button class="btn sm" onclick={() => playSound(app.settings.notifySound || "ding", notifVol / 100)}>▶ {t("common.play")}</button>
+      </label>
+      <label class="inline" style="margin-top:10px">{t("notif.volume")}
+        <input type="range" min="0" max="100" step="5" value={notifVol}
+          disabled={(app.settings.notifySound || "ding") === "none"}
+          oninput={(e) => saveSettings({ notifyVolume: Number(e.currentTarget.value) })}
+          onchange={(e) => playSound(app.settings.notifySound || "ding", Number(e.currentTarget.value) / 100)} />
+        <span class="tnum" style="width:38px;text-align:right">{notifVol}%</span>
       </label>
       <span class="hint" style="margin:2px 0 0 2px">A short chime plays when new mail arrives (even while the app is focused).</span>
-      <button class="btn" style="margin-top:10px" onclick={sendTest}>Send test notification</button>
+      <p class="hint" style="margin-top:8px">{t("notif.muteHint")}</p>
+      <button class="btn" style="margin-top:10px" onclick={sendTest}>{t("notif.test")}</button>
       <p class="hint" style="margin-top:8px">No popup? It's almost always the OS: Windows <b>Settings → Notifications</b> must allow this app, and <b>Focus Assist / Do Not Disturb</b> must be off.</p>
     {:else}
       <p class="hint">Desktop notifications aren't available in this environment.</p>

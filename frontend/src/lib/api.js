@@ -141,6 +141,26 @@ export async function saveAttachment(messageId, index, filename) {
   return null;
 }
 
+// Export a message as .eml (Safe Export strips internal headers + tracking pixels
+// when sanitize=true). Saves to disk in Tauri, blob-downloads in the browser.
+export async function saveEml(messageId, sanitize = true, filename = "message.eml") {
+  const c = await getCfg();
+  const headers = {};
+  if (c.token) headers["X-RaplMail-Token"] = c.token;
+  const res = await fetch(`${c.base}/messages/${messageId}/export?sanitize=${sanitize ? "true" : "false"}`, { headers });
+  if (!res.ok) throw new ApiError("Couldn't export the message", res.status);
+  const blob = await res.blob();
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke("save_attachment", { filename, dataB64: await blobToBase64(blob) });
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  return null;
+}
+
 export async function revealPath(path) {
   if (!path || !isTauri()) return;
   try { const { invoke } = await import("@tauri-apps/api/core"); await invoke("reveal_path", { path }); } catch {}
@@ -264,6 +284,15 @@ export const messages = {
   queueRetry: () => api.post("/messages/queue/retry"),
   queueItems: () => api.get("/messages/queue/items"),
   queueDiscard: (id) => api.del(`/messages/queue/${id}`),
+};
+
+export const subscriptions = {
+  audit: () => api.get("/subscriptions/audit"),
+};
+
+export const smime = {
+  importP12: (data_b64, password) => api.post("/smime/import-p12", { data_b64, password }),
+  certInfo: (cert_pem) => api.post("/smime/cert-info", { cert_pem }),
 };
 
 export const rules = {

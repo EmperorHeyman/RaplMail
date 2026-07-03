@@ -1,13 +1,14 @@
 <script>
   import { fly } from "svelte/transition";
   import { app, runUndo } from "../store.svelte.js";
+  import { t } from "../i18n.svelte.js";
 </script>
 
 {#if app.toast}
   {#key app.toast.id}
     <div class="toast" class:error={app.toast.kind === "error"} transition:fly={{ y: 20, duration: 180 }}>
       <span>{app.toast.message}</span>
-      {#if app.toast.undo}<button class="undo" onclick={runUndo}>Undo</button>{/if}
+      {#if app.toast.undo}<button class="undo" onclick={runUndo}>{t("cmd.undo")}</button>{/if}
     </div>
   {/key}
 {/if}

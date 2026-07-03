@@ -3,6 +3,7 @@
   import { app, notify, ruleValueForField, ruleOpForField, confirmDialog } from "../store.svelte.js";
   import { rules as api } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   // Draft + source message come from app.ruleModal (set by openRuleModal).
   let draft = $state({ ...app.ruleModal.draft });
@@ -12,12 +13,16 @@
   let busy = $state(false);
   let previewing = $state(false);
 
-  const FIELDS = [["from_domain","Sender domain"],["from","Sender address"],["to","Recipient"],["subject","Subject"],["body","Body"]];
-  const OPS = [["contains","contains"],["equals","equals"],["ends_with","ends with"],["regex","matches regex"]];
-  const ACTIONS = [["move","Move to folder"],["archive","Archive"],["delete","Delete"],["mark_read","Mark read"],["mark_done","Mark done"],["block","Block (quarantine)"]];
+  const FIELDS = ["from_domain", "from", "to", "subject", "body", "category"];
+  const OPS = ["contains", "equals", "ends_with", "regex"];
+  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script"];
   const DESTRUCTIVE = new Set(["delete", "archive", "block"]);
-  const needsArg = $derived(draft.action === "move");
-  const label = (pairs, v) => (pairs.find((p) => p[0] === v) || [])[1] || v;
+  const needsArg = $derived(["move", "webhook", "run_script"].includes(draft.action));
+  const argPlaceholder = $derived(
+    draft.action === "webhook" ? t("rules.webhookHint")
+      : draft.action === "run_script" ? t("rules.scriptHint")
+      : "folder, e.g. Archive"
+  );
 
   // When the field changes, auto-fill the value + operator from the clicked mail.
   function onFieldChange() {
@@ -47,12 +52,12 @@
     if (DESTRUCTIVE.has(draft.action)) {
       let count = preview?.match_count;
       try { const p = await api.preview(draft); preview = p; count = p.match_count; } catch {}
-      const verb = label(ACTIONS, draft.action).toLowerCase();
+      const verb = t("rules.action." + draft.action).toLowerCase();
       if (count != null) {
         const ok = await confirmDialog({
           title: "Apply this rule?",
           message: `It will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail.`,
-          confirmLabel: `${label(ACTIONS, draft.action)} ${count}`, danger: true,
+          confirmLabel: `${t("rules.action." + draft.action)} ${count}`, danger: true,
         });
         if (!ok) return;
       }
@@ -93,14 +98,14 @@
 
     <div class="cond">
       <span class="lead">If</span>
-      <select bind:value={draft.match_field} onchange={onFieldChange}>{#each FIELDS as f}<option value={f[0]}>{f[1]}</option>{/each}</select>
-      <select bind:value={draft.match_op}>{#each OPS as o}<option value={o[0]}>{o[1]}</option>{/each}</select>
-      <input bind:value={draft.match_value} placeholder="value" oninput={schedulePreview} />
+      <select bind:value={draft.match_field} onchange={onFieldChange}>{#each FIELDS as f}<option value={f}>{t("rules.field." + f)}</option>{/each}</select>
+      <select bind:value={draft.match_op}>{#each OPS as o}<option value={o}>{t("rules.op." + o)}</option>{/each}</select>
+      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : "value"} oninput={schedulePreview} />
     </div>
     <div class="cond">
       <span class="lead">then</span>
-      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a[0]}>{a[1]}</option>{/each}</select>
-      {#if needsArg}<input bind:value={draft.action_arg} placeholder="folder, e.g. Archive" />{/if}
+      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
+      {#if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
     </div>
 
     <div class="preview" class:empty={!preview}>

@@ -1,6 +1,7 @@
 <script>
   import { icons } from "../icons.js";
   import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen } from "../store.svelte.js";
+  import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
@@ -46,12 +47,12 @@
   // The two hover buttons are user-configurable (settings.rowActions).
   function actionDef(key) {
     switch (key) {
-      case "done": return { icon: done ? icons.restore : icons.done, title: done ? "Restore (e)" : "Mark done (e)", cls: "done-btn", run: () => ondone() };
-      case "snooze": return { icon: icons.snooze, title: "Snooze", cls: "snooze-btn", run: () => (snoozeMenu = !snoozeMenu) };
-      case "flag": return { icon: message.is_flagged ? icons.flagged : icons.flag, title: message.is_flagged ? "Unflag" : "Flag", cls: message.is_flagged ? "flag-btn on" : "flag-btn", run: toggleFlag };
-      case "read": return { icon: icons.mail, title: message.is_seen ? "Mark unread" : "Mark read", cls: "read-btn", run: toggleSeen };
-      case "archive": return { icon: icons.archive, title: "Archive", cls: "arch-btn", run: () => onarchive?.() };
-      case "delete": return { icon: icons.trash, title: "Delete", cls: "del-btn", run: () => ondelete?.() };
+      case "done": return { icon: done ? icons.restore : icons.done, title: done ? t("list.restoreKey") : t("list.markDoneKey"), cls: "done-btn", run: () => ondone() };
+      case "snooze": return { icon: icons.snooze, title: t("list.snooze"), cls: "snooze-btn", run: () => (snoozeMenu = !snoozeMenu) };
+      case "flag": return { icon: message.is_flagged ? icons.flagged : icons.flag, title: message.is_flagged ? t("list.unflag") : t("list.flag"), cls: message.is_flagged ? "flag-btn on" : "flag-btn", run: toggleFlag };
+      case "read": return { icon: icons.mail, title: message.is_seen ? t("list.markUnread") : t("list.markRead"), cls: "read-btn", run: toggleSeen };
+      case "archive": return { icon: icons.archive, title: t("list.archive"), cls: "arch-btn", run: () => onarchive?.() };
+      case "delete": return { icon: icons.trash, title: t("list.delete"), cls: "del-btn", run: () => ondelete?.() };
       default: return null;
     }
   }
@@ -99,7 +100,7 @@
 <div class="wrap" class:swiping={dragging}>
   {#if multiAcct && acctColor}<span class="acct-stripe" style="background:{acctColor}"></span>{/if}
   <div class="action" style="opacity:{Math.min(1, dx / THRESHOLD)}">
-    {@html done ? icons.restore : icons.done} {done ? "Restore" : "Done"}
+    {@html done ? icons.restore : icons.done} {done ? t("list.restore") : t("list.done")}
   </div>
   <div
     class="row"
@@ -120,7 +121,7 @@
   >
     <button class="avatar" class:checked class:selecting class:haslogo={hasLogo}
       style={acctColor ? `border-color:${acctColor}` : ""}
-      title="Select" onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
+      title={t("list.select")} onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
         {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" loading="lazy" decoding="async" onerror={onAvatarError} />
@@ -128,11 +129,11 @@
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>
       {#if isTrustedSender(message.from_addr)}
-        <span class="shield ok" title="You marked this sender safe">{@html icons.shieldCheck}</span>
+        <span class="shield ok" title={t("list.senderSafe")}>{@html icons.shieldCheck}</span>
       {:else if message.auth_status === "fail"}
-        <span class="shield bad" title="Failed sender authentication — possible spoof">{@html icons.shieldAlert}</span>
+        <span class="shield bad" title={t("list.authFail")}>{@html icons.shieldAlert}</span>
       {:else if message.auth_status === "pass"}
-        <span class="shield ok" title="Sender authenticated (SPF/DKIM/DMARC)">{@html icons.shieldCheck}</span>
+        <span class="shield ok" title={t("list.authPass")}>{@html icons.shieldCheck}</span>
       {/if}
     </button>
     <span class="body">
@@ -140,11 +141,11 @@
         <span class="from">{message.from_name || message.from_addr}</span>
         <span class="time">{fmtTime(message.date)}</span>
       </span>
-      <span class="subject">{message.subject || "(no subject)"}</span>
+      <span class="subject">{message.subject || t("list.noSubject")}</span>
       <span class="snippet">{message.snippet}</span>
     </span>
     <span class="marks">
-      {#if isVip(message.from_addr)}<span class="vip" title="VIP sender">{@html icons.star}</span>{/if}
+      {#if isVip(message.from_addr)}<span class="vip" title={t("list.vipSender")}>{@html icons.star}</span>{/if}
       {#if message.pinned}<span class="pin">{@html icons.pin}</span>{/if}
       {#if !message.is_seen && !done}<span class="unread-dot"></span>{/if}
       {#if message.is_flagged}<span class="star">{@html icons.flagged}</span>{/if}
@@ -159,7 +160,7 @@
   {#if snoozeMenu}
     <div class="snooze-menu" onpointerdown={(e) => e.stopPropagation()}>
       {#if snoozedView}
-        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, null); }}>Unsnooze now</button>
+        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, null); }}>{t("list.unsnoozeNow")}</button>
       {/if}
       {#each snoozePresets() as p}
         <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, p.iso, p.presence); }}>{p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}</button>

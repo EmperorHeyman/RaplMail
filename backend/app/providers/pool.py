@@ -8,16 +8,24 @@ by a per-account lock, recreating it if it goes stale.
 from __future__ import annotations
 
 import threading
+import time
 
 from app.models import Account
 
+# Close a pooled connection that hasn't served a real read/flag in this many
+# seconds, instead of NOOPing it warm forever. Frees the socket + its pinned
+# read buffers for accounts you're not actively touching; the next fetch just
+# rebuilds it (~1-2s, one-time).
+IDLE_TIMEOUT = 600.0
+
 
 class _Entry:
-    __slots__ = ("provider", "lock")
+    __slots__ = ("provider", "lock", "last_used")
 
     def __init__(self) -> None:
         self.provider = None
         self.lock = threading.Lock()
+        self.last_used = 0.0
 
 
 class ProviderPool:
@@ -38,6 +46,7 @@ class ProviderPool:
 
         e = self._entry(account.id)
         with e.lock:
+            e.last_used = time.monotonic()
             last_exc = None
             for attempt in range(2):
                 if e.provider is None:
@@ -60,6 +69,7 @@ class ProviderPool:
 
         e = self._entry(account.id)
         with e.lock:
+            e.last_used = time.monotonic()
             for _ in range(2):
                 if e.provider is None:
                     e.provider = build_provider(account)
@@ -73,20 +83,33 @@ class ProviderPool:
                         pass
                     e.provider = None
 
+    @staticmethod
+    def _discard(e: _Entry) -> None:
+        """Close and forget an entry's connection (frees its socket + buffers)."""
+        try:
+            if e.provider:
+                e.provider.close()
+        except Exception:
+            pass
+        e.provider = None
+
     def keepalive(self) -> None:
-        """NOOP each open connection so the server doesn't drop it (keeps opens fast)."""
+        """Keep recently-used connections warm (NOOP so the server doesn't drop
+        them and opens stay fast); close connections idle past IDLE_TIMEOUT so
+        their socket + read buffers are released instead of pinned forever."""
+        now = time.monotonic()
         for e in list(self._entries.values()):
-            if e.provider and e.lock.acquire(blocking=False):
-                try:
+            if not (e.provider and e.lock.acquire(blocking=False)):
+                continue
+            try:
+                if now - e.last_used > IDLE_TIMEOUT:
+                    self._discard(e)  # idle too long — next fetch rebuilds on demand
+                else:
                     e.provider._imap().noop()
-                except Exception:
-                    try:
-                        e.provider.close()
-                    except Exception:
-                        pass
-                    e.provider = None
-                finally:
-                    e.lock.release()
+            except Exception:
+                self._discard(e)
+            finally:
+                e.lock.release()
 
     def drop(self, account_id: int) -> None:
         with self._guard:

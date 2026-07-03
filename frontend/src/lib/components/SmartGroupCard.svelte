@@ -1,5 +1,6 @@
 <script>
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
   let { label, icon, count = 0, unread = 0, newCount = 0, senders = [], more = 0,
         expanded = false, focused = false, mode = "all",
         onToggle, onNewBadge, onSender, onDoneAll } = $props();
@@ -21,8 +22,8 @@
         <span class="lbl">{label}</span>
         {#if newCount > 0}
           <button class="new tnum" class:active={expanded && mode === "new"}
-            title="Show just the new mail in this group"
-            onclick={(e) => { e.stopPropagation(); onNewBadge?.(); }}>{newCount} new</button>
+            title={t("list.showNewTip")}
+            onclick={(e) => { e.stopPropagation(); onNewBadge?.(); }}>{t("list.newCount", { n: newCount })}</button>
         {/if}
         <span class="count tnum">{count.toLocaleString()}</span>
       </span>
@@ -34,8 +35,8 @@
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 9 7 7 7-7"/></svg>
     </span>
   </button>
-  <button class="doneall" title="Mark this whole group done"
-    onclick={(e) => { e.stopPropagation(); onDoneAll?.(); }}>{@html icons.done} Done all</button>
+  <button class="doneall" title={t("list.doneAllTip")}
+    onclick={(e) => { e.stopPropagation(); onDoneAll?.(); }}>{@html icons.done} {t("list.doneAll")}</button>
 </div>
 
 <style>

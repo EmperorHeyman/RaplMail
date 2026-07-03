@@ -1,11 +1,15 @@
 <script>
   import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, saveAttachment, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
+  import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
+  import { t } from "../i18n.svelte.js";
   import ThreadView from "./ThreadView.svelte";
 
-  const threadMode = $derived(!!app.threadKey && app.settings.threading);
+  // A conversation opened explicitly (threadKey set) always shows as a thread,
+  // independent of the list-grouping setting — so "View conversation" works even
+  // in Smart Inbox mode where the list never produces thread rows.
+  const threadMode = $derived(!!app.threadKey);
   let detail = $state(null);
   let loading = $state(false);
   let error = $state("");
@@ -18,7 +22,7 @@
     error = "";
     menuAddr = null;
     loadImages = false;
-    if (id == null || (app.threadKey && app.settings.threading)) return;
+    if (id == null || app.threadKey) return;
     loading = true;
     // Only apply the response if this is still the selected message — a slow
     // fetch for a previous click must not overwrite the one now on screen.
@@ -28,6 +32,22 @@
       .catch((e) => { if (app.selectedMessageId === id) error = e.message; })
       .finally(() => { if (app.selectedMessageId === id) loading = false; });
   });
+
+  // Does the open message belong to a multi-message conversation (e.g. it now has
+  // the reply you just sent)? Re-checked on open and after every sync, so a reply
+  // surfaces without reopening the message.
+  let convoCount = $state(0);
+  $effect(() => {
+    void app.syncTick;                 // refresh when a sync lands
+    const d = detail;
+    convoCount = 0;
+    if (!d || !d.thread_id) return;
+    const tid = d.thread_id, mid = d.id;
+    messagesApi.thread(tid)
+      .then((msgs) => { if (app.selectedMessageId === mid) convoCount = (msgs || []).length; })
+      .catch(() => {});
+  });
+  function viewConversation() { if (detail?.thread_id) app.threadKey = detail.thread_id; }
 
   function fmtDate(iso) {
     return iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -170,7 +190,7 @@
     }
     return out;
   }
-  const reSubject = () => (/^re:/i.test(detail.subject || "") ? detail.subject : `Re: ${detail.subject || "(no subject)"}`);
+  const reSubject = () => (/^re:/i.test(detail.subject || "") ? detail.subject : `Re: ${detail.subject || t("reader.noSubject")}`);
 
   // Wrap quote content in a Spark-style collapsible block. The composer inserts
   // your signature *above* this block and (for replies) shows it collapsed behind
@@ -205,8 +225,12 @@
   }
   async function forward() {
     if (!detail) return;
-    const subj = /^fwd:/i.test(detail.subject || "") ? detail.subject : `Fwd: ${detail.subject || "(no subject)"}`;
-    const orig = detail.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
+    const subj = /^fwd:/i.test(detail.subject || "") ? detail.subject : `Fwd: ${detail.subject || t("reader.noSubject")}`;
+    // Safe Forward (on by default): strip hidden 1×1 tracking pixels from the body
+    // so forwarding doesn't re-arm the sender's trackers for the new recipient.
+    let src = detail.html || "";
+    if (src && app.settings.sanitizeForward !== false) src = sanitizeTrackers(src, true).html;
+    const orig = src || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`;
     const quote = collapsibleQuote(
       `<div style="color:#888">---------- Forwarded message ----------<br>` +
       `From: ${escapeHtml(detail.from_name || "")} &lt;${escapeHtml(detail.from_addr || "")}&gt;<br>` +
@@ -220,7 +244,7 @@
     let attachments = [];
     if (atts.length) {
       try { attachments = await Promise.all(atts.map((a) => fetchAttachmentForCompose(detail.id, a))); }
-      catch { notify("Couldn't attach the forwarded files — they may need re-attaching", "error"); }
+      catch { notify(t("reader.couldntAttachForwarded"), "error"); }
     }
     openCompose({ subject: subj, html: quote, account_id: detail.account_id, attachments });
   }
@@ -228,15 +252,26 @@
     if (!detail) return;
     messagesApi.setFlag(detail.id, !detail.is_flagged).then(() => (detail.is_flagged = !detail.is_flagged)).catch(() => {});
   }
+  // Safe Export: download this message as a sanitized .eml (internal routing
+  // headers + hidden tracking pixels stripped by the backend).
+  async function exportEml() {
+    if (!detail) return;
+    const name = ((detail.subject || "message").replace(/[^\w.-]+/g, "_").slice(0, 60) || "message") + ".eml";
+    try {
+      const path = await saveEml(detail.id, true, name);
+      if (path) { notify(t("reader.savedTo", { path })); revealPath(path); }
+      else notify(t("reader.downloaded"));
+    } catch (e) { notify(e.message || t("reader.couldntSaveAttachment"), "error"); }
+  }
 
   // The action buttons under the recipient line are user-configurable.
   function actionDef(key) {
     switch (key) {
-      case "reply": return { icon: icons.reply, label: "Reply", run: reply };
-      case "replyAll": return { icon: icons.replyAll, label: "Reply all", run: replyAll, hide: replyAllCc().length === 0 };
-      case "forward": return { icon: icons.forward, label: "Forward", run: forward };
-      case "done": return { icon: detail.is_done ? icons.restore : icons.done, label: detail.is_done ? "Restore" : "Done", run: () => markDone(detail, !detail.is_done) };
-      case "flag": return { icon: detail.is_flagged ? icons.flagged : icons.flag, label: detail.is_flagged ? "Flagged" : "Flag", run: toggleFlag, cls: detail.is_flagged ? "on" : "" };
+      case "reply": return { icon: icons.reply, label: t("reader.reply"), run: reply };
+      case "replyAll": return { icon: icons.replyAll, label: t("reader.replyAll"), run: replyAll, hide: replyAllCc().length === 0 };
+      case "forward": return { icon: icons.forward, label: t("reader.forward"), run: forward };
+      case "done": return { icon: detail.is_done ? icons.restore : icons.done, label: detail.is_done ? t("reader.restore") : t("reader.done"), run: () => markDone(detail, !detail.is_done) };
+      case "flag": return { icon: detail.is_flagged ? icons.flagged : icons.flag, label: detail.is_flagged ? t("reader.flagged") : t("reader.flag"), run: toggleFlag, cls: detail.is_flagged ? "on" : "" };
       default: return null;
     }
   }
@@ -257,7 +292,7 @@
   async function openAtt(att) {
     downloading = att.index;
     try { await openAttachment(detail.id, att.index, att.filename); }
-    catch (e) { notify(e.message || "Couldn't open attachment", "error"); }
+    catch (e) { notify(e.message || t("reader.couldntOpenAttachment"), "error"); }
     finally { downloading = null; }
   }
   // Save one attachment to disk (Downloads).
@@ -265,9 +300,9 @@
     downloading = att.index;
     try {
       const path = await saveAttachment(detail.id, att.index, att.filename);
-      if (path) { notify(`Saved to ${path}`); revealPath(path); }
-      else notify("Downloaded");
-    } catch (e) { notify(e.message || "Couldn't save attachment", "error"); }
+      if (path) { notify(t("reader.savedTo", { path })); revealPath(path); }
+      else notify(t("reader.downloaded"));
+    } catch (e) { notify(e.message || t("reader.couldntSaveAttachment"), "error"); }
     finally { downloading = null; }
   }
   let savingAll = $state(false);
@@ -279,17 +314,17 @@
         try { last = await saveAttachment(detail.id, a.index, a.filename); ok++; }
         catch {}
       }
-      if (last) { notify(`Saved ${ok} attachment${ok === 1 ? "" : "s"} to Downloads`); revealPath(last); }
-      else if (ok) notify(`Downloaded ${ok} attachment${ok === 1 ? "" : "s"}`);
-      else notify("Couldn't save attachments", "error");
+      if (last) { notify(ok === 1 ? t("reader.savedToDownloadsOne") : t("reader.savedToDownloadsN", { n: ok })); revealPath(last); }
+      else if (ok) notify(ok === 1 ? t("reader.downloadedOne") : t("reader.downloadedN", { n: ok }));
+      else notify(t("reader.couldntSaveAttachments"), "error");
     } finally { savingAll = false; }
   }
 
   function showFrom(addr) { searchAddress(addr); menuAddr = null; }
   function mailTo(addr) { openCompose({ to: addr, account_id: detail?.account_id }); menuAddr = null; }
   async function copyAddress(addr) {
-    try { await navigator.clipboard.writeText(addr); notify("Address copied"); }
-    catch { notify("Couldn't copy", "error"); }
+    try { await navigator.clipboard.writeText(addr); notify(t("reader.addressCopied")); }
+    catch { notify(t("reader.couldntCopy"), "error"); }
     menuAddr = null;
   }
   function toggleMenu(e, addr) { e.stopPropagation(); menuAddr = menuAddr === addr ? null : addr; }
@@ -316,16 +351,16 @@
   {:else if app.selectedMessageId == null}
     <div class="placeholder">
       <div class="big">{@html icons.placeholderMail}</div>
-      <p>Select a message to read</p>
+      <p>{t("reader.selectMessage")}</p>
       <a class="rapl-link" href="https://rapl-group.eu/" target="_blank" rel="noreferrer">rapl-group.eu</a>
     </div>
   {:else if loading}
-    <div class="placeholder">Loading…</div>
+    <div class="placeholder">{t("reader.loading")}</div>
   {:else if error}
     <div class="placeholder err">{error}</div>
   {:else if detail}
     <header>
-      <div class="subject">{detail.subject || "(no subject)"}</div>
+      <div class="subject">{detail.subject || t("reader.noSubject")}</div>
       <div class="meta">
         <span class="addr-wrap">
           <button class="addr from" onclick={(e) => toggleMenu(e, detail.from_addr)}>
@@ -333,51 +368,58 @@
           </button>
           {#if menuAddr === detail.from_addr}
             <div class="menu" onclick={(e) => e.stopPropagation()}>
-              <button onclick={() => copyAddress(detail.from_addr)}>{@html icons.copy} Copy address</button>
-              <button onclick={() => showFrom(detail.from_addr)}>{@html icons.inbox} Show mail from/to this address</button>
-              <button onclick={() => mailTo(detail.from_addr)}>{@html icons.compose} New email to this address</button>
-              <button onclick={() => { menuAddr = null; toggleVip(detail.from_addr); }}>{@html icons.star} {isVip(detail.from_addr) ? "Remove VIP" : "Mark as VIP"}</button>
-              <button onclick={() => { menuAddr = null; muteSender(detail); }}>{@html icons.mute} Mute this sender</button>
-              <button onclick={() => { menuAddr = null; muteThread(detail); }}>{@html icons.mute} Mute this conversation</button>
+              <button onclick={() => copyAddress(detail.from_addr)}>{@html icons.copy} {t("reader.copyAddress")}</button>
+              <button onclick={() => showFrom(detail.from_addr)}>{@html icons.inbox} {t("reader.showMailFromTo")}</button>
+              <button onclick={() => mailTo(detail.from_addr)}>{@html icons.compose} {t("reader.newEmailTo")}</button>
+              <button onclick={() => { menuAddr = null; toggleVip(detail.from_addr); }}>{@html icons.star} {isVip(detail.from_addr) ? t("reader.removeVip") : t("reader.markVip")}</button>
+              <button onclick={() => { menuAddr = null; muteSender(detail); }}>{@html icons.mute} {t("reader.muteSender")}</button>
+              <button onclick={() => { menuAddr = null; muteThread(detail); }}>{@html icons.mute} {t("reader.muteConversation")}</button>
+              <button onclick={() => { menuAddr = null; exportEml(); }}>{@html icons.save || icons.download} {t("reader.exportEml")}</button>
             </div>
           {/if}
         </span>
         <span class="date">{fmtDate(detail.date)}</span>
       </div>
       <div class="to">
-        to
-        {#each shownTo as t, i}
+        {t("reader.toLabel")}
+        {#each shownTo as addr, i}
           <span class="addr-wrap">
-            <button class="addr small" onclick={(e) => toggleMenu(e, t)}>{t}</button>
-            {#if menuAddr === t}
+            <button class="addr small" onclick={(e) => toggleMenu(e, addr)}>{addr}</button>
+            {#if menuAddr === addr}
               <div class="menu" onclick={(e) => e.stopPropagation()}>
-                <button onclick={() => copyAddress(t)}>{@html icons.copy} Copy address</button>
-                <button onclick={() => showFrom(t)}>{@html icons.inbox} Show mail from/to this address</button>
-                <button onclick={() => mailTo(t)}>{@html icons.compose} New email to this address</button>
+                <button onclick={() => copyAddress(addr)}>{@html icons.copy} {t("reader.copyAddress")}</button>
+                <button onclick={() => showFrom(addr)}>{@html icons.inbox} {t("reader.showMailFromTo")}</button>
+                <button onclick={() => mailTo(addr)}>{@html icons.compose} {t("reader.newEmailTo")}</button>
               </div>
             {/if}
           </span>{i < shownTo.length - 1 ? ", " : ""}
         {/each}
         {#if detail.to_addrs.length > 3}
           <button class="more-to" onclick={() => (showAllTo = !showAllTo)}>
-            {showAllTo ? "show less" : `+${detail.to_addrs.length - 3} more`}
+            {showAllTo ? t("reader.showLess") : t("reader.moreN", { n: detail.to_addrs.length - 3 })}
           </button>
         {/if}
       </div>
       {#if !actionsBottom}{@render actionsBar()}{/if}
     </header>
+    {#if convoCount > 1}
+      <button class="convo-bar" onclick={viewConversation}>
+        {@html icons.reply}
+        <span>{t("reader.viewConversation", { n: convoCount })}</span>
+      </button>
+    {/if}
     {#if summary}
       <div class="ai-summary">
-        <div class="ai-head">{@html icons.bolt} <b>Summary</b>
-          <button class="ai-close" title="Dismiss" onclick={() => (summary = "")}>{@html icons.close}</button>
+        <div class="ai-head">{@html icons.bolt} <b>{t("reader.summary")}</b>
+          <button class="ai-close" title={t("reader.dismiss")} onclick={() => (summary = "")}>{@html icons.close}</button>
         </div>
         <pre>{summary}</pre>
       </div>
     {/if}
     {#if aiDraft}
       <div class="ai-summary">
-        <div class="ai-head">{@html icons.reply} <b>Suggested reply</b>
-          <button class="ai-close" title="Dismiss" onclick={() => (aiDraft = null)}>{@html icons.close}</button>
+        <div class="ai-head">{@html icons.reply} <b>{t("reader.suggestedReply")}</b>
+          <button class="ai-close" title={t("reader.dismiss")} onclick={() => (aiDraft = null)}>{@html icons.close}</button>
         </div>
         {#if aiDraft.chips?.length}
           <div class="ai-chips">
@@ -386,57 +428,68 @@
         {/if}
         <pre>{aiDraft.draft}</pre>
         <div class="ai-actions">
-          <button class="btn primary" onclick={() => useDraft(aiDraft.draft)}>Edit &amp; send →</button>
-          <span class="ai-note">Review before sending — nothing is sent automatically.</span>
+          <button class="btn primary" onclick={() => useDraft(aiDraft.draft)}>{t("reader.editAndSend")}</button>
+          <span class="ai-note">{t("reader.reviewBeforeSending")}</span>
         </div>
       </div>
     {/if}
     {#if isTrustedSender(detail.from_addr)}
-      <div class="auth-bar ok">{@html icons.shieldCheck} <b>Marked safe</b>
-        <span class="auth-detail">You trust {detail.from_addr}</span>
-        <button class="trust" title="Remove the safe mark" onclick={() => untrustSender(detail.from_addr)}>Undo</button>
+      <div class="auth-bar ok">{@html icons.shieldCheck} <b>{t("reader.markedSafe")}</b>
+        <span class="auth-detail">{t("reader.youTrust", { addr: detail.from_addr })}</span>
+        <button class="trust" title={t("reader.removeSafeMarkTitle")} onclick={() => untrustSender(detail.from_addr)}>{t("reader.undo")}</button>
       </div>
     {:else if detail.warnings?.length}
       <div class="auth-bar bad">{@html icons.shieldAlert}
         <span>{detail.warnings.join(" · ")}</span>
-        <button class="trust" title="Trust this sender — show a green check, no more warnings" onclick={() => trustSender(detail.from_addr)}>{@html icons.done} Mark safe</button>
+        <button class="trust" title={t("reader.trustSenderTitle")} onclick={() => trustSender(detail.from_addr)}>{@html icons.done} {t("reader.markSafe")}</button>
       </div>
     {/if}
     {#if detail.pgp?.type === "encrypted"}
       <div class="auth-bar {detail.pgp.decrypted || detail.text ? 'ok' : 'bad'}">{@html icons.shieldCheck}
-        <b>PGP encrypted</b>
-        <span class="auth-detail">{detail.pgp.verified ? `· signature verified (${detail.pgp.signer})` : "· decrypted locally"}</span>
+        <b>{t("reader.pgpEncrypted")}</b>
+        <span class="auth-detail">{detail.pgp.verified ? t("reader.pgpSigVerified", { signer: detail.pgp.signer }) : t("reader.pgpDecryptedLocally")}</span>
       </div>
     {:else if detail.pgp?.type === "signed"}
       <div class="auth-bar {detail.pgp.verified ? 'ok' : 'bad'}">{@html detail.pgp.verified ? icons.shieldCheck : icons.shieldAlert}
-        <b>{detail.pgp.verified ? "PGP signature verified" : "PGP signature — couldn't verify"}</b>
-        <span class="auth-detail">{detail.pgp.verified ? detail.pgp.signer : "import the sender's public key"}</span>
+        <b>{detail.pgp.verified ? t("reader.pgpSignatureVerified") : t("reader.pgpSignatureUnverified")}</b>
+        <span class="auth-detail">{detail.pgp.verified ? detail.pgp.signer : t("reader.importPublicKey")}</span>
+      </div>
+    {/if}
+    {#if detail.smime?.type === "encrypted"}
+      <div class="auth-bar {detail.smime.decrypted ? 'ok' : 'bad'}">{@html icons.shieldCheck || icons.shield}
+        <b>{t("reader.smimeEncrypted")}</b>
+        <span class="auth-detail">{detail.smime.decrypted ? t("reader.smimeDecryptedLocally") : t("reader.smimeNoKey")}</span>
+      </div>
+    {:else if detail.smime?.type === "signed"}
+      <div class="auth-bar {detail.smime.verified ? 'ok' : 'bad'}">{@html detail.smime.verified ? icons.shieldCheck : icons.shieldAlert}
+        <b>{t("reader.smimeSigned")}</b>
+        <span class="auth-detail">{detail.smime.signer || t("reader.smimeUnknownSigner")}</span>
       </div>
     {/if}
     {#if detail.auth?.status === "fail"}
-      <div class="auth-bar bad">{@html icons.shieldAlert} <b>Failed authentication — this message may be spoofed.</b> <span class="auth-detail">{detail.auth.detail}</span></div>
+      <div class="auth-bar bad">{@html icons.shieldAlert} <b>{t("reader.failedAuth")}</b> <span class="auth-detail">{detail.auth.detail}</span></div>
     {:else if detail.auth?.status === "pass" && !isTrustedSender(detail.from_addr)}
-      <div class="auth-bar ok">{@html icons.shieldCheck} Sender authenticated <span class="auth-detail">{detail.auth.detail}</span></div>
+      <div class="auth-bar ok">{@html icons.shieldCheck} {t("reader.senderAuthenticated")} <span class="auth-detail">{detail.auth.detail}</span></div>
     {/if}
-    {#if app.selectedKind === "screener"}
+    {#if app.selectedKind === "screener" || detail.first_time_sender}
       <div class="screener-bar">
-        {@html icons.screener} First-time sender — do you want mail from <b>{detail.from_addr}</b>?
-        <button class="ok" onclick={() => approveSender(detail)}>{@html icons.done} Approve</button>
-        <button class="no" onclick={() => blockSender(detail)}>{@html icons.close} Block</button>
+        {@html icons.screener} {t("reader.firstTimeSender", { addr: detail.from_addr })}
+        <button class="ok" onclick={() => approveSender(detail)}>{@html icons.done} {t("reader.approve")}</button>
+        <button class="no" onclick={() => blockSender(detail)}>{@html icons.close} {t("reader.block")}</button>
       </div>
     {/if}
     {#if detail.unsubscribe}
       <div class="unsub-bar">
-        {@html icons.mail} This looks like a mailing list.
-        <button onclick={unsubscribe}>Unsubscribe</button>
+        {@html icons.mail} {t("reader.mailingList")}
+        <button onclick={unsubscribe}>{t("reader.unsubscribe")}</button>
       </div>
     {/if}
     {#if processed.blocked > 0 && !loadImages}
       <div class="tracker-wrap">
         <div class="tracker-bar">
-          {@html icons.shield} Blocked {processed.blocked} tracking {processed.blocked === 1 ? "pixel" : "pixels"} · regular images are shown.
-          <button class="tlink" onclick={() => (showTrackers = !showTrackers)}>{showTrackers ? "Hide" : "Details"}</button>
-          <button class="tlink" onclick={() => (loadImages = true)}>Load everything</button>
+          {@html icons.shield} {processed.blocked === 1 ? t("reader.blockedTrackerOne") : t("reader.blockedTrackerN", { n: processed.blocked })}
+          <button class="tlink" onclick={() => (showTrackers = !showTrackers)}>{showTrackers ? t("reader.hide") : t("reader.details")}</button>
+          <button class="tlink" onclick={() => (loadImages = true)}>{t("reader.loadEverything")}</button>
         </div>
         {#if showTrackers}
           <ul class="tracker-list">
@@ -447,20 +500,20 @@
     {/if}
     {#if attachments.length}
       <div class="attachments">
-        <span class="att-label">{@html icons.attachment} {attachments.length} attachment{attachments.length === 1 ? "" : "s"}</span>
+        <span class="att-label">{@html icons.attachment} {attachments.length === 1 ? t("reader.attachmentOne") : t("reader.attachmentN", { n: attachments.length })}</span>
         {#each attachments as a}
           <span class="att" class:busy={downloading === a.index}>
-            <button class="att-open" title={`Open ${a.filename}`} onclick={() => openAtt(a)}>
+            <button class="att-open" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(a)}>
               <span class="att-name">{a.filename}</span>
               {#if a.size}<span class="att-size">{humanSize(a.size)}</span>{/if}
               {#if downloading === a.index}<span class="att-dl">…</span>{/if}
             </button>
-            <button class="att-save" title="Save to Downloads" onclick={() => saveAtt(a)}>{@html icons.sent || "↓"}</button>
+            <button class="att-save" title={t("reader.saveToDownloads")} onclick={() => saveAtt(a)}>{@html icons.sent || "↓"}</button>
           </span>
         {/each}
         {#if attachments.length > 1}
-          <button class="att-all" onclick={saveAll} disabled={savingAll} title="Save all attachments to Downloads">
-            {savingAll ? "Saving…" : "Download all"}
+          <button class="att-all" onclick={saveAll} disabled={savingAll} title={t("reader.saveAllTitle")}>
+            {savingAll ? t("reader.saving") : t("reader.downloadAll")}
           </button>
         {/if}
       </div>
@@ -468,14 +521,14 @@
     {#if detail.html}
       <div class="viewbar">
         {#if hasEarlier && collapseOn}
-          <button class="vtoggle" class:on={showQuoted} title="Show / hide the earlier quoted messages"
+          <button class="vtoggle" class:on={showQuoted} title={t("reader.showHideEarlierTitle")}
             onclick={() => (showQuoted = !showQuoted)}>
-            ••• {showQuoted ? "Hide earlier" : "Show earlier messages"}
+            ••• {showQuoted ? t("reader.hideEarlier") : t("reader.showEarlier")}
           </button>
         {/if}
-        <button class="vtoggle" class:on={showOriginal} title="Toggle between the sender's original styling and your theme"
+        <button class="vtoggle" class:on={showOriginal} title={t("reader.stylingToggleTitle")}
           onclick={() => (showOriginal = !showOriginal)}>
-          {@html icons.palette} {showOriginal ? "Original styling" : (emailMode === "original" ? "Original styling" : emailMode === "dark" ? "Dark" : "Adapted to theme")}
+          {@html icons.palette} {showOriginal ? t("reader.originalStyling") : (emailMode === "original" ? t("reader.originalStyling") : emailMode === "dark" ? t("reader.dark") : t("reader.adaptedToTheme"))}
         </button>
       </div>
     {/if}
@@ -489,7 +542,7 @@
         </span>
       </a>
     {/if}
-    <iframe title="message" bind:this={frame} onload={wireFrameLinks}
+    <iframe title={t("reader.messageFrameTitle")} bind:this={frame} onload={wireFrameLinks}
       sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
     {#if actionsBottom}{@render actionsBar()}{/if}
   {/if}
@@ -501,11 +554,11 @@
       <button class="btn {b.cls || ''}" onclick={b.run}>{@html b.icon} {b.label}</button>
     {/each}
     {#if aiOn}
-      <button class="btn ai" onclick={catchMeUp} disabled={summarizing} title="Summarize this thread with AI">
-        {@html icons.bolt} {summarizing ? "Summarizing…" : "Catch me up"}
+      <button class="btn ai" onclick={catchMeUp} disabled={summarizing} title={t("reader.catchMeUpTitle")}>
+        {@html icons.bolt} {summarizing ? t("reader.summarizing") : t("reader.catchMeUp")}
       </button>
-      <button class="btn ai" onclick={smartReply} disabled={drafting} title="Draft a reply with AI">
-        {@html icons.reply} {drafting ? "Drafting…" : "AI reply"}
+      <button class="btn ai" onclick={smartReply} disabled={drafting} title={t("reader.aiReplyTitle")}>
+        {@html icons.reply} {drafting ? t("reader.drafting") : t("reader.aiReply")}
       </button>
     {/if}
   </div>
@@ -565,6 +618,8 @@
   .auth-bar .auth-detail { color: var(--muted); font-size: 12px; margin-left: auto; }
   .auth-bar .trust { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; color: inherit; }
   .auth-bar .trust:hover { background: var(--surface-2); }
+  .convo-bar { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 22px; font-size: 13px; font-weight: 600; text-align: left; color: var(--accent, #4f8cff); background: var(--accent-soft); border: none; border-bottom: 1px solid var(--hairline); cursor: pointer; }
+  .convo-bar:hover { filter: brightness(1.06); }
   .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: var(--accent-soft); border-bottom: 1px solid var(--hairline); font-size: 13px; }
   .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
   .screener-bar .no { color: var(--danger); font-weight: 600; }

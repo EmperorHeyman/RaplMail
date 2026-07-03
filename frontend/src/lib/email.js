@@ -130,15 +130,38 @@ function highlightSource(raw) {
   return out;
 }
 
-/** Re-render every <pre> code block in an email with syntax highlighting. */
+// --- git patch / unified-diff detection + rendering ------------------------
+/** Heuristic: does this text look like a unified diff / git patch? */
+function looksLikeDiff(text) {
+  if (/^diff --git /m.test(text)) return true;
+  if (!/^@@ -\d+(?:,\d+)? \+\d+/m.test(text)) return false;  // needs a real hunk header
+  return /^\+/m.test(text) && /^-/m.test(text);
+}
+/** Color-code each line of a unified diff (added/removed/hunk/meta). */
+function renderDiff(text) {
+  return text.split("\n").map((ln) => {
+    let cls = "d-ctx";
+    if (/^(diff --git |index |new file|deleted file|similarity |rename |old mode|new mode)/.test(ln)) cls = "d-meta";
+    else if (ln.startsWith("@@")) cls = "d-hunk";
+    else if (/^(\+\+\+|---) /.test(ln)) cls = "d-file";
+    else if (ln.startsWith("+")) cls = "d-add";
+    else if (ln.startsWith("-")) cls = "d-del";
+    return `<span class="d-line ${cls}">${escapeHtml(ln) || "&nbsp;"}</span>`;
+  }).join("\n");
+}
+
+/** Re-render every <pre> code block in an email with syntax highlighting, or as
+ *  a color-coded diff when the block is a git patch / unified diff. */
 export function highlightCodeBlocks(html) {
   if (!html || !/<pre[\s>]/i.test(html)) return html;
   return html.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_full, inner) => {
     const codeMatch = inner.match(/<code\b[^>]*>([\s\S]*?)<\/code>/i);
     const body = codeMatch ? codeMatch[1] : inner;
     const text = decodeEntities(body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, ""));
+    if (looksLikeDiff(text)) return `<pre class="rapl-code rapl-diff">${renderDiff(text)}</pre>`;
     const hl = highlightSource(text);
-    return `<pre class="rapl-code">${codeMatch ? `<code>${hl}</code>` : hl}</pre>`;
+    const inner2 = codeMatch ? `<code>${hl}</code>` : hl;
+    return `<pre class="rapl-code">${inner2}</pre>`;
   });
 }
 
@@ -213,6 +236,56 @@ const _URL_RE = /\b(https?:\/\/[^\s<>"')]+)/gi;
 /** Turn a plain-text body into safe HTML with clickable links. */
 export function autoLink(text) {
   return escapeHtml(text || "").replace(_URL_RE, (u) => `<a href="${u}" target="_blank" rel="noreferrer">${u}</a>`);
+}
+
+// --- link hygiene: strip tracking params + unwrap redirect wrappers ----------
+// Query-param families that only exist to track you (Google/Meta/ESP analytics).
+const _TRACK_PREFIX = /^(utm_|__?hs|hsenc|hsmi|mc_|pk_|mtm_|matomo_|piwik_|vero_|oly_|ns_|s_|ga_|_ga|elq|trk_|sc_)/i;
+const _TRACK_EXACT = new Set([
+  "fbclid", "gclid", "dclid", "gbraid", "wbraid", "msclkid", "yclid", "twclid",
+  "igshid", "mc_eid", "mc_cid", "spm", "cmpid", "icid", "mkt_tok", "_openstat",
+  "oly_anon_id", "oly_enc_id", "vero_id", "wickedid", "ref_src", "ref_url",
+  "action_object_map", "action_type_map", "action_ref_map",
+]);
+// Hosts that wrap the real destination in a decodable query param.
+const _REDIR_HOSTS = /(^|\.)(google\.[a-z.]+|l\.facebook\.com|lm\.facebook\.com|out\.reddit\.com|href\.li|safelinks\.protection\.outlook\.com)$/i;
+const _REDIR_PARAMS = ["url", "q", "u", "target", "dest", "destination", "redirect", "redirect_uri", "to"];
+
+/** Clean a single URL: unwrap a known redirect wrapper, then drop tracking params. */
+export function cleanUrl(raw) {
+  try {
+    let u = new URL(raw);
+    if (_REDIR_HOSTS.test(u.hostname)) {
+      for (const p of _REDIR_PARAMS) {
+        const v = u.searchParams.get(p);
+        if (v && /^https?:\/\//i.test(v)) { try { u = new URL(v); } catch {} break; }
+      }
+    }
+    for (const key of [...u.searchParams.keys()]) {
+      if (_TRACK_EXACT.has(key.toLowerCase()) || _TRACK_PREFIX.test(key)) u.searchParams.delete(key);
+    }
+    return u.toString().replace(/\?(#|$)/, "$1");   // tidy a now-empty query string
+  } catch { return raw; }
+}
+
+/**
+ * Rewrite every <a href> in an email to its cleaned/unwrapped destination and
+ * expose that clean URL as a tooltip, so a click never leaks utm_/fbclid/gclid
+ * and the real destination is visible on hover (RaplMail's privacy-first brand).
+ */
+export function cleanLinks(html) {
+  if (!html?.includes("href")) return html;
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const a of doc.querySelectorAll("a[href]")) {
+      const href = a.getAttribute("href") || "";
+      if (!/^https?:\/\//i.test(href)) continue;
+      const clean = cleanUrl(href);
+      if (clean !== href) a.setAttribute("href", clean);
+      a.setAttribute("title", clean);
+    }
+    return doc.body.innerHTML;
+  } catch { return html; }
 }
 
 function themeVar(name, fallback) {
@@ -298,6 +371,9 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   // Syntax-highlight code blocks (default ON) — developer-friendly reading of pasted code.
   const highlight = !original && app?.settings?.highlightCode !== false;
   let body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
+  // Link hygiene (privacy, default on): strip utm_/fbclid/gclid & unwrap redirect
+  // wrappers so a click can't leak tracking params. "Show original" keeps links.
+  if (!original && s.stripTrackingParams !== false) body = cleanLinks(body);
 
   let pageCss;
   if (dark) {
@@ -325,7 +401,10 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
     ? `pre.rapl-code{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;padding:12px 14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
        pre.rapl-code .hl-k{color:#cf222e;font-weight:600;} pre.rapl-code .hl-s{color:#0a3069;}
        pre.rapl-code .hl-c{color:#6e7781;font-style:italic;} pre.rapl-code .hl-n{color:#0550ae;}
-       pre.rapl-code .hl-l{color:#8250df;}`
+       pre.rapl-code .hl-l{color:#8250df;}
+       pre.rapl-diff .d-line{display:block;white-space:pre-wrap;word-break:break-word;}
+       pre.rapl-diff .d-add{background:#e6ffec;color:#116329;} pre.rapl-diff .d-del{background:#ffebe9;color:#a40e26;}
+       pre.rapl-diff .d-hunk{color:#0550ae;background:#f1f8ff;} pre.rapl-diff .d-file{color:#6e7781;font-weight:600;} pre.rapl-diff .d-meta{color:#6e7781;}`
     : "";
   return `<!doctype html><html><head><meta charset="utf-8">
     <style>${pageCss}

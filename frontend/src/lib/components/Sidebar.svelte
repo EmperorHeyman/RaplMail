@@ -4,6 +4,7 @@
   import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog, syncAllAccounts } from "../store.svelte.js";
   import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   // Failed/queued action details (so you can see *what* failed and why).
   let queueOpen = $state(false);
@@ -26,10 +27,10 @@
   async function rootCreate() {
     const name = rootName.trim();
     const aid = rootAccount ?? app.accounts[0]?.id;
-    if (!name || !aid) { notify("Pick an account and name", "error"); return; }
+    if (!name || !aid) { notify(t("nav.pickAccountAndName"), "error"); return; }
     try {
       await foldersApi.create(aid, name);
-      notify(`Creating “${name}”…`);
+      notify(t("nav.creatingFolder", { name }));
       rootCreating = false; rootName = "";
       setTimeout(loadAccountsAndFolders, 1500);
     } catch (e) { notify(e.message, "error"); }
@@ -48,38 +49,38 @@
     const s = app.settings;
     const primary = [];
     if (s.dashboard !== false)
-      primary.push({ id: "home", icon: icons.home || icons.smart, label: "Home", active: app.view === "dashboard", run: () => { app.view = "dashboard"; } });
+      primary.push({ id: "home", icon: icons.home || icons.smart, label: t("nav.home"), active: app.view === "dashboard", run: () => { app.view = "dashboard"; } });
     if (hasInbox && s.smartInbox)
-      primary.push({ id: "smart", icon: icons.smart, label: "Smart Inbox", badge: inboxUnread, active: app.selectedKind === "smart" && app.view === "mail", run: () => { app.view = "mail"; selectSmartInbox(); } });
+      primary.push({ id: "smart", icon: icons.smart, label: t("nav.smartInbox"), badge: inboxUnread, active: app.selectedKind === "smart" && app.view === "mail", run: () => { app.view = "mail"; selectSmartInbox(); } });
     else if (hasInbox && s.unifiedInbox)
-      primary.push({ id: "unified", icon: icons.unified, label: "All Inboxes", badge: inboxUnread, active: app.selectedKind === "unified" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedInbox(); } });
+      primary.push({ id: "unified", icon: icons.unified, label: t("nav.allInboxes"), badge: inboxUnread, active: app.selectedKind === "unified" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedInbox(); } });
     if (s.screener)
-      primary.push({ id: "screener", icon: icons.screener, label: "Screener", active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
+      primary.push({ id: "screener", icon: icons.screener, label: t("nav.screener"), active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
 
     const mail = [
-      { id: "drafts", icon: icons.drafts || icons.edit, label: "Drafts", active: app.selectedKind === "drafts" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedDrafts(); } },
-      { id: "allsent", icon: icons.sent, label: "Sent", active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } },
-      { id: "snoozed", icon: icons.snooze, label: "Snoozed", active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } },
-      { id: "followups", icon: icons.alarm, label: "Follow-ups", active: app.selectedKind === "followups" && app.view === "mail", run: () => { app.view = "mail"; selectFollowups(); } },
+      { id: "drafts", icon: icons.drafts || icons.edit, label: t("nav.drafts"), active: app.selectedKind === "drafts" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedDrafts(); } },
+      { id: "allsent", icon: icons.sent, label: t("nav.sent"), active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } },
+      { id: "snoozed", icon: icons.snooze, label: t("nav.snoozed"), active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } },
+      { id: "followups", icon: icons.alarm, label: t("nav.followups"), active: app.selectedKind === "followups" && app.view === "mail", run: () => { app.view = "mail"; selectFollowups(); } },
     ];
     if (s.showPaperTrail !== false)
-      mail.push({ id: "papertrail", icon: icons.receipt, label: "Paper Trail", active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
+      mail.push({ id: "papertrail", icon: icons.receipt, label: t("nav.paperTrail"), active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
 
     const tools = [
-      { id: "calendar", icon: icons.calendar, label: "Calendar", active: app.view === "calendar", run: () => { app.view = "calendar"; } },
-      { id: "tickets", icon: icons.receipt, label: "Tickets", active: app.view === "tickets", run: () => { app.view = "tickets"; } },
-      { id: "scheduled", icon: icons.clock, label: "Scheduled", active: app.view === "scheduled", run: () => { app.view = "scheduled"; } },
+      { id: "calendar", icon: icons.calendar, label: t("nav.calendar"), active: app.view === "calendar", run: () => { app.view = "calendar"; } },
+      { id: "tickets", icon: icons.receipt, label: t("nav.tickets"), active: app.view === "tickets", run: () => { app.view = "tickets"; } },
+      { id: "scheduled", icon: icons.clock, label: t("nav.scheduled"), active: app.view === "scheduled", run: () => { app.view = "scheduled"; } },
     ];
     if (s.showNewsletterFeed !== false)
-      tools.push({ id: "newsfeed", icon: icons.newspaper, label: "Newsletter Feed", active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
+      tools.push({ id: "newsfeed", icon: icons.newspaper, label: t("nav.newsletterFeed"), active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
 
     const order = s.specialOrder || [];
     const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 999 : i; };
     const sort = (arr) => arr.sort((a, b) => rank(a.id) - rank(b.id));
     return [
       { key: "primary", label: null, items: sort(primary) },
-      { key: "mail", label: "Mail", items: sort(mail) },
-      { key: "tools", label: "Tools", items: sort(tools) },
+      { key: "mail", label: t("nav.mail"), items: sort(mail) },
+      { key: "tools", label: t("nav.tools"), items: sort(tools) },
     ].filter((sec) => sec.items.length);
   });
 
@@ -148,30 +149,30 @@
     if (!name) return;
     try {
       await foldersApi.create(accountId, name);
-      notify(`Creating “${name}”…`);
+      notify(t("nav.creatingFolder", { name }));
       creatingFor = null; newFolderName = "";
       setTimeout(loadAccountsAndFolders, 1500);
     } catch (e) { notify(e.message, "error"); }
   }
   async function removeFolder(f) {
     const ok = await confirmDialog({
-      title: `Delete folder "${f.name}"?`,
-      message: "This deletes the folder and its cached messages — on the server too.",
-      confirmLabel: "Delete folder", danger: true,
+      title: t("nav.deleteFolderTitle", { name: f.name }),
+      message: t("nav.deleteFolderMsg"),
+      confirmLabel: t("nav.deleteFolder"), danger: true,
     });
     if (!ok) return;
-    try { await foldersApi.remove(f.id); await loadAccountsAndFolders(); notify("Folder deleted"); }
+    try { await foldersApi.remove(f.id); await loadAccountsAndFolders(); notify(t("nav.folderDeleted")); }
     catch (e) { notify(e.message, "error"); }
   }
   async function removeAccount(a) {
     const ok = await confirmDialog({
-      title: `Remove ${a.email}?`,
-      message: "Deletes the account, its credentials, and its cached mail from this device. Mail on the server is untouched.",
-      confirmLabel: "Remove account", danger: true,
+      title: t("nav.removeAccountTitle", { email: a.email }),
+      message: t("nav.removeAccountMsg"),
+      confirmLabel: t("nav.removeAccount"), danger: true,
     });
     if (!ok) return;
-    try { await accountsApi.remove(a.id); await loadAccountsAndFolders(); notify("Account removed"); }
-    catch (e) { notify(`Couldn't remove: ${e.message}`, "error"); }
+    try { await accountsApi.remove(a.id); await loadAccountsAndFolders(); notify(t("nav.accountRemoved")); }
+    catch (e) { notify(t("nav.couldntRemove", { error: e.message }), "error"); }
   }
   const openFolder = (f) => { app.view = "mail"; selectFolder(f); };
 </script>
@@ -180,7 +181,7 @@
   <div class="brand">
     <span class="mark">{@html icons.brand}</span>
     {#if !collapsed}<span class="title">RaplMail</span>{/if}
-    <button class="collapse" title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+    <button class="collapse" title={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
       onclick={() => saveSettings({ sidebarCollapsed: !collapsed })}>
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         {#if collapsed}<path d="m6.5 5 7 7-7 7"/><path d="m12.5 5 7 7-7 7"/>{:else}<path d="m17.5 5-7 7 7 7"/><path d="m11.5 5-7 7 7 7"/>{/if}
@@ -188,13 +189,13 @@
     </button>
   </div>
 
-  <button class="btn primary compose" title="Compose{composeHint ? ` (${composeHint})` : ''}" onclick={() => openCompose({ to: "", subject: "", html: "" })}>
-    {@html icons.compose}{#if !collapsed}<span class="compose-label">Compose</span>{#if composeHint}<kbd>{composeHint}</kbd>{/if}{/if}
+  <button class="btn primary compose" title={composeHint ? t("nav.composeWithHint", { hint: composeHint }) : t("nav.compose")} onclick={() => openCompose({ to: "", subject: "", html: "" })}>
+    {@html icons.compose}{#if !collapsed}<span class="compose-label">{t("nav.compose")}</span>{#if composeHint}<kbd>{composeHint}</kbd>{/if}{/if}
   </button>
 
   {#if workspaces.length && !collapsed}
     <div class="ws-switch">
-      <button class:active={app.settings.activeWorkspace == null} onclick={() => setWorkspace(null)}>All</button>
+      <button class:active={app.settings.activeWorkspace == null} onclick={() => setWorkspace(null)}>{t("nav.allWorkspaces")}</button>
       {#each workspaces as w}
         <button class:active={app.settings.activeWorkspace === w.id} onclick={() => setWorkspace(w.id)}>{w.name}</button>
       {/each}
@@ -203,7 +204,7 @@
 
   <div class="scroll">
     {#if grouped.length === 0 && !collapsed}
-      <div class="empty">No accounts yet. <button class="link" onclick={() => (app.view = "settings")}>Add one →</button></div>
+      <div class="empty">{t("nav.noAccounts")} <button class="link" onclick={() => (app.view = "settings")}>{t("nav.addOne")}</button></div>
     {/if}
 
     {#each navSections as sec (sec.key)}
@@ -232,7 +233,7 @@
     {/each}
 
     {#if app.settings.savedSearches.length}
-      {#if collapsed}<div class="sec-rule"></div>{:else}<div class="sec-label">Searches</div>{/if}
+      {#if collapsed}<div class="sec-rule"></div>{:else}<div class="sec-label">{t("nav.searches")}</div>{/if}
     {/if}
     {#each app.settings.savedSearches as ss (ss.id)}
       <div class="folder-row">
@@ -241,7 +242,7 @@
           onclick={() => runSearch(ss.query)}>
           <span class="ic">{@html icons.search}</span>{#if !collapsed}<span class="name">{ss.name}</span>{/if}
         </button>
-        {#if !collapsed}<button class="eye" title="Remove saved search" onclick={() => removeSavedSearch(ss.id)}>{@html icons.close}</button>{/if}
+        {#if !collapsed}<button class="eye" title={t("nav.removeSavedSearch")} onclick={() => removeSavedSearch(ss.id)}>{@html icons.close}</button>{/if}
       </div>
     {/each}
 
@@ -255,8 +256,8 @@
             <span class="dot" style="background:{g.account.color}"></span>
             <span class="email">{g.account.email}</span>
           </button>
-          <button class="addbtn" title="New folder" onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>＋</button>
-          {#if manage}<button class="addbtn del" title="Remove this account" onclick={() => removeAccount(g.account)}>{@html icons.trash}</button>{/if}
+          <button class="addbtn" title={t("nav.newFolder")} onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>＋</button>
+          {#if manage}<button class="addbtn del" title={t("nav.removeThisAccount")} onclick={() => removeAccount(g.account)}>{@html icons.trash}</button>{/if}
         {:else}
           <span class="dot rail-dot" style="background:{g.account.color}" title={g.account.email}></span>
         {/if}
@@ -264,8 +265,8 @@
 
       {#if creatingFor === g.account.id && !collapsed}
         <div class="newfolder" transition:slide={{ duration: 150 }}>
-          <input placeholder="Folder name" bind:value={newFolderName} onkeydown={(e) => e.key === "Enter" && createFolder(g.account.id)} />
-          <button class="btn primary" onclick={() => createFolder(g.account.id)}>Add</button>
+          <input placeholder={t("nav.folderNamePlaceholder")} bind:value={newFolderName} onkeydown={(e) => e.key === "Enter" && createFolder(g.account.id)} />
+          <button class="btn primary" onclick={() => createFolder(g.account.id)}>{t("nav.add")}</button>
         </div>
       {/if}
 
@@ -279,7 +280,7 @@
             ondragend={() => (dragId = null)}
             ondragover={(e) => { if (manage) e.preventDefault(); }}
             ondragenter={() => { if (manage) reorderLive(g, f.id); }}>
-            {#if manage && !collapsed}<span class="grip" title="Drag to reorder">⠿</span>{/if}
+            {#if manage && !collapsed}<span class="grip" title={t("nav.dragToReorder")}>⠿</span>{/if}
             <button class="nav-it" title={f.name}
               class:active={app.selectedKind === "folder" && app.selectedFolderId === f.id && app.view === "mail"}
               onclick={() => { if (!manage) openFolder(f); }}>
@@ -288,8 +289,8 @@
               {#if f.unread_count > 0 && !manage && !collapsed}<span class="badge tnum">{f.unread_count > 999 ? "999+" : f.unread_count}</span>{/if}
             </button>
             {#if manage && !collapsed}
-              <button class="eye" title={isHidden(f) ? "Show" : "Hide"} onclick={() => toggleHidden(f)}>{@html isHidden(f) ? icons.show : icons.hide}</button>
-              {#if !CORE.has(f.role)}<button class="del" title="Delete folder" onclick={() => removeFolder(f)}>{@html icons.trash}</button>{/if}
+              <button class="eye" title={isHidden(f) ? t("nav.show") : t("nav.hide")} onclick={() => toggleHidden(f)}>{@html isHidden(f) ? icons.show : icons.hide}</button>
+              {#if !CORE.has(f.role)}<button class="del" title={t("nav.deleteFolder")} onclick={() => removeFolder(f)}>{@html icons.trash}</button>{/if}
             {/if}
           </div>
         {/each}
@@ -304,31 +305,31 @@
               {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
             </select>
           {/if}
-          <input placeholder="New folder name" bind:value={rootName} onkeydown={(e) => e.key === "Enter" && rootCreate()} />
-          <button class="btn primary" onclick={rootCreate}>Add</button>
+          <input placeholder={t("nav.newFolderNamePlaceholder")} bind:value={rootName} onkeydown={(e) => e.key === "Enter" && rootCreate()} />
+          <button class="btn primary" onclick={rootCreate}>{t("nav.add")}</button>
           <button class="btn ghost" onclick={() => (rootCreating = false)}>{@html icons.close}</button>
         </div>
       {:else}
-        <button class="quiet-action" onclick={() => { rootCreating = true; rootAccount = app.accounts[0]?.id; }}>＋ New folder</button>
+        <button class="quiet-action" onclick={() => { rootCreating = true; rootAccount = app.accounts[0]?.id; }}>{t("nav.newFolderAction")}</button>
       {/if}
     {/if}
 
     {#if app.folders.length > 0 && !collapsed}
       <button class="quiet-action" class:on={manage} onclick={() => { manage = !manage; creatingFor = null; }}>
-        {manage ? "✓ Done managing" : "Manage folders"}
+        {manage ? t("nav.doneManaging") : t("nav.manageFolders")}
       </button>
-      {#if manage}<div class="manage-hint" transition:slide={{ duration: 150 }}>Drag ⠿ to reorder · {@html icons.hide}/{@html icons.show} hide · ＋ add · {@html icons.trash} delete</div>{/if}
+      {#if manage}<div class="manage-hint" transition:slide={{ duration: 150 }}>{t("nav.hintReorder")} · {@html icons.hide}/{@html icons.show} {t("nav.hintHide")} · ＋ {t("nav.hintAdd")} · {@html icons.trash} {t("nav.hintDelete")}</div>{/if}
     {/if}
   </div>
 
   {#if (app.syncing || app.queuePending > 0 || app.queueFailed > 0) && !collapsed}
     <div class="status" transition:slide={{ duration: 150 }}>
-      {#if app.syncing}<span class="st-line"><span class="spin">{@html icons.sync}</span> Syncing your mail…</span>{/if}
-      {#if app.queuePending > 0}<span class="st-line"><span class="spin">⏳</span> {app.queuePending} action{app.queuePending === 1 ? "" : "s"} syncing…</span>{/if}
+      {#if app.syncing}<span class="st-line"><span class="spin">{@html icons.sync}</span> {t("nav.syncing")}</span>{/if}
+      {#if app.queuePending > 0}<span class="st-line"><span class="spin">⏳</span> {app.queuePending === 1 ? t("nav.actionSyncing", { n: app.queuePending }) : t("nav.actionsSyncing", { n: app.queuePending })}</span>{/if}
       {#if app.queueFailed > 0}
-        <span class="st-line failed">⚠ {app.queueFailed} failed
-          <button onclick={toggleQueue}>{queueOpen ? "Hide" : "Details"}</button>
-          <button onclick={retryQueue}>Retry</button>
+        <span class="st-line failed">{t("nav.failedCount", { n: app.queueFailed })}
+          <button onclick={toggleQueue}>{queueOpen ? t("nav.hide") : t("nav.details")}</button>
+          <button onclick={retryQueue}>{t("nav.retry")}</button>
         </span>
         {#if queueOpen}
           <div class="qitems">
@@ -337,12 +338,12 @@
                 <div class="qsum">{q.summary}</div>
                 {#if q.last_error}<div class="qerr">{q.last_error}</div>{/if}
                 <div class="qmeta">
-                  <span>{q.status}{q.attempts ? ` · ${q.attempts} tries` : ""}</span>
-                  <button onclick={() => discardItem(q.id)}>Discard</button>
+                  <span>{q.status}{q.attempts ? ` · ${t("nav.tries", { n: q.attempts })}` : ""}</span>
+                  <button onclick={() => discardItem(q.id)}>{t("nav.discard")}</button>
                 </div>
               </div>
             {/each}
-            {#if queueList.length === 0}<div class="qitem muted">Nothing queued.</div>{/if}
+            {#if queueList.length === 0}<div class="qitem muted">{t("nav.nothingQueued")}</div>{/if}
           </div>
         {/if}
       {/if}
@@ -350,9 +351,9 @@
   {/if}
 
   <div class="foot">
-    <button class="foot-btn" class:spin-ic={app.syncing} title="Check for new mail (Ctrl+R)" onclick={syncAllAccounts} disabled={app.syncing}>{@html icons.sync}{#if !collapsed}<span>Sync</span>{/if}</button>
-    <button class="foot-btn" title={app.customizing ? "Lock layout" : "Customize layout (resize columns)"} class:active={app.customizing} onclick={() => (app.customizing = !app.customizing)}>{@html app.customizing ? icons.unlock : icons.customize}{#if !collapsed}<span>Layout</span>{/if}</button>
-    <button class="foot-btn" title="Settings" class:active={app.view === "settings"} onclick={() => (app.view = "settings")}>{@html icons.settings}{#if !collapsed}<span>Settings</span>{/if}</button>
+    <button class="foot-btn" class:spin-ic={app.syncing} title={t("nav.checkNewMail")} onclick={syncAllAccounts} disabled={app.syncing}>{@html icons.sync}{#if !collapsed}<span>{t("nav.sync")}</span>{/if}</button>
+    <button class="foot-btn" title={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} class:active={app.customizing} onclick={() => (app.customizing = !app.customizing)}>{@html app.customizing ? icons.unlock : icons.customize}{#if !collapsed}<span>{t("nav.layout")}</span>{/if}</button>
+    <button class="foot-btn" title={t("nav.settings")} class:active={app.view === "settings"} onclick={() => (app.view = "settings")}>{@html icons.settings}{#if !collapsed}<span>{t("nav.settings")}</span>{/if}</button>
   </div>
 </aside>
 

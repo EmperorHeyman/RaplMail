@@ -56,6 +56,8 @@ class SendIn(BaseModel):
     send_at: datetime | None = None   # schedule for later (Send Later)
     pgp_sign: bool = False
     pgp_encrypt: bool = False
+    smime_sign: bool = False        # S/MIME detached signature (needs your cert)
+    smime_encrypt: bool = False     # S/MIME encrypt to recipients' certs
     request_receipt: bool = False   # embed a read-receipt tracking pixel
     calendar_ics: str = ""          # iMIP: text/calendar payload (METHOD below)
     calendar_method: str = "REQUEST"
@@ -220,6 +222,38 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
             message.text = armored
             message.html = ""
             message.inline_images = []
+    # S/MIME: attach the identity + recipient certs; the actual sign/encrypt of the
+    # fully-assembled MIME happens in build_mime (which has the final body).
+    if getattr(body, "smime_sign", False) or getattr(body, "smime_encrypt", False):
+        from email.utils import parseaddr
+
+        from app.models import Setting
+        from app.sync import smime as smod
+        row = session.get(Setting, 1)
+        blob = dict(row.data) if row and row.data else {}
+        if body.smime_sign and not (blob.get("smimeCert") and blob.get("smimeKey")):
+            raise RuntimeError("No S/MIME certificate imported — add one in Settings → S/MIME.")
+        recip_certs: list[str] = []
+        if body.smime_encrypt:
+            recipients = {parseaddr(r)[1].lower() for r in [*body.to, *body.cc, *body.bcc] if r}
+            recipients.discard("")
+            by_email: dict[str, str] = {}
+            for pem in (blob.get("smimeCerts") or []):
+                try:
+                    info = smod.cert_info(pem)
+                    if info.get("email"):
+                        by_email[info["email"].lower()] = pem
+                except Exception:
+                    continue
+            recip_certs = [by_email[r] for r in recipients if r in by_email]
+            if len(recip_certs) < len(recipients):
+                raise RuntimeError("Missing an S/MIME certificate for one or more recipients — "
+                                   "import it in Settings → S/MIME.")
+        message.smime_sign = bool(body.smime_sign)
+        message.smime_encrypt = bool(body.smime_encrypt)
+        message.smime_cert = blob.get("smimeCert", "")
+        message.smime_key = blob.get("smimeKey", "")
+        message.smime_recip_certs = recip_certs
     return message
 
 

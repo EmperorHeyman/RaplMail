@@ -54,6 +54,8 @@ class MessageDetail(MessageOut):
     auth: dict = {}
     warnings: list[str] = []
     pgp: dict | None = None       # {type, verified, signer} for PGP-signed/encrypted mail
+    smime: dict | None = None     # {type, verified, signer, decrypted} for S/MIME mail
+    first_time_sender: bool = False  # inbox mail from an unknown sender (inline screener prompt)
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -636,11 +638,55 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
     except Exception:
         pgp_info = None
 
+    # S/MIME: detect a PKCS#7 part (signed / encrypted), verify the signer or
+    # decrypt with the user's imported identity. Purely additive + fully guarded:
+    # analyze() returns None for anything that isn't S/MIME, so normal mail is
+    # untouched; a decrypted body is shown for this response only (not persisted).
+    smime_info = None
+    try:
+        _atts = msg.attachments or []
+        _looks_smime = any(
+            "pkcs7" in (a.get("content_type") or a.get("mail_content_type") or "").lower()
+            or (a.get("filename") or "").lower().endswith((".p7m", ".p7s"))
+            for a in _atts
+        )
+        if _looks_smime:
+            from app.sync import smime as _sm
+            _row = session.get(Setting, 1)
+            _blob = dict(_row.data) if _row and _row.data else {}
+            _identity = {"cert": _blob.get("smimeCert", ""), "key": _blob.get("smimeKey", "")}
+            _acct = session.get(Account, msg.account_id)
+            _fld = session.get(Folder, msg.folder_id)
+            if _acct is not None and _fld is not None:
+                from app.providers.pool import pool
+                _raw = await run_in_threadpool(pool.fetch_raw, _acct, _fld.path, msg.uid)
+                smime_info = _sm.analyze(_raw, _identity)
+                if smime_info and smime_info.get("decrypted"):
+                    html, text_body = smime_info["decrypted"], ""
+    except Exception:
+        smime_info = None
+
+    # First-time sender: inbox mail from someone not in Contacts and not on a
+    # known domain — drives the inline "accept the sender?" prompt in the reader
+    # (same definition as the Screener list filter, so they stay in sync).
+    first_time = False
+    try:
+        from app.sync.contacts import KNOWN_DOMAINS, domain_of
+        fld = session.get(Folder, msg.folder_id)
+        addr = (msg.from_addr or "").lower()
+        if fld is not None and fld.role == FolderRole.inbox and addr:
+            known = session.exec(
+                select(Contact.id).where(func.lower(Contact.email) == addr)
+            ).first() is not None
+            first_time = not known and domain_of(addr) not in KNOWN_DOMAINS
+    except Exception:
+        first_time = False
+
     base = _to_out(msg)
     return MessageDetail(**base.model_dump(), html=html, text=text_body,
                          cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe,
                          attachments=list(msg.attachments or []), auth=auth, warnings=warnings,
-                         pgp=pgp_info)
+                         pgp=pgp_info, smime=smime_info, first_time_sender=first_time)
 
 
 def _attachment_size(att: dict) -> int:
@@ -842,6 +888,88 @@ async def download_attachment(message_id: int, index: int,
     from urllib.parse import quote
     return Response(content=data, media_type=ctype or "application/octet-stream",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"})
+
+
+# Internal / infrastructure headers stripped by the "Safe Export" sanitizer so an
+# exported/forwarded .eml doesn't leak routing, IPs, or provider internals.
+_EXPORT_DROP_HEADERS = {
+    "received", "x-originating-ip", "x-received", "return-path", "delivered-to",
+    "authentication-results", "arc-authentication-results", "arc-message-signature",
+    "arc-seal", "x-google-smtp-source", "x-gm-message-state", "x-spam-status",
+    "x-spam-score", "x-spam-level", "x-mailer", "user-agent",
+}
+_EXPORT_DROP_PREFIXES = ("x-ms-exchange", "x-microsoft-", "x-forefront", "x-google-", "x-gm-")
+_PIXEL_IMG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_PIXEL_HINT_RE = re.compile(r"(pixel|beacon|/open\b|/wf/|/e/o/|/track|1x1|spacer)", re.IGNORECASE)
+_PIXEL_TINY_RE = re.compile(r"(?:width|height)\s*[:=]\s*[\"']?\s*[0-2](?:px)?\b", re.IGNORECASE)
+
+
+def _strip_pixels_html(html: str) -> str:
+    def repl(m: re.Match) -> str:
+        tag = m.group(0)
+        return "" if (_PIXEL_TINY_RE.search(tag) or _PIXEL_HINT_RE.search(tag)) else tag
+    return _PIXEL_IMG_RE.sub(repl, html or "")
+
+
+def _sanitize_eml(raw: bytes) -> bytes:
+    """Strip internal routing headers + hidden tracking pixels from a raw message."""
+    import email
+    from email import policy
+    msg = email.message_from_bytes(raw, policy=policy.default)
+    for name in list(msg.keys()):
+        low = name.lower()
+        if low in _EXPORT_DROP_HEADERS or low.startswith(_EXPORT_DROP_PREFIXES):
+            del msg[name]
+    for part in msg.walk():
+        if part.get_content_type() == "text/html":
+            try:
+                html = part.get_content()
+                cleaned = _strip_pixels_html(html)
+                if cleaned != html:
+                    part.set_content(cleaned, subtype="html")
+            except Exception:
+                pass
+    return msg.as_bytes(policy=policy.SMTP)
+
+
+def _export_eml(account: Account, folder: Folder, uid: int, sanitize: bool) -> bytes:
+    from app.providers.pool import pool
+    raw = pool.fetch_raw(account, folder.path, uid)
+    if not raw:
+        return b""
+    if sanitize:
+        try:
+            raw = _sanitize_eml(raw)
+        except Exception:
+            pass
+    return raw
+
+
+@router.get("/{message_id}/export")
+async def export_message(message_id: int, sanitize: bool = True,
+                         session: Session = Depends(get_session)):
+    """Download a message as a .eml. With sanitize=true (Safe Export), internal
+    routing headers (Received / X-Originating-IP / …) and hidden tracking pixels
+    are stripped first."""
+    from fastapi import Response
+    from urllib.parse import quote
+    msg = session.get(Message, message_id)
+    if msg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    account = session.get(Account, msg.account_id)
+    folder = session.get(Folder, msg.folder_id)
+    if account is None or folder is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    try:
+        raw = await run_in_threadpool(_export_eml, account, folder, msg.uid, sanitize)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY,
+                            f"Couldn't fetch the message from the server ({type(exc).__name__}).") from exc
+    if not raw:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not available")
+    name = (re.sub(r"[^\w.-]+", "_", msg.subject or "message")[:60] or "message") + ".eml"
+    return Response(content=raw, media_type="message/rfc822",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}"})
 
 
 def _attachment_bytes(account: Account, folder: Folder, uid: int, index: int):

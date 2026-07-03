@@ -2,6 +2,7 @@
   import { onMount } from "svelte";
   import { app, notify } from "../store.svelte.js";
   import { rules as api } from "../api.js";
+  import { t } from "../i18n.svelte.js";
 
   let list = $state([]);
   let preview = $state(null);
@@ -14,9 +15,9 @@
              action: "move", action_arg: "Archive", enabled: true, order: 0 };
   }
 
-  const FIELDS = [["from_domain","Sender domain"],["from","Sender address"],["to","Recipient"],["subject","Subject"],["body","Body"]];
-  const OPS = [["contains","contains"],["equals","equals"],["ends_with","ends with"],["regex","matches regex"]];
-  const ACTIONS = [["move","Move to folder"],["archive","Archive"],["delete","Delete"],["mark_read","Mark read"],["mark_done","Mark done"],["block","Block (quarantine)"]];
+  const FIELDS = ["from_domain", "from", "to", "subject", "body", "category"];
+  const OPS = ["contains", "equals", "ends_with", "regex"];
+  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script"];
 
   async function load() { list = await api.list(); }
   onMount(load);
@@ -36,7 +37,7 @@
     if (DESTRUCTIVE.has(draft.action)) {
       let count = preview?.match_count;
       try { const p = await api.preview(draft); preview = p; count = p.match_count; } catch {}
-      const verb = label(ACTIONS, draft.action).toLowerCase();
+      const verb = t("rules.action." + draft.action).toLowerCase();
       if (count != null &&
           !confirm(`This rule will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail. Continue?`)) {
         return;
@@ -48,8 +49,12 @@
   async function remove(r) { await api.remove(r.id); await load(); }
   async function toggle(r) { await api.update(r.id, { ...r, enabled: !r.enabled }); await load(); }
 
-  const needsArg = $derived(draft.action === "move");
-  function label(pairs, v) { return (pairs.find((p) => p[0] === v) || [])[1] || v; }
+  const needsArg = $derived(["move", "webhook", "run_script"].includes(draft.action));
+  const argPlaceholder = $derived(
+    draft.action === "webhook" ? t("rules.webhookHint")
+      : draft.action === "run_script" ? t("rules.scriptHint")
+      : "folder, e.g. Archive"
+  );
 </script>
 
 <div class="wrap">
@@ -62,7 +67,7 @@
           <button class="toggle" class:on={r.enabled} onclick={() => toggle(r)} title="Enable/disable" aria-label={r.enabled ? "Enabled" : "Disabled"}><span class="dot"></span></button>
           <div class="desc">
             <b>{r.name || "Rule"}</b>
-            <span>If {label(FIELDS, r.match_field)} {label(OPS, r.match_op)} “{r.match_value}” → {label(ACTIONS, r.action)}{r.action === "move" ? ` (${r.action_arg})` : ""}</span>
+            <span>If {t("rules.field." + r.match_field)} {t("rules.op." + r.match_op)} “{r.match_value}” → {t("rules.action." + r.action)}{["move", "webhook", "run_script"].includes(r.action) && r.action_arg ? ` (${r.action_arg})` : ""}</span>
           </div>
           <button class="btn ghost danger" onclick={() => remove(r)}>Delete</button>
         </div>
@@ -75,13 +80,13 @@
     <input class="name" bind:value={draft.name} placeholder="Rule name (optional)" />
     <div class="cond">
       <span>If</span>
-      <select bind:value={draft.match_field}>{#each FIELDS as f}<option value={f[0]}>{f[1]}</option>{/each}</select>
-      <select bind:value={draft.match_op}>{#each OPS as o}<option value={o[0]}>{o[1]}</option>{/each}</select>
-      <input bind:value={draft.match_value} placeholder="value, e.g. newsletters.com" oninput={runPreview} />
+      <select bind:value={draft.match_field}>{#each FIELDS as f}<option value={f}>{t("rules.field." + f)}</option>{/each}</select>
+      <select bind:value={draft.match_op}>{#each OPS as o}<option value={o}>{t("rules.op." + o)}</option>{/each}</select>
+      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : "value, e.g. newsletters.com"} oninput={runPreview} />
     </div>
     <div class="cond">
       <span>then</span>
-      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a[0]}>{a[1]}</option>{/each}</select>
+      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
       {#if needsArg}<input bind:value={draft.action_arg} placeholder="folder, e.g. Archive" />{/if}
     </div>
 

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import uuid
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlmodel import Session
@@ -114,6 +113,7 @@ async def call(iid: str, body: CallIn, session: Session = Depends(get_session)) 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
     def _do():
+        import httpx  # deferred — only loaded when a RaplDesk instance is actually used
         return httpx.request(method, base, params=params, headers=headers,
                              json=body.body if method in ("POST", "PUT") else None,
                              timeout=30, follow_redirects=True)

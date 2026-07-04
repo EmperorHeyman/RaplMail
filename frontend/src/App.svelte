@@ -120,6 +120,18 @@
   function onGlobalKey(e) {
     if (composeWindow) return;
     if (app.confirm) return;   // a confirm dialog owns the keyboard
+    // Escape backs out of the open message / conversation → back to the list.
+    // Overlays (palette, compose, dialogs, focused inputs) keep their own Escape.
+    if (e.key === "Escape" && !isTyping(e) && !app.paletteOpen && !app.composing
+        && !app.ruleModal && !app.mailMergeOpen && !app.aiInboxOpen) {
+      if (shortcutsOpen) { shortcutsOpen = false; e.preventDefault(); return; }
+      if (app.threadKey || app.selectedMessageId != null) {
+        app.threadKey = null;
+        app.selectedMessageId = null;
+        e.preventDefault();
+      }
+      return;
+    }
     const kb = app.settings.keybinds || {};
     // Ctrl/Cmd+R → check for new mail (override the webview's reload-the-app
     // default). Always block the reload, but don't trigger a sync mid-typing.

@@ -4,7 +4,7 @@
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { listTime, relativeTime } from "../time.js";
-  let { message, focused, selected, checked = false, selecting = false, onselect, onopen, ondone, onmenu, onarchive, ondelete } = $props();
+  let { message, focused, selected, checked = false, selecting = false, screener = false, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
   const done = $derived(message.is_done);
   const snoozedView = $derived(app.selectedKind === "snoozed");
   let snoozeMenu = $state(false);
@@ -56,7 +56,14 @@
       default: return null;
     }
   }
-  const rowBtns = $derived((app.settings.rowActions || ["snooze", "done"]).slice(0, 2).map(actionDef).filter(Boolean));
+  // In the Screener, the hover buttons ARE the triage decision — approve/block
+  // a first-time sender straight from the row, no need to open the mail first.
+  const rowBtns = $derived(
+    screener
+      ? [{ icon: icons.done, title: t("reader.approve"), cls: "done-btn", run: () => onapprove?.() },
+         { icon: icons.close, title: t("reader.block"), cls: "del-btn", run: () => onblock?.() }]
+      : (app.settings.rowActions || ["snooze", "done"]).slice(0, 2).map(actionDef).filter(Boolean)
+  );
 
   // Swipe-to-done gesture state.
   let dx = $state(0);

@@ -9,10 +9,12 @@ When launched by the Tauri shell, RAPLMAIL_PORT / RAPLMAIL_TOKEN are injected.
 from __future__ import annotations
 
 import contextlib
+import gc
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 
 from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, folders, messages, metrics, rapldesk, rules, settings as settings_api, signatures, smime, subscriptions, track, unfurl, vault
 from app.core.config import get_settings
@@ -32,6 +34,11 @@ async def lifespan(app: FastAPI):
     manager = SyncManager(hub)
     app.state.sync = manager
     await manager.start()
+    # Everything created during startup (modules, routes, engine) lives for the
+    # whole process — freeze it out of the cyclic GC so collections only scan
+    # request-lifetime objects (fewer + faster GC pauses).
+    gc.collect()
+    gc.freeze()
     try:
         yield
     finally:
@@ -40,7 +47,10 @@ async def lifespan(app: FastAPI):
 
 # Version is injected by the Tauri shell (RAPLMAIL_VERSION) so /health and the
 # Debug window report the real installed version, not a hardcoded stub.
-app = FastAPI(title="RaplMail", version=os.environ.get("RAPLMAIL_VERSION", "0.0.0-dev"), lifespan=lifespan)
+# orjson serializes the big list/thread payloads several times faster than the
+# stdlib encoder (and without building an intermediate string).
+app = FastAPI(title="RaplMail", version=os.environ.get("RAPLMAIL_VERSION", "0.0.0-dev"),
+              lifespan=lifespan, default_response_class=ORJSONResponse)
 
 _settings = get_settings()
 app.add_middleware(

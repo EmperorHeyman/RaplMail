@@ -105,7 +105,7 @@ const DEFAULT_SETTINGS = {
   quietStart: 22,                // quiet hours start hour (local)
   quietEnd: 7,                   // quiet hours end hour (local)
   rowActions: ["snooze", "done"],// the two hover buttons on each message row (left, right)
-  readerActions: ["reply", "replyAll", "forward", "done", "flag"], // buttons under the recipient
+  readerActions: ["reply", "replyAll", "forward", "archive", "snooze", "done", "flag", "delete"], // buttons under the recipient
   followupDays: 3,               // nudge to follow up after this many days with no reply
   workspaces: [],                // [{ id, name, accountIds: [] }]
   activeWorkspace: null,         // workspace id, or null = all accounts
@@ -115,6 +115,7 @@ const DEFAULT_SETTINGS = {
   threading: false,             // group the list into conversations
   bundles: false,               // collapse notification senders into one card
   keybinds: { next: "ArrowDown", prev: "ArrowUp", open: "Enter", done: "e",
+              reply: "r", forward: "f", archive: "a", delete: "Delete", read: "u",
               compose: "Ctrl+n", search: "/", palette: "Ctrl+k", help: "?" },
   openNextOnDone: true,          // after marking the open message done, open the next one
   language: "auto",             // UI language: "auto" (system) | "en" | "cs"
@@ -126,6 +127,14 @@ const DEFAULT_SETTINGS = {
   smartOrderMode: "recency",    // "recency" | "custom"
   smartOrder: [],               // category ids, top→bottom, when custom
 };
+
+// Stored keybinds replace the defaults wholesale (the settings merge is
+// shallow), so bindings added in later versions are missing from older saves —
+// always read keybinds through this merge.
+export const KB_DEFAULTS = DEFAULT_SETTINGS.keybinds;
+export function kbAll() {
+  return { ...KB_DEFAULTS, ...app.settings.keybinds };
+}
 
 export const app = $state({
   vault: { exists: false, unlocked: false, auto_unlock: false, ready: false },
@@ -140,6 +149,7 @@ export const app = $state({
   smartGroupData: {},            // category -> { count, latest, senders, more } for Smart Inbox
   selectedMessageId: null,
   threadKey: null,               // when viewing a conversation in the reader
+  readerCmd: null,               // { cmd, n } — keyboard-triggered reader action (reply/forward)
   showDone: false,
   search: "",
   view: "mail",                  // "mail" | "settings" | "scheduled" | "newsfeed"
@@ -974,6 +984,9 @@ function _checkReminders() {
       // Fire once past the lead time, up to the event start — a fixed 90s
       // window silently skipped reminders when the machine slept across it.
       if (now >= due && now < t + 60000 && !_firedReminders.has(key)) {
+        // Keys older than the reminder window can never fire again — don't let
+        // a long-running session accumulate them forever.
+        if (_firedReminders.size > 500) _firedReminders.clear();
         _firedReminders.add(key);
         sendNative(e.summary || "Event", `Starts ${_remindLabel(min)}${e.location ? " · " + e.location : ""}`);
       }
@@ -1038,6 +1051,44 @@ export function openThread(latest) {
   app.selectedMessageId = latest.id;
   if (!latest.is_seen) setMessageSeen(latest, true);
 }
+
+// Hand a just-fetched thread to ThreadView so auto-opening a conversation
+// doesn't fetch the same list twice (Reader detects the thread, ThreadView
+// renders it).
+export const threadPrefetch = { key: null, msgs: null };
+
+// Route a keyboard shortcut to whichever reader surface is showing (single
+// message or conversation) — they own the bodies needed to build the quote.
+export function readerCommand(cmd) {
+  app.readerCmd = { cmd, n: (app.readerCmd?.n || 0) + 1 };
+}
+
+// Archive/delete a single message: optimistic removal, Spark-style advance to
+// the next message when the removed one was open, toast. Used by the list row,
+// the reader toolbar, and the keyboard shortcuts.
+async function _removeMessage(message, action, label) {
+  const wasSelected = app.selectedMessageId === message.id;
+  const idx = app.messages.findIndex((m) => m.id === message.id);
+  app.messages = app.messages.filter((m) => m.id !== message.id);
+  if (wasSelected) {
+    const next = (app.settings.openNextOnDone && idx >= 0)
+      ? (app.messages[idx] || app.messages[idx - 1]) : null;
+    app.threadKey = null;
+    app.selectedMessageId = next ? next.id : null;
+    if (next && !next.is_seen) setMessageSeen(next, true);
+  }
+  try {
+    await messages.bulk([message.id], action);
+    notify(label);
+    refreshQueue();
+    refreshFoldersSoon();
+  } catch (e) {
+    notify(`Couldn't ${action} — restoring`, "error");
+    refreshMessages({ background: true });
+  }
+}
+export function archiveMessage(message) { return _removeMessage(message, "archive", "Archived"); }
+export function deleteMessage(message) { return _removeMessage(message, "delete", "Deleted"); }
 
 // Open a message in the reader by id (used by the AI inbox assistant). The
 // Reader fetches the full message from the id, so it needn't be in the list.
@@ -1140,6 +1191,9 @@ async function drainPrefetch() {
     while (prefetchQueue.length) {
       const id = prefetchQueue.shift();
       if (!id || prefetched.has(id)) continue;
+      // Ids are tiny but a long session shouldn't grow this without bound; a
+      // reset just means an already-cached body gets re-fetched once.
+      if (prefetched.size > 5000) prefetched.clear();
       prefetched.add(id);
       try {
         const detail = await messages.get(id);

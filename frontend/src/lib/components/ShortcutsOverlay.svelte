@@ -1,15 +1,18 @@
 <script>
   import { fade, fly } from "svelte/transition";
-  import { app } from "../store.svelte.js";
+  import { kbAll } from "../store.svelte.js";
   import { comboLabel } from "../keys.js";
   import { icons } from "../icons.js";
   let { open = false, onclose } = $props();
 
-  const kb = $derived(app.settings.keybinds || {});
+  const kb = $derived(kbAll());
   const groups = $derived([
     { title: "Triage", items: [
       [`${comboLabel(kb.next)} / ${comboLabel(kb.prev)}`, "Move down / up"], [comboLabel(kb.open), "Open message / thread"],
-      [comboLabel(kb.done), "Mark done (toggle)"], ["Ctrl/⌘ + Z", "Undo last action"],
+      [comboLabel(kb.done), "Mark done (toggle)"], [comboLabel(kb.reply), "Reply to the open message"],
+      [comboLabel(kb.forward), "Forward the open message"], [comboLabel(kb.archive), "Archive"],
+      [comboLabel(kb.delete), "Delete (to Trash)"], [comboLabel(kb.read), "Toggle read / unread"],
+      ["Esc", "Back to the list"], ["Ctrl/⌘ + Z", "Undo last action"],
       ["Click avatar", "Select (Shift-click for a range)"], ["Right-click", "Actions menu"],
     ]},
     { title: "Navigate", items: [

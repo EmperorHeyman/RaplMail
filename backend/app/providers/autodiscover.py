@@ -18,8 +18,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-import httpx
-
 _HTTP_TIMEOUT = 6.0
 
 
@@ -189,6 +187,7 @@ def _from_provider_autoconfig(domain: str, email: str) -> dict | None:
 
 
 def _fetch_and_parse(url: str, *, source: str) -> dict | None:
+    import httpx  # deferred — autodiscovery runs once per added account
     try:
         resp = httpx.get(url, timeout=_HTTP_TIMEOUT, follow_redirects=True)
         if resp.status_code != 200 or not resp.text.strip().startswith("<"):

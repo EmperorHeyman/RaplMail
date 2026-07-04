@@ -1,5 +1,5 @@
 <script>
-  import { app, saveSettings, notify } from "../store.svelte.js";
+  import { saveSettings, notify, KB_DEFAULTS, kbAll } from "../store.svelte.js";
   import { keyCombo, comboLabel } from "../keys.js";
 
   const ACTIONS = [
@@ -7,13 +7,17 @@
     { id: "prev", label: "Previous message" },
     { id: "open", label: "Open message / thread" },
     { id: "done", label: "Mark done" },
+    { id: "reply", label: "Reply to the open message" },
+    { id: "forward", label: "Forward the open message" },
+    { id: "archive", label: "Archive" },
+    { id: "delete", label: "Delete (to Trash)" },
+    { id: "read", label: "Toggle read / unread" },
     { id: "search", label: "Focus search" },
     { id: "compose", label: "Compose new message" },
     { id: "palette", label: "Command palette" },
     { id: "help", label: "Shortcut cheatsheet" },
   ];
-  const DEFAULTS = { next: "ArrowDown", prev: "ArrowUp", open: "Enter", done: "e",
-                     search: "/", compose: "Ctrl+n", palette: "Ctrl+k", help: "?" };
+  const DEFAULTS = KB_DEFAULTS;
 
   let recording = $state(null);
 
@@ -23,7 +27,7 @@
     if (e.key === "Escape") { recording = null; return; }
     const combo = keyCombo(e);
     if (!combo) return; // wait past a lone modifier
-    saveSettings({ keybinds: { ...app.settings.keybinds, [recording]: combo } });
+    saveSettings({ keybinds: { ...kbAll(), [recording]: combo } });
     notify(`Bound ${comboLabel(combo)}`);
     recording = null;
   }
@@ -43,7 +47,7 @@
       <div class="row">
         <span class="label">{a.label}</span>
         <button class="key" class:recording={recording === a.id} onclick={() => (recording = a.id)}>
-          {recording === a.id ? "Press a key…" : comboLabel(app.settings.keybinds[a.id])}
+          {recording === a.id ? "Press a key…" : comboLabel(kbAll()[a.id])}
         </button>
       </div>
     {/each}

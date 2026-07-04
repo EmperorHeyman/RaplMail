@@ -11,7 +11,7 @@ hiddenimports += [
     "websockets", "websockets.legacy", "h11",
     "mailparser", "msal", "google.auth", "google.auth.transport.requests",
     "google_auth_oauthlib", "google_auth_oauthlib.flow", "requests_oauthlib",
-    "imapclient", "aiosmtplib", "argon2", "cryptography",
+    "imapclient", "argon2", "cryptography", "orjson",
     # OpenPGP (pgpy) — needs the stdlib `imghdr` module that was removed in
     # Python 3.13 and restored by the `standard-imghdr` backport.
     "pgpy", "imghdr",

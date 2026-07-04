@@ -11,6 +11,49 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.3.4] — 2026-07-04
+
+### Changed
+- **Conversations open as conversations.** Clicking a threaded message now shows
+  the whole conversation immediately — the "View conversation" banner (and its
+  extra click) is gone. The message you clicked, the newest one, and unread
+  replies auto-expand (and are marked read); the view scrolls to the one you
+  opened. Message bodies auto-size into one natural scroll instead of fixed-height
+  inner scrollboxes, and links inside them open in your browser like everywhere
+  else.
+- **Thread view got real actions.** Reply / Reply-all / Forward on every expanded
+  message (with proper quoting and attachment carry-over), Reply / Forward /
+  **Archive all** / Done all for the whole conversation, per-message attachment
+  chips, and a warning badge on messages that failed authentication.
+- **Triage without leaving the reader.** Archive, Snooze (with the preset menu),
+  and Delete joined the reader's action bar (configurable in Appearance, like
+  before), and the sender menu gained **Create rule**. Archiving/deleting a single
+  row now shows a toast instead of silently vanishing the mail.
+- **Escape goes back.** Esc closes the open message/conversation and returns to
+  the list.
+
+### Added
+- **Full keyboard triage.** New (rebindable) shortcuts: `r` reply, `f` forward,
+  `a` archive, `Delete` delete, `u` toggle read — `a`/`Delete`/`u` act on the
+  focused row, `r`/`f` on the open message or conversation. The `?` cheatsheet and
+  Settings → Shortcuts cover them.
+- **One-click screening.** In the Screener, hovering a row now offers
+  **Approve / Block** directly — no need to open each first-time sender's mail.
+
+### Performance
+- **Much lighter message queries.** Listing, searching, threads, bulk actions and
+  the sync engine's flag reconcile no longer load the cached HTML/text bodies
+  they never used — previously every list page dragged up to 100 full bodies
+  through the ORM, and every sync cycle re-read 400 per folder.
+- **Database tuned.** New composite (folder+date, category+date) and snooze
+  indexes; a 128 MB shared memory-map for reads (per-connection heap cache
+  trimmed to 4 MB in exchange); WAL size capped.
+- **Leaner, quieter backend.** JSON responses now serialize with orjson; the
+  per-request access log is off (app logs still feed the Debug window); OAuth/
+  HTTP/KDF libraries load on first use instead of at boot; long-lived objects are
+  frozen out of garbage-collector scans; two unused libraries dropped from the
+  bundle.
+
 ## [0.3.3] — 2026-07-03
 
 ### Added

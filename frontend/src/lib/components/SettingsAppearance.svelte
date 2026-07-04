@@ -15,7 +15,8 @@
   ];
   const READER_CHOICES = [
     ["reply", "Reply"], ["replyAll", "Reply all"], ["forward", "Forward"],
-    ["done", "Done"], ["flag", "Flag"],
+    ["archive", "Archive"], ["snooze", "Snooze"],
+    ["done", "Done"], ["flag", "Flag"], ["delete", "Delete"],
   ];
   function setRowAction(index, key) {
     const cur = [...(app.settings.rowActions || ["snooze", "done"])];

@@ -1,5 +1,5 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender } from "../store.svelte.js";
+  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
@@ -33,21 +33,38 @@
       .finally(() => { if (app.selectedMessageId === id) loading = false; });
   });
 
-  // Does the open message belong to a multi-message conversation (e.g. it now has
-  // the reply you just sent)? Re-checked on open and after every sync, so a reply
-  // surfaces without reopening the message.
-  let convoCount = $state(0);
+  // Conversations open AS conversations — when the open message turns out to
+  // have thread siblings (they may live in other folders/pages, so the list
+  // couldn't know), promote the pane to the thread view automatically. The
+  // fetched thread is handed to ThreadView so it doesn't re-fetch.
   $effect(() => {
-    void app.syncTick;                 // refresh when a sync lands
+    void app.syncTick;                 // re-check when a sync lands (your reply arrived)
     const d = detail;
-    convoCount = 0;
-    if (!d || !d.thread_id) return;
+    if (!d || !d.thread_id || app.threadKey) return;
     const tid = d.thread_id, mid = d.id;
     messagesApi.thread(tid)
-      .then((msgs) => { if (app.selectedMessageId === mid) convoCount = (msgs || []).length; })
+      .then((msgs) => {
+        if (app.selectedMessageId !== mid || app.threadKey) return;
+        if ((msgs || []).length > 1) {
+          threadPrefetch.key = tid;
+          threadPrefetch.msgs = msgs;
+          app.threadKey = tid;
+        }
+      })
       .catch(() => {});
   });
-  function viewConversation() { if (detail?.thread_id) app.threadKey = detail.thread_id; }
+
+  // Keyboard-routed actions (r = reply, f = forward) for the single-message
+  // view; ThreadView handles them when a conversation is showing.
+  let _cmdSeen = 0;
+  $effect(() => {
+    const rc = app.readerCmd;
+    if (!rc || rc.n === _cmdSeen) return;
+    _cmdSeen = rc.n;
+    if (threadMode || !detail) return;
+    if (rc.cmd === "reply") reply();
+    else if (rc.cmd === "forward") forward();
+  });
 
   function fmtDate(iso) {
     return iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
@@ -265,6 +282,8 @@
   }
 
   // The action buttons under the recipient line are user-configurable.
+  let snoozeMenu = $state(false);
+  $effect(() => { void app.selectedMessageId; snoozeMenu = false; });
   function actionDef(key) {
     switch (key) {
       case "reply": return { icon: icons.reply, label: t("reader.reply"), run: reply };
@@ -272,13 +291,23 @@
       case "forward": return { icon: icons.forward, label: t("reader.forward"), run: forward };
       case "done": return { icon: detail.is_done ? icons.restore : icons.done, label: detail.is_done ? t("reader.restore") : t("reader.done"), run: () => markDone(detail, !detail.is_done) };
       case "flag": return { icon: detail.is_flagged ? icons.flagged : icons.flag, label: detail.is_flagged ? t("reader.flagged") : t("reader.flag"), run: toggleFlag, cls: detail.is_flagged ? "on" : "" };
+      case "archive": return { icon: icons.archive, label: t("list.archive"), run: () => archiveMessage(detail) };
+      case "snooze": return { icon: icons.snooze, label: t("list.snooze"), run: () => (snoozeMenu = !snoozeMenu), snooze: true };
+      case "delete": return { icon: icons.trash, label: t("list.delete"), run: () => deleteMessage(detail), cls: "del" };
       default: return null;
     }
   }
-  const readerBtns = $derived(
-    (app.settings.readerActions || ["reply", "replyAll", "forward", "done", "flag"])
-      .map(actionDef).filter((b) => b && !b.hide)
-  );
+  // Triage from the reader without a trip back to the list: archive/snooze/
+  // delete ride along even for saves from before they existed. A customized
+  // set (≠ the old default) is respected as-is.
+  const _OLD_DEFAULT = "reply,replyAll,forward,done,flag";
+  const readerBtns = $derived.by(() => {
+    const conf = app.settings.readerActions;
+    const keys = (!conf || conf.join(",") === _OLD_DEFAULT)
+      ? ["reply", "replyAll", "forward", "archive", "snooze", "done", "flag", "delete"]
+      : conf;
+    return keys.map(actionDef).filter((b) => b && !b.hide);
+  });
 
   const attachments = $derived((detail?.attachments || []).filter((a) => !a.inline));
   function humanSize(n) {
@@ -343,7 +372,7 @@
   }
 </script>
 
-<svelte:window onclick={() => (menuAddr = null)} />
+<svelte:window onclick={() => { menuAddr = null; snoozeMenu = false; }} />
 
 <section class="reader">
   {#if threadMode}
@@ -374,6 +403,7 @@
               <button onclick={() => { menuAddr = null; toggleVip(detail.from_addr); }}>{@html icons.star} {isVip(detail.from_addr) ? t("reader.removeVip") : t("reader.markVip")}</button>
               <button onclick={() => { menuAddr = null; muteSender(detail); }}>{@html icons.mute} {t("reader.muteSender")}</button>
               <button onclick={() => { menuAddr = null; muteThread(detail); }}>{@html icons.mute} {t("reader.muteConversation")}</button>
+              <button onclick={() => { menuAddr = null; createRuleFromSender(detail); }}>{@html icons.bolt} {t("list.createRule")}</button>
               <button onclick={() => { menuAddr = null; exportEml(); }}>{@html icons.save || icons.download} {t("reader.exportEml")}</button>
             </div>
           {/if}
@@ -402,12 +432,6 @@
       </div>
       {#if !actionsBottom}{@render actionsBar()}{/if}
     </header>
-    {#if convoCount > 1}
-      <button class="convo-bar" onclick={viewConversation}>
-        {@html icons.reply}
-        <span>{t("reader.viewConversation", { n: convoCount })}</span>
-      </button>
-    {/if}
     {#if summary}
       <div class="ai-summary">
         <div class="ai-head">{@html icons.bolt} <b>{t("reader.summary")}</b>
@@ -551,7 +575,22 @@
 {#snippet actionsBar()}
   <div class="actions" class:bottom={actionsBottom}>
     {#each readerBtns as b}
-      <button class="btn {b.cls || ''}" onclick={b.run}>{@html b.icon} {b.label}</button>
+      {#if b.snooze}
+        <span class="snz-wrap">
+          <button class="btn" class:on={snoozeMenu} onclick={(e) => { e.stopPropagation(); b.run(); }}>{@html b.icon} {b.label}</button>
+          {#if snoozeMenu}
+            <div class="snz-menu" class:up={actionsBottom} onclick={(e) => e.stopPropagation()}>
+              {#each snoozePresets() as p}
+                <button onclick={() => { snoozeMenu = false; snoozeMessage(detail, p.iso, p.presence); }}>
+                  {p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </span>
+      {:else}
+        <button class="btn {b.cls || ''}" onclick={b.run}>{@html b.icon} {b.label}</button>
+      {/if}
     {/each}
     {#if aiOn}
       <button class="btn ai" onclick={catchMeUp} disabled={summarizing} title={t("reader.catchMeUpTitle")}>
@@ -610,6 +649,19 @@
   .ai-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
   .ai-note { font-size: 11px; color: var(--muted); }
   .actions .btn.on { color: var(--warning); border-color: var(--warning); }
+  .actions .btn.del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .snz-wrap { position: relative; display: inline-block; }
+  .snz-menu {
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 25; min-width: 170px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    animation: pop-in var(--t) var(--ease); transform-origin: top left;
+  }
+  .snz-menu.up { top: auto; bottom: calc(100% + 4px); transform-origin: bottom left; }
+  .snz-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
+  .snz-menu button:hover { background: var(--accent); color: #fff; }
+  .snz-menu .when { color: var(--faint); font-size: 11px; }
+  .snz-menu button:hover .when { color: #e7e9ff; }
   .unsub-bar { display: flex; align-items: center; gap: 10px; padding: 8px 22px; background: var(--surface); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
   .unsub-bar button { margin-left: auto; color: var(--accent); font-weight: 600; }
   .auth-bar { display: flex; align-items: center; gap: 8px; padding: 8px 22px; font-size: 13px; border-bottom: 1px solid var(--hairline); }
@@ -618,8 +670,6 @@
   .auth-bar .auth-detail { color: var(--muted); font-size: 12px; margin-left: auto; }
   .auth-bar .trust { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; color: inherit; }
   .auth-bar .trust:hover { background: var(--surface-2); }
-  .convo-bar { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 22px; font-size: 13px; font-weight: 600; text-align: left; color: var(--accent, #4f8cff); background: var(--accent-soft); border: none; border-bottom: 1px solid var(--hairline); cursor: pointer; }
-  .convo-bar:hover { filter: brightness(1.06); }
   .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: var(--accent-soft); border-bottom: 1px solid var(--hairline); font-size: 13px; }
   .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
   .screener-bar .no { color: var(--danger); font-weight: 600; }

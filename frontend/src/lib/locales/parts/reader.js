@@ -128,10 +128,11 @@ export default {
     "reader.messageFrameTitle": "Message",
 
     // Thread view.
-    "reader.viewConversation": "View conversation ({n} messages)",
     "reader.messagesInConversationOne": "1 message in this conversation",
     "reader.messagesInConversation": "{n} messages in this conversation",
     "reader.conversationDone": "Conversation done",
+    "reader.conversationArchived": "Conversation archived",
+    "reader.archiveAll": "Archive all",
     "reader.couldntUpdate": "Couldn't update",
   },
   cs: {
@@ -260,10 +261,11 @@ export default {
     "reader.messageFrameTitle": "Zpráva",
 
     // Zobrazení vlákna.
-    "reader.viewConversation": "Zobrazit konverzaci ({n} zpráv)",
     "reader.messagesInConversationOne": "1 zpráva v této konverzaci",
     "reader.messagesInConversation": "{n} zpráv v této konverzaci",
     "reader.conversationDone": "Konverzace hotova",
+    "reader.conversationArchived": "Konverzace archivována",
+    "reader.archiveAll": "Archivovat vše",
     "reader.couldntUpdate": "Nepodařilo se aktualizovat",
   },
 };

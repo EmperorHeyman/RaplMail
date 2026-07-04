@@ -17,7 +17,6 @@ import json
 import threading
 from pathlib import Path
 
-from argon2.low_level import Type, hash_secret_raw
 from cryptography.fernet import Fernet, InvalidToken
 
 # Argon2id parameters (interactive-grade; tune up for slower/stronger).
@@ -41,6 +40,10 @@ class BadPasswordError(SecretStoreError):
 
 
 def _derive_key(password: str, salt: bytes) -> bytes:
+    # argon2's native module is only needed for the KDF itself — defer it so it
+    # isn't paged in at process start (unlock happens once, or never with a
+    # cached auto-unlock key).
+    from argon2.low_level import Type, hash_secret_raw
     raw = hash_secret_raw(
         secret=password.encode("utf-8"),
         salt=salt,

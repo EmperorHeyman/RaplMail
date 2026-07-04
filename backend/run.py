@@ -17,8 +17,11 @@ def main() -> None:
     host = os.environ.get("RAPLMAIL_HOST", "127.0.0.1")
     # Use the plain asyncio loop / h11 + websockets implementation so we don't
     # depend on uvloop/httptools (not needed on Windows and simpler to freeze).
+    # access_log=False: the UI polls /messages constantly — formatting + writing
+    # an access line per request is pure overhead (app logs stay at info for
+    # the in-app Debug window).
     uvicorn.run(app, host=host, port=port, loop="asyncio",
-                http="h11", ws="websockets", log_level="info")
+                http="h11", ws="websockets", log_level="info", access_log=False)
 
 
 if __name__ == "__main__":

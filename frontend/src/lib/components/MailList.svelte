@@ -3,7 +3,7 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -442,8 +442,9 @@
   function unselectIfGone(ids) {
     if (ids.includes(app.selectedMessageId)) { app.selectedMessageId = null; app.threadKey = null; }
   }
-  function archiveOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); unselectIfGone([m.id]); messagesApi.bulk([m.id], "archive").then(refreshQueue); }
-  function deleteOne(m) { app.messages = app.messages.filter((x) => x.id !== m.id); unselectIfGone([m.id]); messagesApi.bulk([m.id], "delete").then(refreshQueue); }
+  // Store-level: optimistic removal + advance to the next message + toast.
+  const archiveOne = (m) => archiveMessage(m);
+  const deleteOne = (m) => deleteMessage(m);
 
   async function bulk(action, until = null) {
     const ids = [...selectedIds];
@@ -543,7 +544,13 @@
     // slot in `items`, so don't move keyboard focus to the group card (that's
     // what made a subsequent `e` mass-complete the whole category).
     if (index >= 0) focusIndex = index;
-    app.threadKey = null;
+    // Conversations open as conversations — no extra "View conversation" click.
+    // Siblings visible in the loaded list flip the thread view on instantly;
+    // siblings elsewhere (other folders/pages) are caught by the Reader's
+    // thread check, which promotes the view once the thread comes back >1.
+    app.threadKey =
+      (message.thread_id && app.messages.some((m) => m.thread_id === message.thread_id && m.id !== message.id))
+        ? message.thread_id : null;
     app.selectedMessageId = message.id;
     if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
     refocusList();
@@ -555,7 +562,7 @@
     if (app.composing || app.paletteOpen || app.confirm) return;
     const t = e.target;
     if (t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement || (t && t.isContentEditable)) return;
-    const kb = app.settings.keybinds;
+    const kb = kbAll();
     const combo = keyCombo(e);
     if (!combo) return;
     if (combo === kb.search) {
@@ -595,6 +602,23 @@
       else doneGroup(it);
       refocusList();
       e.preventDefault();
+    } else if (combo === kb.reply || combo === kb.forward) {
+      // Reply/forward the OPEN message (single or conversation) — the reader
+      // surfaces own the bodies needed to build the quote.
+      if (app.selectedMessageId != null || app.threadKey) {
+        readerCommand(combo === kb.reply ? "reply" : "forward");
+        e.preventDefault();
+      }
+    } else if (combo === kb.archive || combo === kb.delete) {
+      const it = items[focusIndex];
+      if (it?.kind === "msg") {
+        (combo === kb.archive ? archiveOne : deleteOne)(it.msg);
+        refocusList();
+        e.preventDefault();
+      }
+    } else if (combo === kb.read) {
+      const it = items[focusIndex];
+      if (it?.kind === "msg") { toggleSeen(it.msg); e.preventDefault(); }
     }
   }
 
@@ -718,11 +742,14 @@
               selected={app.selectedMessageId === item.msg.id}
               checked={isChecked(item.msg.id)}
               selecting={selectedIds.length > 0}
+              screener={app.selectedKind === "screener"}
               onselect={(e) => toggleSelect(item.msg, i, e)}
               onopen={() => open(item.msg, i)}
               ondone={() => markDone(item.msg, !item.msg.is_done)}
               onarchive={() => archiveOne(item.msg)}
               ondelete={() => deleteOne(item.msg)}
+              onapprove={() => approveSender(item.msg)}
+              onblock={() => blockSender(item.msg)}
               onmenu={(e) => openCtx(e, item.msg)}
             />
           {:else if item.kind === "groupload"}

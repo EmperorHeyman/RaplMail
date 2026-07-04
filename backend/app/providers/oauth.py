@@ -16,8 +16,6 @@ import json
 import time
 from dataclasses import dataclass
 
-import msal
-
 from app.core.config import get_settings
 
 # --- Microsoft 365 -----------------------------------------------------------
@@ -72,7 +70,10 @@ class DeviceFlow:
     expires_in: int
 
 
-def _ms_app(cache_blob: str | None = None) -> tuple[msal.PublicClientApplication, msal.SerializableTokenCache]:
+def _ms_app(cache_blob: str | None = None) -> tuple["msal.PublicClientApplication", "msal.SerializableTokenCache"]:
+    # msal (with its requests/cryptography baggage) is heavy — import it only
+    # when an M365 flow actually runs, not at process start.
+    import msal
     settings = get_settings()
     if not settings.ms_client_id:
         raise RuntimeError("RAPLMAIL_MS_CLIENT_ID is not configured (Azure app registration required)")

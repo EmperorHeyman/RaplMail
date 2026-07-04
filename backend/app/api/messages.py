@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 from sqlalchemy import String, cast, func, text
+from sqlalchemy.orm import defer
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
 
@@ -22,6 +23,11 @@ from app.providers.imap_smtp import decode_mime_words
 
 router = APIRouter(prefix="/messages", tags=["messages"], dependencies=[Depends(verify_token)])
 log = logging.getLogger("raplmail.messages")
+
+# List/thread responses never include the cached bodies, but a plain
+# select(Message) still dragged every row's full HTML+text through the ORM —
+# megabytes per page. Deferred columns are only read if actually touched.
+_NO_BODY = (defer(Message.body_html), defer(Message.body_text))
 
 
 class MessageOut(BaseModel):
@@ -146,7 +152,7 @@ def list_messages(
             off += batch
         if not ids:
             return []
-        msgs = session.exec(select(Message).where(Message.id.in_(ids))).all()
+        msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(ids))).all()
         order = {mid: i for i, mid in enumerate(ids)}
         msgs.sort(key=lambda m: order.get(m.id, 1_000_000))
         return [_to_out(m) for m in msgs]
@@ -156,7 +162,7 @@ def list_messages(
     if q:
         op_filters, free_text = _parse_query(q)
 
-    stmt = select(Message).where(Message.pending_action == "")
+    stmt = select(Message).options(*_NO_BODY).where(Message.pending_action == "")
     # Scope (skip folder/role scope when doing a free-text/operator search so it
     # searches everywhere).
     searching = bool(q)
@@ -282,16 +288,20 @@ def followups(days: int = 3, session: Session = Depends(get_session)) -> list[Me
         return []
 
     inbound: dict[str, datetime] = {}
+    # A reply only counts if it's newer than a sent mail in the 30-day window —
+    # older inbound mail can never satisfy that, so don't scan the whole mailbox.
     for from_addr, date in session.exec(
-        select(Message.from_addr, Message.date).where(Message.folder_id.not_in(sent_ids))
+        select(Message.from_addr, Message.date)
+        .where(Message.folder_id.not_in(sent_ids), Message.date >= recent)
     ):
         a = (from_addr or "").lower()
         if a and date and (a not in inbound or date > inbound[a]):
             inbound[a] = date
 
     sent = session.exec(
-        select(Message).where(Message.folder_id.in_(sent_ids),
-                              Message.date <= older_than, Message.date >= recent)
+        select(Message).options(*_NO_BODY)
+        .where(Message.folder_id.in_(sent_ids),
+               Message.date <= older_than, Message.date >= recent)
         .order_by(Message.date.desc())
     ).all()
 
@@ -513,7 +523,7 @@ def thread(thread_id: str, session: Session = Depends(get_session)) -> list[Mess
     """All messages in a conversation (across folders), oldest first."""
     if not thread_id:
         return []
-    msgs = list(session.exec(select(Message).where(Message.thread_id == thread_id)))
+    msgs = list(session.exec(select(Message).options(*_NO_BODY).where(Message.thread_id == thread_id)))
     msgs.sort(key=lambda m: m.date.timestamp() if m.date else 0.0)
     return [_to_out(m) for m in msgs]
 
@@ -1189,7 +1199,7 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
         until = body.until
         if until is not None and until.tzinfo is not None:
             until = until.astimezone(timezone.utc).replace(tzinfo=None)
-        msgs = session.exec(select(Message).where(Message.id.in_(body.ids))).all()
+        msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))).all()
         for m in msgs:
             if a == "done": m.is_done = True; _persist_state(session, m, done=True)
             elif a == "undone": m.is_done = False; _persist_state(session, m, done=False)
@@ -1222,7 +1232,7 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
     if a in ("archive", "delete"):
         # Queue it: hide the messages immediately, flush to IMAP in the background
         # (offline-resilient — retried until the connection is back).
-        msgs = session.exec(select(Message).where(Message.id.in_(body.ids))).all()
+        msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))).all()
         for m in msgs:
             m.pending_action = a
             session.add(m)
@@ -1349,7 +1359,7 @@ def mute(message_id: int, session: Session = Depends(get_session)) -> dict:
                          match_field=RuleField.from_addr, match_op=RuleOp.equals,
                          match_value=addr, action=RuleAction.mark_done))
     # Clear out anything already in the inbox from this sender.
-    for m in session.exec(select(Message).where(func.lower(Message.from_addr) == addr.lower())):
+    for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == addr.lower())):
         m.is_done = True
         _persist_state(session, m, done=True)
     session.commit()
@@ -1369,7 +1379,7 @@ def mute_thread(message_id: int, session: Session = Depends(get_session)) -> dic
         return {"muted": "", "count": 0}
     n = 0
     parts: set[str] = set()
-    for m in session.exec(select(Message).where(Message.thread_id == key)):
+    for m in session.exec(select(Message).options(*_NO_BODY).where(Message.thread_id == key)):
         m.is_done = True
         _persist_state(session, m, done=True)
         if m.from_addr:
@@ -1436,14 +1446,14 @@ def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_s
         if existing:
             session.delete(existing)
         # Re-file existing mail from this sender back to the heuristic category.
-        for m in session.exec(select(Message).where(func.lower(Message.from_addr) == email)):
+        for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
             m.category = categorize(m.from_addr, m.from_name, m.subject, m.snippet); n += 1
     else:
         if existing:
             existing.category = body.category
         else:
             session.add(SenderCategory(email=email, category=body.category))
-        for m in session.exec(select(Message).where(func.lower(Message.from_addr) == email)):
+        for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
             m.category = body.category; n += 1
     session.commit()
     return {"updated": n}

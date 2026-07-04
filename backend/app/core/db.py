@@ -21,11 +21,18 @@ def _configure_sqlite(dbapi_conn, _record) -> None:
     cur.execute("PRAGMA foreign_keys=ON")
     cur.execute("PRAGMA busy_timeout=30000")
     # Cap the per-connection page cache so idle pooled connections (one per account
-    # poller) don't each pin an unbounded amount of RAM. Negative = KiB, so
-    # -10000 ≈ 10 MB/connection. temp_store=MEMORY keeps transient sorts/indices
-    # off disk without growing the persistent cache.
-    cur.execute("PRAGMA cache_size=-10000")
+    # poller) don't each pin an unbounded amount of RAM. Negative = KiB. Reads are
+    # served mostly from the shared mmap window below, so the private heap cache
+    # can stay small (-4000 ≈ 4 MB/connection) without losing speed.
+    cur.execute("PRAGMA cache_size=-4000")
     cur.execute("PRAGMA temp_store=MEMORY")
+    # Memory-map the database file for reads: page access skips read() syscalls
+    # and the mapping is file-backed + shared between connections (it doesn't
+    # multiply per-connection like cache_size does).
+    cur.execute("PRAGMA mmap_size=134217728")
+    # A crash/kill can leave a huge -wal behind; cap what it grows back to after
+    # a checkpoint so disk (and recovery time) stay bounded.
+    cur.execute("PRAGMA journal_size_limit=33554432")
     cur.close()
 
 
@@ -97,13 +104,29 @@ def _apply_migrations(conn) -> None:
                 conn.execute(text(ddl))
 
 
+# Composite/partial indexes for the hot queries. SQLModel's index=True only
+# covers single columns at table creation; these are applied to existing DBs too.
+_INDEXES = [
+    # Folder list + unified inbox: filter by folder, newest first.
+    "CREATE INDEX IF NOT EXISTS ix_msg_folder_date ON message (folder_id, date DESC)",
+    # Smart Inbox groups: filter by category, newest first.
+    "CREATE INDEX IF NOT EXISTS ix_msg_category_date ON message (category, date DESC)",
+    # Snoozed view / snooze-hiding predicate on every list query.
+    "CREATE INDEX IF NOT EXISTS ix_msg_snooze_until ON message (snooze_until) WHERE snooze_until IS NOT NULL",
+    # Presence-snooze resurface scan ('until I'm back').
+    "CREATE INDEX IF NOT EXISTS ix_msg_snooze_presence ON message (snooze_presence) WHERE snooze_presence = 1",
+]
+
+
 def init_db() -> None:
-    """Create all tables, run column migrations, and the FTS index. Idempotent."""
+    """Create all tables, run column migrations, indexes, and the FTS index. Idempotent."""
     engine = get_engine()
     SQLModel.metadata.create_all(engine)
     with engine.connect() as conn:
         _apply_migrations(conn)
         for stmt in _FTS_SETUP:
+            conn.execute(text(stmt))
+        for stmt in _INDEXES:
             conn.execute(text(stmt))
         conn.commit()
 

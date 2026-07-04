@@ -488,8 +488,12 @@ class SyncManager:
     def _resync_flags(self, session: Session, account: Account, folder: Folder, provider) -> None:
         """Pull FLAGS for recent existing messages and reconcile seen/done state
         that may have changed on another device (e.g. the RaplMailDone keyword)."""
+        # Flag reconcile touches only flag columns — loading the cached bodies
+        # for 400 rows per folder per cycle was the sync loop's biggest churn.
+        from sqlalchemy.orm import defer
         rows = session.exec(
-            select(Message).where(Message.folder_id == folder.id)
+            select(Message).options(defer(Message.body_html), defer(Message.body_text))
+            .where(Message.folder_id == folder.id)
             .order_by(Message.uid.desc()).limit(self.FLAG_RESYNC_WINDOW)
         ).all()
         if not rows:
@@ -540,7 +544,7 @@ class SyncManager:
     def _upsert_message(self, session: Session, account: Account, folder: Folder,
                         h: HeaderInfo, overrides: dict[str, str] | None = None) -> Message | None:
         existing = session.exec(
-            select(Message).where(Message.folder_id == folder.id, Message.uid == h.uid)
+            select(Message.id).where(Message.folder_id == folder.id, Message.uid == h.uid)
         ).first()
         if existing is not None:
             return None
@@ -557,12 +561,12 @@ class SyncManager:
         thread_id = ""
         irt = getattr(h, "in_reply_to", "") or ""
         if irt:
-            parent = session.exec(
-                select(Message).where(Message.account_id == account.id,
-                                      Message.message_id == irt)
+            parent_tid = session.exec(
+                select(Message.thread_id).where(Message.account_id == account.id,
+                                                Message.message_id == irt)
             ).first()
-            if parent is not None and parent.thread_id:
-                thread_id = parent.thread_id
+            if parent_tid:
+                thread_id = parent_tid
         if not thread_id:
             thread_id = thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
                                    participants=[h.from_addr, *(h.to_addrs or [])])

@@ -356,7 +356,17 @@ Shipped across **0.3.0** (bug fixes + link hygiene, git-diff, perf), **0.3.1** (
 
 - ✅ **Home-screen "Ask AI about your inbox"** — a Dashboard card with a plain-language input + Recap/Needs-a-reply chips. Opens the assistant seeded with the unread inbox (`openAiAssistant({scope:"new", prompt})`; the assistant's `seed()` loads `unread_only` inbox mail and auto-asks). "shrň nové maily" → a Czech recap of new mail. Recap/Needs-reply chip prompts follow the UI locale (cs/en).
 - ✅ **Tiered model picker** — a curated catalog (`CHAT_MODELS` + `EMBED_MODELS`) grouped by GPU tier (⚡ runs-anywhere / ⚖ mid / 🚀 high-end) with size + note, rendered by a reusable `modelPicker` snippet in Settings → AI assistant. Installed state is live from Ollama `/api/tags`: **Use** (one-tap switch) for installed, **Pull** (with progress) otherwise; free-text pull still available. Same picker drives the embedding-model choice (bge-m3 flagged multilingual for Czech).
-  - _Design note:_ Ollama has no official "list the whole library" API, so the catalog is hand-curated (updates with releases) rather than scraped — reliable + offline. Installed/active state is always live.
+  - _Design note:_ Ollama has no official "list the whole library" API, so the catalog is hand-curated (updates with releases) rather than scraped — reliable + offline. Installed/active state is always live. _(0.4.10 adds live search on top of this — see below.)_
+
+
+### 0.4.10 batch
+
+**Live model search + one-click setup** — all shipped in 0.4.10
+
+- ✅ **Live model search** — the curated list went stale (gemma2 vs gemma3/gemma4). New backend `GET /ai/ollama/search?q=` scrapes `ollama.com/search` and parses the `/library/<name>` links (`_parse_library_names`, unit-tested), so typing "gemma" returns gemma/gemma2/gemma3/gemma3n/gemma4/… as they're published. Frontend: a debounced search box in the model picker with Use/Pull per result; falls back to the free-text pull if the site is unreachable. Curated tiers stay as a friendly starting point.
+- ✅ **One-click setup** — three GPU-tier buttons (⚡ Fast `llama3.2:3b` / ⚖ Balanced `qwen2.5:7b` / 🚀 Best `gemma3:27b`). `quickSetup(model)` flips the provider to Ollama, enables AI buttons, sets adaptive GPU, and pulls + activates the model (via a new `activate`-after-pull flag on `startPull`). If already installed, it just switches.
+- ✅ Refreshed the recommended catalog (Gemma 3), embedding picker unchanged (bge-m3 multilingual).
+  - _Design note:_ scraping is inherently fragile, so it's best-effort with graceful fallback to curated + free-text pull; base names pull the default tag, exact tags via the free-text field.
 
 
 

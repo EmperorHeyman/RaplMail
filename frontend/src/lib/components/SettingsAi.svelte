@@ -41,20 +41,55 @@
     catch (e) { notify(e.message, "error"); }
     finally { unloading = false; }
   }
+  let _activateAfterPull = null;   // model to switch to once its pull finishes
   function pollPull() {
     clearInterval(_pullTimer);
     _pullTimer = setInterval(async () => {
       try {
         pull = await ai.ollamaPullStatus();
-        if (pull?.done) { clearInterval(_pullTimer); refreshOllama(); if (pull.error) notify("Pull failed: " + pull.error, "error"); else notify("Model ready"); }
+        if (pull?.done) {
+          clearInterval(_pullTimer);
+          if (pull.error) { notify("Pull failed: " + pull.error, "error"); }
+          else {
+            if (_activateAfterPull) { saveSettings({ aiModel: _activateAfterPull }); _activateAfterPull = null; }
+            notify("Model ready");
+          }
+          refreshOllama();
+        }
       } catch { clearInterval(_pullTimer); }
     }, 900);
   }
-  async function startPull(model) {
+  async function startPull(model, activate = false) {
     const m = (model || pullName).trim();
     if (!m) return;
+    _activateAfterPull = activate ? m : null;
     try { await ai.ollamaPull(m, app.settings.aiBaseUrl || ""); pull = { active: true, model: m, status: "starting", percent: 0 }; pollPull(); }
     catch (e) { notify(e.message, "error"); }
+  }
+
+  // One-click setup: switch to Ollama, turn on AI, adaptive GPU, and pull+use the
+  // tier's model. If it's already installed, just switch to it.
+  function quickSetup(model) {
+    saveSettings({ aiProvider: "ollama", aiButtons: true, ollamaKeepAlive: "adaptive" });
+    if (isInstalled(model)) { useModel(model, "chat"); notify("All set — " + model + " is ready."); }
+    else startPull(model, true);
+  }
+
+  // --- Live model search (ollama.com library — never stale) ---------------
+  let modelQuery = $state("");
+  let searchResults = $state([]);
+  let searching = $state(false);
+  let _searchTimer;
+  function searchModels() {
+    clearTimeout(_searchTimer);   // debounce
+    const q = modelQuery.trim();
+    if (q.length < 2) { searchResults = []; return; }
+    searching = true;
+    _searchTimer = setTimeout(async () => {
+      try { const r = await ai.ollamaSearch(q); searchResults = r.models || []; }
+      catch { searchResults = []; }
+      finally { searching = false; }
+    }, 350);
   }
   function pollInstall() {
     clearInterval(_installTimer);
@@ -107,12 +142,18 @@
     { name: "llama3.2:3b", size: "2 GB", tier: "low", note: "Fast, great default" },
     { name: "qwen2.5:3b", size: "1.9 GB", tier: "low", note: "Small, strong multilingual" },
     { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: "Great multilingual — good for Czech" },
+    { name: "gemma3:12b", size: "8 GB", tier: "mid", note: "Google Gemma 3" },
     { name: "llama3.1:8b", size: "4.9 GB", tier: "mid", note: "Well-rounded" },
-    { name: "gemma2:9b", size: "5.4 GB", tier: "mid", note: "Solid quality (Google)" },
     { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: "Fast and capable" },
     { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent multilingual" },
-    { name: "gemma2:27b", size: "16 GB", tier: "high", note: "Top quality" },
+    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality (Gemma 3)" },
     { name: "llama3.3:70b", size: "43 GB", tier: "high", note: "Best — needs lots of VRAM" },
+  ];
+  // Defaults the one-click quick-setup buttons pull for each GPU tier.
+  const QUICK_SETUP = [
+    { tier: "low", model: "llama3.2:3b", label: "⚡ Fast", sub: "Any PC · 2 GB" },
+    { tier: "mid", model: "qwen2.5:7b", label: "⚖ Balanced", sub: "Good GPU · 4.7 GB · multilingual" },
+    { tier: "high", model: "gemma3:27b", label: "🚀 Best", sub: "Strong GPU · 17 GB" },
   ];
   const EMBED_MODELS = [
     { name: "nomic-embed-text", size: "274 MB", tier: "low", note: "Default. Fast, good quality" },
@@ -134,7 +175,7 @@
         || (app.settings.semanticEnabled && (app.settings.embedProvider || "ollama") === "ollama")) refreshOllama();
   });
   $effect(() => { if (app.settings.semanticEnabled) refreshEmbed(); });
-  onDestroy(() => { clearInterval(_pullTimer); clearInterval(_installTimer); clearInterval(_embedTimer); });
+  onDestroy(() => { clearInterval(_pullTimer); clearInterval(_installTimer); clearInterval(_embedTimer); clearTimeout(_searchTimer); });
 </script>
 
 {#snippet modelPicker(catalog, kind)}
@@ -196,7 +237,17 @@
           </div>
           {#if install?.error}<p class="hint err">{install.error}</p>{/if}
         {:else if ollama.running}
-          <label class="fieldrow"><span>Model</span>
+          <div class="quicksetup">
+            <span class="lab2">✨ One-click setup — pick your hardware, RaplMail pulls the model &amp; switches everything on</span>
+            <div class="qsrow">
+              {#each QUICK_SETUP as qs}
+                <button class="qsbtn" class:on={isActive(qs.model, "chat")} onclick={() => quickSetup(qs.model)} disabled={pull?.active}>
+                  <b>{qs.label}</b><span class="qsmodel">{qs.model}</span><span class="qssub">{qs.sub}</span>
+                </button>
+              {/each}
+            </div>
+          </div>
+          <label class="fieldrow"><span>Active model</span>
             {#if ollama.models.length}
               <select value={app.settings.aiModel || ollama.models[0]} onchange={(e) => saveSettings({ aiModel: e.currentTarget.value })}>
                 {#each ollama.models as m}<option value={m}>{m}</option>{/each}
@@ -205,12 +256,32 @@
               <input placeholder="llama3.2" value={app.settings.aiModel || ""} onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
             {/if}
           </label>
-          {#if !ollama.models.length}<p class="hint">No models yet — pick one below to pull it.</p>{/if}
+          {#if !ollama.models.length}<p class="hint">No models yet — use one-click setup above, or pick/search below.</p>{/if}
           <div class="pullrow">
-            <span class="lab2">Recommended models — “Use” to switch, “Pull” to download</span>
+            <span class="lab2">Recommended — “Use” to switch, “Pull” to download</span>
             {@render modelPicker(CHAT_MODELS, "chat")}
+          </div>
+          <div class="pullrow">
+            <span class="lab2">Search all Ollama models <span class="live">live</span></span>
+            <input class="msearch" placeholder="Search… e.g. gemma, qwen, deepseek, phi" bind:value={modelQuery} oninput={searchModels} />
+            {#if searching}
+              <p class="hint">Searching ollama.com…</p>
+            {:else if searchResults.length}
+              <div class="mpick">
+                {#each searchResults as name}
+                  <div class="mrow" class:active={isActive(name, "chat")}>
+                    <div class="minfo"><span class="mname">{name}</span></div>
+                    {#if isActive(name, "chat")}<span class="musing">{@html icons.done} Using</span>
+                    {:else if isInstalled(name)}<button class="btn sm" onclick={() => useModel(name, "chat")}>Use</button>
+                    {:else}<button class="btn sm ghost" onclick={() => startPull(name)} disabled={pull?.active}>↓ Pull</button>{/if}
+                  </div>
+                {/each}
+              </div>
+            {:else if modelQuery.trim().length >= 2}
+              <p class="hint">No matches — or couldn't reach ollama.com (you can still “Pull” a name directly below).</p>
+            {/if}
             <div class="pullcustom">
-              <input placeholder="…or pull any model by name (e.g. phi4)" bind:value={pullName} onkeydown={(e) => { if (e.key === "Enter") startPull(); }} />
+              <input placeholder="…or pull an exact name/tag (e.g. gemma3:12b)" bind:value={pullName} onkeydown={(e) => { if (e.key === "Enter") startPull(); }} />
               <button class="btn" onclick={() => startPull()} disabled={pull?.active || !pullName.trim()}>Pull</button>
             </div>
           </div>
@@ -386,6 +457,22 @@
   .dot.on { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 25%, transparent); }
   .pullrow { display: flex; flex-direction: column; gap: 8px; }
   .lab2 { font-size: 12px; color: var(--muted); }
+  .lab2 .live { font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 700; color: var(--done);
+    border: 1px solid var(--done); border-radius: 999px; padding: 0 5px; margin-left: 4px; }
+  /* One-click quick setup */
+  .quicksetup { display: flex; flex-direction: column; gap: 8px; padding-bottom: 4px; }
+  .qsrow { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .qsbtn { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 10px 12px;
+    border-radius: var(--radius-sm); border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+  .qsbtn:hover:not(:disabled) { border-color: var(--accent); }
+  .qsbtn.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .qsbtn:disabled { opacity: 0.5; }
+  .qsbtn b { font-size: 13px; }
+  .qsmodel { font-size: 11px; font-family: ui-monospace, monospace; color: var(--accent); }
+  .qssub { font-size: 10.5px; color: var(--faint); }
+  .msearch { width: 100%; box-sizing: border-box; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 11px; color: var(--text); font-size: 13px; }
+  .msearch:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
   /* Tiered model picker */
   .mpick { display: flex; flex-direction: column; gap: 3px; }
   .tierhead { font-size: 11px; color: var(--faint); font-weight: 600; margin: 8px 0 2px; }

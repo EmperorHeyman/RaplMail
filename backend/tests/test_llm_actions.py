@@ -151,6 +151,25 @@ def test_ai_search_empty_400(client, capture):
     assert client.post("/ai/search", json={"q": "  "}).status_code == 400
 
 
+# --- Live model search (parse ollama.com library links) --------------------
+def test_parse_library_names_dedupes_in_order():
+    html = ('<a href="/library/gemma3">..</a> <a href="/library/gemma4">..</a> '
+            '<a href="/library/gemma3">dup</a> <a href="/library/qwen2.5">..</a>')
+    assert ai_mod._parse_library_names(html) == ["gemma3", "gemma4", "qwen2.5"]
+
+
+def test_ollama_search_endpoint(client, monkeypatch):
+    monkeypatch.setattr(ai_mod, "_fetch_text",
+                        lambda *a, **k: '<a href="/library/gemma3"></a><a href="/library/gemma4"></a>')
+    r = client.get("/ai/ollama/search?q=gemma")
+    assert r.status_code == 200
+    assert r.json()["models"] == ["gemma3", "gemma4"]
+
+
+def test_ollama_search_empty_query(client):
+    assert client.get("/ai/ollama/search?q=").json()["models"] == []
+
+
 # --- Ollama keep_alive typing (0/-1 must be numbers, not "missing unit" strings)
 def test_keep_alive_number_vs_duration():
     assert ai_mod._keep_alive("adaptive") == -1

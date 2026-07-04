@@ -11,6 +11,21 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.4.10] — 2026-07-04
+
+### Added
+- **Live Ollama model search.** Settings → AI assistant searches Ollama's library
+  in real time — type “gemma” and get gemma, gemma2, **gemma3, gemma4**, … as
+  they're published (no more stale hardcoded list). Pull or switch straight from
+  the results, or search “qwen”, “deepseek”, “phi”, anything.
+- **One-click setup.** Three buttons — ⚡ Fast / ⚖ Balanced / 🚀 Best — each
+  switches you to Ollama, turns AI on, sets adaptive GPU, and pulls + activates
+  the right model for that hardware. Nothing else to configure.
+
+### Changed
+- Refreshed the recommended-models list (Gemma 3, not Gemma 2) — but it's now
+  just a starting point; **live search covers the whole library**.
+
 ## [0.4.9] — 2026-07-04
 
 ### Added

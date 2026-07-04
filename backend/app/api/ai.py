@@ -15,6 +15,7 @@ import ssl
 import subprocess
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -581,6 +582,40 @@ def ollama_status(base: str = "", session: Session = Depends(get_session)) -> di
             pass
     return {"installed": installed or running, "running": running,
             "base_url": b, "models": models, "version": version}
+
+
+def _parse_library_names(html: str) -> list[str]:
+    """Extract model names from an ollama.com search/library page. Each model card
+    links to /library/<name>; we dedupe, preserving order."""
+    names, seen = [], set()
+    for m in re.finditer(r'href="/library/([a-z0-9][a-z0-9._-]*)"', html or ""):
+        n = m.group(1)
+        if n not in seen:
+            seen.add(n)
+            names.append(n)
+    return names
+
+
+def _fetch_text(url: str, timeout: int = 8) -> str:
+    req = urllib.request.Request(url, headers={"user-agent": "RaplMail"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ssl.create_default_context()) as resp:
+        return resp.read().decode("utf-8", "ignore")
+
+
+@router.get("/ollama/search")
+def ollama_search(q: str = "") -> dict:
+    """Search Ollama's model library LIVE (so it's never stale — gemma3, gemma4,
+    etc. show up as they're published). Scrapes ollama.com/search and returns the
+    matching model names. Best-effort: returns [] (with an error note) if the site
+    can't be reached — the curated recommendations still cover the offline case."""
+    q = q.strip()
+    if not q:
+        return {"models": []}
+    try:
+        html = _fetch_text(f"https://ollama.com/search?q={urllib.parse.quote(q)}")
+        return {"models": _parse_library_names(html)[:40]}
+    except Exception as exc:  # noqa: BLE001
+        return {"models": [], "error": str(exc)[:200]}
 
 
 # Background job state for the long-running pull/install (polled by the UI).

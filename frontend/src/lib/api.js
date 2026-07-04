@@ -209,6 +209,7 @@ export const ai = {
   ollamaInstallStatus: () => api.get("/ai/ollama/install-status"),
   ollamaUnload: () => api.post("/ai/ollama/unload", {}),
   ollamaWarm: () => api.post("/ai/ollama/warm", {}),
+  ollamaSearch: (q) => api.get(`/ai/ollama/search?q=${encodeURIComponent(q)}`),   // live library search
   // Semantic search index (local embeddings).
   embedStatus: () => api.get("/ai/embed/status"),
   embedReindex: () => api.post("/ai/embed/reindex", {}),

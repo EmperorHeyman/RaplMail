@@ -1,5 +1,5 @@
 // Central reactive app state using Svelte 5 runes.
-import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi } from "./api.js";
+import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai } from "./api.js";
 import { playSound } from "./sound.js";
 import { setLocale } from "./i18n.svelte.js";
 
@@ -67,6 +67,14 @@ const DEFAULT_SETTINGS = {
   aiButtons: true,               // show AI buttons (only relevant once a key is set)
   digestEnabled: false,          // deliver a daily AI "morning briefing" of unread mail
   digestHour: 8,                 // local hour (0-23) to deliver the briefing
+  spellCheck: true,              // native (WebView2/OS) spell-check in the composer
+  spellCheckLang: "auto",        // spell-check dictionary: "auto" (UI lang) | en | cs | sk | de | …
+  ollamaKeepAlive: "5m",         // how long Ollama keeps the model in VRAM after a request ("30s".."-1")
+  semanticEnabled: false,        // local meaning-based search (embeddings) — opt-in
+  embedProvider: "ollama",       // embeddings source: "ollama" | "openai-compatible"
+  embedBaseUrl: "",              // embeddings endpoint (blank → Ollama localhost:11434)
+  embedModel: "",                // embedding model (blank → nomic-embed-text / text-embedding-3-small)
+  embedApiKey: "",               // key for a cloud OpenAI-compatible embeddings endpoint (local Ollama needs none)
   launchOnStartup: false,        // start RaplMail at login (tray/background mode)
   minimizeToTray: true,          // closing the window hides to the tray instead of quitting
   dashboard: true,               // show the Home dashboard entry in the sidebar
@@ -152,6 +160,7 @@ export const app = $state({
   readerCmd: null,               // { cmd, n } — keyboard-triggered reader action (reply/forward)
   showDone: false,
   search: "",
+  semantic: false,               // current search is meaning-based (local embeddings) vs keyword
   view: "mail",                  // "mail" | "settings" | "scheduled" | "newsfeed"
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
@@ -159,6 +168,10 @@ export const app = $state({
   composing: null,
   mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
   aiInboxOpen: false,            // AI inbox digest + priority triage dialog
+  aiAssistantOpen: false,        // AI assistant: chat over emails added as context
+  aiAssistantSeed: null,         // { messageId, threadId, threadKey } to preload context
+  aiChatContext: [],             // [{ id, from, subject, date }] — emails the assistant reasons over
+  aiBusy: false,                 // an AI request is in flight (adaptive mode keeps the GPU warm while true)
   aiDigest: "",                  // last scheduled morning-brief text (shown in the assistant)
   pendingSend: null,             // { payload, seed, delay, label, timer } while undo-send counts down
   paletteOpen: false,            // command palette (Ctrl+K)
@@ -1103,6 +1116,25 @@ export function openMessageById(id) {
   else messages.setSeen(id, true).catch(() => {});
 }
 
+// Merge a freshly-fetched list into an existing one WITHOUT swapping every row
+// object. Reuse the existing object (by id) for messages still present and copy
+// changed fields onto it in place — Svelte's $state proxy only notifies for
+// fields that actually changed, so an unchanged row doesn't re-render. That's
+// what stops the list from flickering on every background sync. New messages
+// pass through as-is; removed ones fall out (the keyed {#each} plays their
+// out-transition).
+export function mergeById(prev, next) {
+  if (!prev?.length) return next;
+  const byId = new Map(prev.map((m) => [m.id, m]));
+  return next.map((m) => {
+    const old = byId.get(m.id);
+    if (!old) return m;
+    Object.assign(old, m);   // unchanged primitives are no-ops through the proxy
+    return old;              // keep identity so the row (avatar, shield, focus) stays put
+  });
+}
+const mergeMessages = (next) => mergeById(app.messages, next);
+
 // Latest-request-wins: overlapping loads (fast navigation, background refresh
 // racing a user click) must not let an OLDER response clobber a newer view.
 let _msgGen = 0;
@@ -1116,7 +1148,7 @@ export async function refreshMessages({ background = false } = {}) {
       try {
         const list = await messages.followups(app.settings.followupDays || 3);
         if (!fresh()) return;
-        app.messages = list;
+        app.messages = mergeMessages(list);
       } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;
@@ -1132,12 +1164,43 @@ export async function refreshMessages({ background = false } = {}) {
           const ws = workspaceAccountIds();
           if (ws) list = list.filter((m) => ws.includes(m.account_id));
         }
-        app.messages = list;
+        app.messages = mergeMessages(list);
         messages.smartGroups({ ...scope, new_days: app.settings.smartNewDays ?? 3 })
           .then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
       } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;
+    }
+    // Smart search: try meaning-based, then AI keyword extraction, then fall
+    // through to plain keyword search so the user always gets *some* results.
+    if (app.search && app.semantic) {
+      const showList = (list) => {
+        if (!list || !list.length) return false;
+        app.messages = mergeMessages(list);
+        done();
+        prefetchVisible(app.messages.map((m) => m.id));
+        return true;
+      };
+      app.aiBusy = true;
+      try {
+        // 1. Local embedding index (best) — only if the user built one.
+        if (app.settings.semanticEnabled) {
+          const list = await ai.semantic(app.search, 80);
+          if (!fresh()) return;
+          if (showList(list)) return;
+        }
+        // 2. AI turns the plain-language request into keywords, then keyword-search.
+        if (aiEnabled()) {
+          const { query } = await ai.search(app.search);
+          if (!fresh()) return;
+          if (query) {
+            const list = await messages.list({ q: query });
+            if (!fresh()) return;
+            if (showList(list)) return;
+          }
+        }
+      } catch { /* fall back to keyword below */ }
+      finally { app.aiBusy = false; }
     }
     let params;
     if (app.search) {
@@ -1165,7 +1228,7 @@ export async function refreshMessages({ background = false } = {}) {
     // Workspace isolation: limit the unified inbox to the active workspace's accounts.
     const wsIds = workspaceAccountIds();
     if (wsIds && app.selectedKind === "unified") list = list.filter((m) => wsIds.includes(m.account_id));
-    app.messages = list;
+    app.messages = mergeMessages(list);
   } finally {
     done();
   }
@@ -1311,6 +1374,7 @@ export function toggleShowDone() {
 export function searchAddress(addr) {
   app.view = "mail";
   app.search = `from:${addr}`;
+  app.semantic = false;
   app.selectedMessageId = null;
   refreshMessages();
 }
@@ -1318,6 +1382,77 @@ export function searchAddress(addr) {
 export function runSearch(query) {
   app.view = "mail";
   app.search = query;
+  app.semantic = false;
+  app.selectedMessageId = null;
+  refreshMessages();
+}
+
+// Whether AI actions/buttons should be shown. True when the user hasn't hidden
+// them AND a provider is usable — a cloud key is set, OR the provider is Ollama
+// (local, keyless). This is the single source of truth so keyless Ollama no
+// longer hides every AI button for lack of an API key.
+export function aiEnabled() {
+  if (app.settings.aiButtons === false) return false;
+  return !!(app.settings.aiApiKey || "").trim() || app.settings.aiProvider === "ollama";
+}
+
+// Open the AI assistant (multi-mail context chat). `seed` optionally pre-loads
+// context: { messageId, threadId, threadKey }.
+export function openAiAssistant(seed = null) {
+  app.aiAssistantSeed = seed;
+  app.aiAssistantOpen = true;
+}
+
+// Add a message to the AI assistant's context tray (right-click → Add to AI chat).
+// Opens the assistant if it's closed; works while it's already open too.
+export function addToAiChat(m) {
+  if (!m) return;
+  const item = { id: m.id, from: m.from_name || m.from_addr || "?",
+                 subject: m.subject || "(no subject)", date: m.date };
+  if (!app.aiChatContext.some((c) => c.id === item.id)) {
+    app.aiChatContext = [...app.aiChatContext, item];
+  }
+  app.aiAssistantSeed = null;   // we're adding directly; don't double-seed on mount
+  app.aiAssistantOpen = true;
+  notify(`Added to AI chat: ${item.subject}`);
+}
+
+// --- Adaptive Ollama: warm the model into VRAM while the app is focused, unload
+// it shortly after the app loses focus — unless the user is mid-AI-task. This is
+// the "adaptive" option in Settings → AI assistant → Free GPU after.
+function _adaptiveOn() {
+  return app.settings.aiProvider === "ollama"
+      && app.settings.ollamaKeepAlive === "adaptive" && aiEnabled();
+}
+let _adaptiveUnloadTimer;
+function _onAppFocus() {
+  if (!_adaptiveOn()) return;
+  clearTimeout(_adaptiveUnloadTimer);
+  ai.ollamaWarm().catch(() => {});
+}
+function _onAppBlur() {
+  if (!_adaptiveOn()) return;
+  clearTimeout(_adaptiveUnloadTimer);
+  // Small delay so a quick alt-tab doesn't thrash the model in/out of VRAM.
+  _adaptiveUnloadTimer = setTimeout(() => {
+    if (app.aiBusy || app.aiAssistantOpen) return;   // don't yank it mid-use
+    ai.ollamaUnload().catch(() => {});
+  }, 5000);
+}
+if (typeof window !== "undefined") {
+  window.addEventListener("focus", _onAppFocus);
+  window.addEventListener("blur", _onAppBlur);
+  // Warm on startup if we launch focused (no focus event fires for that).
+  queueMicrotask(() => { try { if (document.hasFocus?.()) _onAppFocus(); } catch {} });
+}
+
+// Meaning-based search over the local embedding index (Settings → Semantic
+// search). Falls back to keyword search in refreshMessages if the index is off,
+// the endpoint is unreachable, or nothing matched.
+export function runSemanticSearch(query) {
+  app.view = "mail";
+  app.search = query;
+  app.semantic = true;
   app.selectedMessageId = null;
   refreshMessages();
 }

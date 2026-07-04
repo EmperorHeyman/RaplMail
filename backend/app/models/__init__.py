@@ -10,7 +10,7 @@ from __future__ import annotations
 import enum
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Column, UniqueConstraint
+from sqlalchemy import JSON, Column, ForeignKey, Integer, LargeBinary, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
@@ -153,6 +153,32 @@ class MessageState(SQLModel, table=True):
     snooze_until: datetime | None = None
     snooze_presence: bool = False
     is_pinned: bool = False
+    # Bumped on every change (default on insert, onupdate on any UPDATE) so device
+    # sync can do last-writer-wins across machines. See app/sync/devicesync.py.
+    updated_at: datetime = Field(default_factory=utcnow, sa_column_kwargs={"onupdate": utcnow})
+
+
+class MessageEmbedding(SQLModel, table=True):
+    """A dense vector embedding of a message's text, for local semantic search.
+
+    One row per message (keyed by message.id). `vec` is the raw little-endian
+    float32 bytes of the (L2-normalized) embedding, so cosine similarity is just
+    a dot product. `model`+`dim` let us detect a stale index when the embedding
+    model changes (a different model → different vector space → re-embed). The
+    vectors never leave the machine; they're produced by the user's chosen local
+    (Ollama) or OpenAI-compatible embeddings endpoint. See app/sync/embeddings.py.
+    """
+    # ON DELETE CASCADE: when a message is pruned (folder cleanup, rule move/
+    # delete) its embedding must go with it — otherwise, with foreign_keys=ON,
+    # the orphaned reference would block the message delete.
+    message_id: int = Field(
+        sa_column=Column(Integer, ForeignKey("message.id", ondelete="CASCADE"), primary_key=True))
+    model: str = Field(default="", index=True)
+    dim: int = 0
+    vec: bytes = Field(default=b"", sa_column=Column(LargeBinary))
+    # Sync-content signature (hash of subject+snippet) — lets the indexer skip a
+    # message whose embeddable text hasn't changed since it was last embedded.
+    sig: str = ""
     updated_at: datetime = Field(default_factory=utcnow)
 
 

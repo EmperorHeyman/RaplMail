@@ -14,6 +14,8 @@ export default {
     "list.delete": "Delete",
     "list.open": "Open",
     "list.save": "Save",
+    "list.aiAssistant": "AI assistant — ask about your mail",
+    "list.addToAiChat": "Add to AI chat",
     "list.restore": "Restore",
     "list.more": "More",
 
@@ -139,6 +141,8 @@ export default {
     "list.archive": "Archivovat",
     "list.delete": "Smazat",
     "list.open": "Otevřít",
+    "list.aiAssistant": "AI asistent — zeptat se na poštu",
+    "list.addToAiChat": "Přidat do AI chatu",
     "list.save": "Uložit",
     "list.restore": "Obnovit",
     "list.more": "Více",

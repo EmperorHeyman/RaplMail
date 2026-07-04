@@ -528,6 +528,27 @@ def thread(thread_id: str, session: Session = Depends(get_session)) -> list[Mess
     return [_to_out(m) for m in msgs]
 
 
+@router.get("/semantic", response_model=list[MessageOut])
+def semantic_search(q: str, limit: int = 60,
+                    session: Session = Depends(get_session)) -> list[MessageOut]:
+    """Meaning-based search over the local embedding index (Settings → Semantic
+    search). Returns messages ranked by similarity to `q`, best first. Empty when
+    semantic search is off, the embedding endpoint is down, or nothing is indexed —
+    the frontend falls back to keyword search in that case. Declared before the
+    /{message_id} route so 'semantic' isn't parsed as an id."""
+    from app.sync import embeddings
+    ids = embeddings.search(session, q, limit=max(1, min(limit, 200)))
+    if not ids:
+        return []
+    msgs = session.exec(
+        select(Message).options(*_NO_BODY)
+        .where(Message.id.in_(ids), Message.pending_action == "")
+    ).all()
+    order = {mid: i for i, mid in enumerate(ids)}
+    msgs.sort(key=lambda m: order.get(m.id, 1_000_000))
+    return [_to_out(m) for m in msgs]
+
+
 # Our own read-receipt pixel (see compose._embed_receipt) — stripped when
 # rendering so viewing your own Sent copy doesn't register an "open".
 _RECEIPT_IMG_RE = re.compile(

@@ -2,7 +2,7 @@
   import { fly, fade } from "svelte/transition";
   import {
     app, openCompose, selectUnifiedInbox, selectFolder, selectSnoozed,
-    syncAllAccounts, toggleShowDone, saveSettings, setCategory,
+    syncAllAccounts, toggleShowDone, saveSettings, setCategory, aiEnabled, openAiAssistant,
   } from "../store.svelte.js";
   import { icons, folderIcon } from "../icons.js";
   import { t } from "../i18n.svelte.js";
@@ -27,9 +27,11 @@
       { icon: "↔", label: app.settings.sidebarCollapsed ? t("cmd.expandSidebar") : t("cmd.collapseSidebar"), run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
       { icon: icons.settings, label: t("cmd.openSettings"), run: () => (app.view = "settings") },
     ];
-    // AI command only when a key is configured.
-    if ((app.settings.aiApiKey || "").trim() && app.settings.aiButtons !== false) {
-      cmds.splice(2, 0, { icon: icons.bolt, label: t("cmd.aiCatchUp"), run: () => (app.aiInboxOpen = true) });
+    // AI commands whenever a provider is usable (cloud key OR keyless Ollama).
+    if (aiEnabled()) {
+      cmds.splice(2, 0,
+        { icon: icons.bolt, label: t("cmd.aiCatchUp"), run: () => (app.aiInboxOpen = true) },
+        { icon: icons.chat || icons.bolt, label: t("cmd.aiAssistant"), run: () => openAiAssistant() });
     }
     for (const c of ["primary", "newsletters", "social", "updates", "promotions"]) {
       cmds.push({ icon: icons.tag, label: t("cmd.category", { name: t("cmd.cat." + c) }), run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(c); } });

@@ -185,7 +185,7 @@ _Add your own items below._
 
 ### 0.3.x
 
-Shipped across **0.3.0** (bug fixes + link hygiene, git-diff, perf), **0.3.1** (multi-provider AI, inline first-run screener, webhook/script rule actions, Subscription Audit, safe-forward pixel stripping), **0.3.2** (Markdown compose + S/MIME crypto core & cert management), **0.3.3** (sanitized `.eml` Safe Export + the full S/MIME pipeline — reader verify/decrypt and compose sign/encrypt), and **0.3.4** (conversation-first reading + anti-"clicking-simulator" pass + deep speed/memory optimization). **Every item in this batch is now ✅** (PDF export intentionally left to the OS "Print to PDF").
+Shipped across **0.3.0** (bug fixes + link hygiene, git-diff, perf), **0.3.1** (multi-provider AI, inline first-run screener, webhook/script rule actions, Subscription Audit, safe-forward pixel stripping), **0.3.2** (Markdown compose + S/MIME crypto core & cert management), **0.3.3** (sanitized `.eml` Safe Export + the full S/MIME pipeline — reader verify/decrypt and compose sign/encrypt), **0.3.4** (conversation-first reading + anti-"clicking-simulator" pass + deep speed/memory optimization), and **0.3.5** (compact security pills, no-flicker sync, Spark-style recipient pills, an advanced-search modal, and the `g` quick-jump palette). **Every shipped item in this batch is ✅** (PDF export intentionally left to the OS "Print to PDF"; cross-device sync is scoped below as a design, not yet built).
 
 **UX de-clicking** — all shipped in 0.3.4
 - ✅ **Conversations open as conversations** — clicking a threaded message opens the full conversation directly (no "View conversation" banner, no extra click): siblings in the loaded list flip the thread view instantly, others are auto-promoted the moment the thread check returns >1. The clicked message, the newest one, and unread siblings (capped) auto-expand with bodies loaded in parallel; expanding marks read; the view scrolls to the message you clicked.
@@ -231,3 +231,135 @@ Shipped across **0.3.0** (bug fixes + link hygiene, git-diff, perf), **0.3.1** (
 - ✅ **SQLite cache-size cap** — per-connection `PRAGMA cache_size=-10000` (≈10 MB) + `temp_store=MEMORY`, so idle pooled connections (one per account poller) don't each pin unbounded page cache.
 - ✅ **IMAP socket-pool idle cleanup** — pooled connections idle past 10 min are closed (freeing socket + read buffers) instead of NOOP'd warm forever; the next fetch rebuilds on demand.
 - ✅ **Revoke stale object URLs** — verified attachment blob URLs are already revoked (and in the desktop build attachments never create object URLs — they go through Rust to disk); avatars use HTTP-cached `Image().src`, not object URLs. Hardened the avatar warm-set so it can't grow unbounded over a marathon session.
+
+
+
+### 0.3.5 batch
+
+**Look & feel — all shipped in 0.3.5**
+- ✅ **Security shown as pills, not stacked rows** — a signed-and-authenticated mail used to stack two or three full-width bars (S/MIME + "sender authenticated" + …), eating header height. Trust / auth / PGP / S/MIME now collapse into a single compact **pill strip**; each pill carries its detail on hover and expands inline (with its action — Mark safe / Undo) when clicked.
+- ✅ **No more list flicker on sync** — background syncs used to swap every row object wholesale, so the whole list (avatars, shields, focus) re-rendered and blinked each cycle. The refresh now **merges by id in place**, reusing the existing row object and only touching fields that actually changed — unchanged rows don't re-render, so the list holds still. Same fix applied to expanded Smart-Inbox category cards.
+- ✅ **Spark-style recipient pills** — the compose **To:/Cc:** fields now render committed recipients as **name pills** (a picked contact becomes "Jane Doe", not `jane@…`), with backspace-to-edit and one-click removal, while the outgoing value stays the same comma-separated string. Typing is clean instead of a run-on comma string.
+
+**Search — shipped in 0.3.5**
+- ✅ **Advanced search modal** — a ⚙-style button by the search bar opens a structured builder: From / To with **live contact autocomplete**, Subject, "has the words" (body), a status segment (Any / Unread / Read / Flagged / Done), a has-attachment toggle, and quick presets. It reads and writes the *same* query the inline bar and backend understand (`from:` `to:` `subject:` `has:attachment` `is:…`), shows a live preview of the query it will run, and only emits operators the backend actually supports.
+
+**Navigation — shipped in 0.3.5**
+- ✅ **`g` quick-jump palette** — the invisible `g`+letter chord is now a **VS Code Ctrl+T-style palette**: `g` opens a searchable list of destinations (Inbox, All Inboxes, Snoozed, Follow-ups, Paper Trail, Newsletter feed, Calendar, Scheduled, Settings) with their hint letters shown. The single-letter accelerators still fire instantly (so `g i` muscle memory survives), but the menu makes them discoverable and type-to-filter.
+
+**Cross-device sync — DESIGN (shipped in 0.4.0, see below)**
+- ✅ **Link two PCs (settings + "done" + snooze/pin state), privacy-first** — designed here, built in 0.4.0. Original design notes retained below; the shipped build took Channel A (encrypted self-mail) with a dedicated sync passphrase and a user-chosen carrier account. Two viable channels were considered, and the sync model underneath them:
+  - **Channel A — encrypted self-mail (no server, fully local-first, recommended default).** Each install owns a hidden, dedicated **"RaplMail Sync" mailbox thread** in the user's own account. On a settings change (debounced) or a manual **Sync now**, the app builds a small JSON state delta, encrypts it with a key derived from the master password (the vault already holds one), and `APPEND`s / sends it to that thread. The other PC's sync engine already reads the mailbox — it just recognizes these messages by a header/subject marker (e.g. `X-RaplMail-Sync: v1`), decrypts, and merges. **Zero extra infrastructure**, works through any IMAP provider, and the payload is opaque to the provider. Cons: eventual (poll/IDLE latency), and IMAP isn't a great DB.
+  - **Channel B — user's own middleman.** A tiny authenticated endpoint on a server the user already runs (the roadmap's Local API pattern is the template): `PUT /state` / `GET /state?since=`. Faster and cleaner than mail, still no third party. Cons: needs a reachable host + a shared token.
+  - **What actually syncs (the hard part — telling PC B a mail is "done").** "Done", snooze, flag, pin, mute, VIP, and trust are already **local state keyed by a stable message identity** (Message-ID / thread key), *not* server flags — that's exactly what makes them portable. The sync payload is a small **op-log of `{message_id, field, value, ts}` entries**, applied last-writer-wins by timestamp. Settings/rules/signatures ride the **existing config export/import JSON**, versioned with a monotonic counter so the newer side wins. Because everything is keyed by Message-ID (not local row id), PC B resolves each op to its own copy of the same mail; ops for mail not yet synced on B are parked and replayed once it arrives. Optionally mirror "done" to an IMAP `$Done` keyword too, so even a third client sees it.
+  - **Hiding the sync mail (Channel A).** The sync thread is filtered out of every RaplMail view by its marker header, so the user never sees it in-app. But if they open the account elsewhere (Gmail web, phone), they'd find these opaque messages — so each one carries a **plain-language body/description** ("This is an automated RaplMail settings-sync message. It's safe to ignore or delete; RaplMail will re-send the latest state on the next change.") and a clear subject, so it never looks like a leak or malware.
+  - **Open questions before building:** conflict UX when both PCs edit the same setting offline; whether to encrypt with the master-password key or a separate device-shared key; retention/compaction of the op-log; and first-run device pairing (scan a code / confirm a fingerprint) to authorize a new PC into the sync set.
+
+### 0.4.0 batch
+
+**Cross-device sync — shipped in 0.4.0**
+- ✅ **Device sync over your own mailbox (local-first, no cloud, no server)** — Settings → **Device sync**: turn it on, pick a **carrier account** (one that's configured on both machines), and set a **sync passphrase** (the same on every device). RaplMail then keeps your installs in step:
+  - **Why it was needed:** the pre-existing cross-device "done" relied on a custom IMAP keyword (`RaplMailDone`), which Exchange/M365 and many servers silently drop — so "done" marked on one PC never reached the other. Standard flags (`\Seen`, `\Flagged`) do sync, but RaplMail's own "done"/snooze/pin never could. This channel doesn't depend on custom-keyword support, so it works everywhere.
+  - **How:** on a change (or **Sync now**), the changed `MessageState` rows + the config bundle (settings/rules/signatures/sender tags) are serialized, encrypted with an **Argon2-derived key from the passphrase** (Fernet; the provider only ever sees ciphertext), and `APPEND`ed to a hidden **`RaplMail Sync`** folder on the carrier account. Every device scans that folder, decrypts, and merges.
+  - **Merge model:** per-message state is keyed by **(account email, RFC Message-ID)** — not local row ids — so each op resolves to the right mail on the other machine; **last-writer-wins** by `MessageState.updated_at`. State for mail a device hasn't synced yet is parked in `MessageState` and applied automatically when that mail arrives (via the existing `_restore_state`). Config is newest-publish-wins, with device-local **sync-control keys stripped both ways** so a peer's settings can't disable your sync or change your carrier account.
+  - **Invisible + honest:** the sync folder is excluded from folder discovery (never shown in the app); each sync message is marked seen and carries a plain-language body + `X-RaplMail-Sync` header, so if you ever see it in Gmail/Outlook it reads as "safe to ignore or delete", not malware.
+  - **Verified:** 8 unit tests (crypto determinism + isolation, LWW both directions, config-key preservation, unknown-account no-op, full serialize→encrypt→extract→decrypt→apply round-trip); full backend suite 36/36. **End-to-end two-machine validation is on the user** (needs both PCs + the shared mailbox).
+  - **v1 scope / future:** carries done + snooze + pin (+ config); read/flag continue to ride standard IMAP flags. Future refinements: op-log compaction of the sync folder, field-level config merge, and a pairing-code alternative to the shared passphrase.
+
+### 0.4.1 batch
+
+**Performance pass II (scroll feel + WebView memory)** — all shipped in 0.4.1
+- ✅ **Hover prefetch got a dwell** — wheel-scrolling sweeps rows under a stationary cursor, and the instant `mouseenter` prefetch fired a full-body fetch (+ main-thread JSON parse) for every row that passed — a request storm that made scrolling feel sluggish. Prefetch now waits for a **120 ms hover dwell** (cancelled on leave), so a scroll pass fetches nothing while a real hover still warms the body long before the click.
+- ✅ **View switches stopped animating 100 rows out** — switching folder/category/search replaced the whole list, which played ~100 simultaneous out-flights and flip-measured the survivors (old + new rows mounted together for 140 ms). The rows block is now **keyed on the view scope**, so a switch tears down instantly; triage removals inside one view still animate. `app.search` now updates with the debounced fetch (not per keystroke) so typing doesn't re-tear the list.
+- ✅ **WebView2 memory trim when hidden** — the shell now calls WebView2's `SetMemoryUsageTargetLevel(LOW)` whenever the window hides to the tray or minimizes (and back to `NORMAL` on show/focus). A tray-resident renderer otherwise keeps its full JS heap + image/GPU caches — hundreds of MB — alive for an invisible window; this is the documented lever to make it release them.
+- ✅ **Honest scroll-height placeholders** — offscreen rows' `contain-intrinsic-size` now matches a real 3-line row (74 px), keeping scrollbar/scroll-anchor estimates stable.
+- ✅ **Audited, found already bounded** — prefetch discards bodies (backend caches them; the JS heap never holds them), prefetched-ids / avatar-warm sets / undo stack / toast queue are all capped, the notification sound reuses one `AudioContext`, and the WS client keeps a single socket. The 353 MB reading was renderer heap/caches, not a JS leak — attacked via the trim + fewer steady-state allocations.
+
+
+### 0.4.2 batch
+
+**Zero-cloud local intelligence & search** — all shipped in 0.4.2
+
+- ✅ **Spell check in the composer** — native WebView2/Chromium spell-check with red squiggles + right-click corrections on the subject, message body, and Markdown editor. Uses the OS dictionaries for the current UI language (`spellcheck` + `lang` attributes) — one attribute, no dependency, fully offline. Toggle in Settings → General → Compose window.
+- ✅ **Ollama as a first-class local AI provider** — a dedicated **keyless** "Ollama (local, private)" provider that defaults to `http://localhost:11434` and speaks the OpenAI chat API (`/v1/chat/completions`), wired into every existing AI feature (Catch-me-up, AI reply, triage scores, morning briefing) so they run **completely offline** with nothing leaving the machine. The setup panel detects whether Ollama is installed/running, lists pulled models, pulls a model with live progress (`/api/pull` stream), and offers one-click install via winget (with a manual-download fallback). (OpenAI-compatible endpoints — Groq/OpenRouter/LM Studio — remain available too.)
+- ✅ **Semantic (meaning-based) search** — an opt-in local vector index: each message's subject+sender+snippet is embedded via Ollama (`/api/embeddings`) or any OpenAI-compatible `/v1/embeddings` endpoint, stored as an L2-normalized float32 BLOB in SQLite (`MessageEmbedding`, cascade-deleted with its message). Search embeds the query and ranks by cosine similarity — numpy fast path with a pure-Python fallback. A background sync tick keeps the index warm; a "Build / update index" button does the bulk pass. Surfaced as a **Smart** toggle in the advanced-search modal (falls back to keyword search if the index is off/unreachable/empty).
+  - _Design note:_ deliberately **not** `sqlite-vec` + bundled `onnxruntime` — both would add hundreds of MB of native code to the frozen sidecar. Brute-force cosine over a personal mailbox is a millisecond matrix-vector product, and the embedding endpoint we already ship for local intelligence (Ollama) supplies the vectors for free. Vectors never leave the machine.
+
+
+### 0.4.3 batch
+
+**AI everywhere — write, ask, and act on your mail** — all shipped in 0.4.3
+
+- ✅ **Keyless-Ollama gating fixed** — AI buttons checked "Show AI buttons" but stayed hidden because every gate still required an API key, which local Ollama doesn't have. A single `aiEnabled()` helper is now the source of truth (usable = cloud key set **or** provider is Ollama), used by the reader, command palette and composer. This is why nothing showed up after switching to Ollama.
+- ✅ **Composer AI menu (rephrase & more)** — an "✨ AI" button in the compose toolbar: Rephrase · Improve · Shorten · Expand · Fix spelling & grammar · Change tone (professional/friendly/formal/concise/confident) · Translate (8 languages) · and a freeform "Ask AI to…" box. Acts on the **selection** if you have one, otherwise the whole draft; works in both rich-text and Markdown modes; the result drops straight in (undoable). Backend `POST /ai/rewrite`.
+- ✅ **Reader quick-ask** — type "tl;dr" (or anything) about the open email in a box under the actions, plus one-tap chips (TL;DR / Action items / Key points). Answers over the message or the whole thread. Backend `POST /ai/ask`.
+- ✅ **AI assistant with multi-mail context** — a chat window (command palette, the reader's "Assistant" chip, or the composer's AI menu) where you **add emails as context** — the open message, a whole conversation, or the current list — then ask across them: "summarize these", "who still needs a reply?", "draft an answer using these three". Multi-turn; each answer can be copied or turned into a new email. Backend `POST /ai/ask` with `message_ids` + `history` (the `_call_provider` layer was refactored into a chat-capable `_call_chat`).
+- ✅ **Multi-language spell-check** — the composer now has a language switcher (Auto/EN/CS/SK/DE/PL/ES/FR/IT, persisted) so someone with an English UI can spell-check Czech mail. WebView2 checks one dictionary at a time, so it's a per-writing switch rather than simultaneous — the honest lever the platform gives us. Needs the OS language's spellcheck data installed.
+  - _Note:_ every AI feature runs through the user's chosen provider; with Ollama it's fully local/offline. Verified live end-to-end against Ollama + `mistral` (grammar fix, freeform ask).
+
+
+### 0.4.4 batch
+
+**AI polish + Ollama management** — all shipped in 0.4.4
+
+- ✅ **Fixed the Ollama 404** — with no model explicitly set, the backend used its default (`llama3.2`) which the user hadn't pulled → every AI call 404'd. Settings now auto-selects an installed model when the configured one isn't present (matched by base name), so AI works the moment Ollama has any model.
+- ✅ **AI assistant is a docked, minimizable window** — reworked from a blocking modal into a compose-style panel: drag it anywhere, keep clicking/reading behind it, and **minimize into a floating "AI" circle** (badge shows answer count) that reopens it with the conversation preserved. Removed the Escape/overlay coupling since it's no longer modal.
+- ✅ **GPU relief** — a "Free GPU (unload model)" button hits `/api/ps` + `/api/generate keep_alive:0` to evict Ollama's loaded model from VRAM on demand (Ollama keeps a model warm ~5 min after each request — the idle GPU use the user noticed). Background semantic indexing now sends `keep_alive:"30s"` so it never pins the GPU. Verified live: load `mistral` → unload → VRAM confirmed empty.
+- ✅ **Ollama version + one-click update** — the panel shows the running Ollama version (`/api/version`) and an "Update Ollama" button runs `winget upgrade` (treating "already newest" as success), beside install/pull.
+
+
+### 0.4.5 batch
+
+**AI quality + discoverability fixes** (from real Ollama use) — all shipped in 0.4.5
+
+- ✅ **AI reply language** — the drafter now replies in the SAME language as the thread (was always English). A Czech email gets a Czech reply.
+- ✅ **`###CHIPS` leak fixed** — small local models don't emit the exact `###CHIPS###` marker (they write `###CHIPS|`, `CHIPS:`, …), so it leaked into the reply body. `_split_chips()` now matches the variants (requiring a `#` prefix or a `:`/`|` so prose containing "chips" isn't truncated) and strips it cleanly. Unit-tested against the exact bad output the user saw.
+- ✅ **AI now reads the full email** — `_thread_text`/`_context_text` only had cached bodies, so the assistant/Catch-me-up/reply saw just subject + sender + snippet for any un-opened message. They now fetch + cache missing bodies over IMAP (capped at 20) so answers use real content.
+- ✅ **Ctrl+K works while reading** — the sandboxed email iframe grabbed focus and swallowed app shortcuts; the iframe keydown handler now forwards Ctrl+K (palette), Ctrl+N (compose) and Escape (back to list).
+- ✅ **Assistant one click away** — an AI button in the message-list header opens the assistant seeded with the open message/conversation, in addition to Ctrl+K and the reader's Assistant chip.
+- _Known scope:_ the reader's inline quick-ask row still renders only in single-message view (not the threaded `ThreadView`); the always-visible header button + Ctrl+K cover conversations.
+
+
+### 0.4.6 batch
+
+**AI language + GPU control + reader fixes** — all shipped in 0.4.6
+
+- ✅ **Universal "answer in the user's language"** — a `_LANG_RULE` is appended to every generative prompt (ask/summarize/reply), so a Czech message gets a Czech answer. Small local models defaulted to English otherwise. Verified live: Czech ask → Czech answer through Ollama.
+- ✅ **Ollama keep_alive control** — switched the ollama chat path from the OpenAI-compat shim to the native `/api/chat`, which accepts `keep_alive`. A "Free GPU after" setting (immediately / 30s / 1m / 5m / 30m / keep-loaded) maps to it, so the model falls out of VRAM after the chosen idle. Plus explicit unloads: **on AI-assistant close**, and **on leaving a message** where AI was used. With the existing Free-GPU button + 30s embed keep-alive, the GPU frees at every natural stopping point.
+- ✅ **AI assistant keeps its size when dragged** — added the compose-style ResizeObserver so re-applying the docked `style` during a drag no longer resets the manually-resized width/height.
+- ✅ **Reader actions position honored in threads** — `ThreadView` now reads `readerActionsPos` and renders Reply/Forward/Archive/Done at the bottom when set (was always top), matching the single-message reader.
+
+
+### 0.4.7 batch
+
+**AI assistant UX — smarter & more reachable** — all shipped in 0.4.7
+
+- ✅ **Shift+Enter = newline, Enter = send** — the assistant input is now an auto-growing textarea so you can write multi-line prompts.
+- ✅ **Right-click → "Add to AI chat"** — the chat context moved to the store (`app.aiChatContext` + `addToAiChat()`), so any message-row context menu can push a mail into the assistant whether it's open or not; the assistant reads/writes the shared context.
+- ✅ **Clear-conversation button** in the assistant header (start fresh without closing).
+- ✅ **Dedicated "AI assistant" settings tab** — extracted the AI provider/Ollama panel + semantic search out of General into `SettingsAi.svelte`, registered as its own tab (searchable), and stripped the moved code + styles from `SettingsGeneral`.
+
+
+### 0.4.8 batch
+
+**Adaptive GPU + natural-language search** — all shipped in 0.4.8
+
+- ✅ **Adaptive Ollama mode** — a "Free GPU after → Adaptive" option. `_ai_config` maps it to `keep_alive:-1`; the frontend warms the model (`POST /ai/ollama/warm` → `/api/generate` load) on window **focus** and unloads it ~5s after **blur** (debounced), skipping the unload while `app.aiBusy` or the assistant is open. GPU is ready when you're in the app, freed when you're not.
+- ✅ **Natural-language search** — `POST /ai/search` asks the model to distill a plain request ("najdi email kde se jedná o audi crash plate") into keywords; the Smart search flow tries the local embedding index first (if built), then AI-keyword search, then plain keyword. The advanced-search **Smart** toggle is now available whenever an AI provider is enabled (not only with a semantic index).
+- ✅ `app.aiBusy` flag set around every AI call (assistant/reader/compose/search) so adaptive mode never evicts a model mid-generation.
+- ✅ _Fix:_ Ollama `keep_alive` of 0 / -1 must be JSON **numbers** (string "-1" → "missing unit in duration"); `_keep_alive()` now returns ints for those, duration strings otherwise. Was silently breaking adaptive chat + the Immediately/Keep-loaded options. Regression-tested + verified live.
+
+
+### 0.4.9 batch
+
+**Home AI chat + tiered model picker** — all shipped in 0.4.9
+
+- ✅ **Home-screen "Ask AI about your inbox"** — a Dashboard card with a plain-language input + Recap/Needs-a-reply chips. Opens the assistant seeded with the unread inbox (`openAiAssistant({scope:"new", prompt})`; the assistant's `seed()` loads `unread_only` inbox mail and auto-asks). "shrň nové maily" → a Czech recap of new mail. Recap/Needs-reply chip prompts follow the UI locale (cs/en).
+- ✅ **Tiered model picker** — a curated catalog (`CHAT_MODELS` + `EMBED_MODELS`) grouped by GPU tier (⚡ runs-anywhere / ⚖ mid / 🚀 high-end) with size + note, rendered by a reusable `modelPicker` snippet in Settings → AI assistant. Installed state is live from Ollama `/api/tags`: **Use** (one-tap switch) for installed, **Pull** (with progress) otherwise; free-text pull still available. Same picker drives the embedding-model choice (bge-m3 flagged multilingual for Czech).
+  - _Design note:_ Ollama has no official "list the whole library" API, so the catalog is hand-curated (updates with releases) rather than scraped — reliable + offline. Installed/active state is always live.
+
+
+
+
+
+

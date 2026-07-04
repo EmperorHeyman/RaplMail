@@ -1,9 +1,22 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, openMessageById, selectSmartInbox, selectUnifiedInbox, openCompose } from "../store.svelte.js";
+  import { app, openMessageById, selectSmartInbox, selectUnifiedInbox, openCompose, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { messages as msgApi, calendar as calApi } from "../api.js";
   import { listTime } from "../time.js";
   import { icons } from "../icons.js";
+  import { currentLocale } from "../i18n.svelte.js";
+
+  // Home-screen AI: type plainly (or tap a chip); opens the assistant with the
+  // unread inbox loaded as context and auto-asks — e.g. "shrň nové maily".
+  let aiQ = $state("");
+  const recapPrompt = () => (currentLocale() === "cs" ? "Shrň mi nové maily" : "Summarize my new mail");
+  const needsReplyPrompt = () => (currentLocale() === "cs" ? "Které maily vyžadují odpověď?" : "Which emails need a reply?");
+  function askInbox(prompt) {
+    const p = (prompt ?? aiQ).trim();
+    if (!p) return;
+    aiQ = "";
+    openAiAssistant({ scope: "new", prompt: p });
+  }
 
   // --- live clock ----------------------------------------------------------
   let now = $state(new Date());
@@ -181,6 +194,22 @@
     </section>
   </div>
 
+  {#if aiEnabled()}
+    <section class="card aicard">
+      <div class="card-h">{@html icons.bolt} <b>Ask AI about your inbox</b>
+        <button class="link" onclick={() => openAiAssistant()}>Open chat →</button>
+      </div>
+      <form class="airow" onsubmit={(e) => { e.preventDefault(); askInbox(); }}>
+        <input bind:value={aiQ} placeholder={'Ask plainly…  e.g. “shrň nové maily” or “find the audi crash plate email”'} />
+        <button class="btn primary" type="submit" disabled={!aiQ.trim()}>{@html icons.sent || ""} Ask</button>
+      </form>
+      <div class="aichips">
+        <button class="qchip" onclick={() => askInbox(recapPrompt())}>{@html icons.bolt} Recap new mail</button>
+        <button class="qchip" onclick={() => askInbox(needsReplyPrompt())}>Needs a reply?</button>
+      </div>
+    </section>
+  {/if}
+
   <div class="quick">
     <button class="qbtn" onclick={() => openCompose({ to: "", subject: "", html: "" })}>{@html icons.compose} New message</button>
     <button class="qbtn" onclick={goInbox}>{@html icons.inbox} Go to inbox</button>
@@ -247,6 +276,20 @@
   .mrow.unread .who { color: var(--accent); }
   .subj { font-size: 13px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .t { font-size: 11px; color: var(--faint); flex: none; }
+  .aicard .card-h :global(svg) { color: var(--accent); }
+  .airow { display: flex; gap: 8px; }
+  .airow input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    padding: 9px 13px; color: var(--text); font-size: 13px; }
+  .airow input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .airow .btn.primary { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #fff;
+    padding: 9px 16px; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px; white-space: nowrap; }
+  .airow .btn.primary:disabled { opacity: 0.5; }
+  .airow .btn.primary :global(svg) { width: 14px; height: 14px; }
+  .aichips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+  .aichips .qchip { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--hairline); color: var(--text); background: var(--bg); }
+  .aichips .qchip:hover { border-color: var(--accent); color: var(--accent); }
+  .aichips .qchip :global(svg) { width: 13px; height: 13px; color: var(--accent); }
   .quick { display: flex; flex-wrap: wrap; gap: 10px; }
   .qbtn { display: inline-flex; align-items: center; gap: 7px; padding: 9px 14px; border-radius: var(--radius-sm); border: 1px solid var(--hairline); background: var(--surface); font-size: 13px; color: var(--text); transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
   .qbtn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }

@@ -200,6 +200,24 @@ export const ai = {
   draft: (body) => api.post("/ai/draft", body),
   digest: () => api.post("/ai/digest", {}),
   triage: (limit = 20) => api.post("/ai/triage", { limit }),
+  // Ollama (local, keyless) — detect / pull models / one-click install.
+  ollamaStatus: (base = "") => api.get(`/ai/ollama/status${base ? `?base=${encodeURIComponent(base)}` : ""}`),
+  ollamaPull: (model, base = "") => api.post("/ai/ollama/pull", { model, base }),
+  ollamaPullStatus: () => api.get("/ai/ollama/pull-status"),
+  ollamaInstall: () => api.post("/ai/ollama/install", {}),
+  ollamaUpdate: () => api.post("/ai/ollama/update", {}),
+  ollamaInstallStatus: () => api.get("/ai/ollama/install-status"),
+  ollamaUnload: () => api.post("/ai/ollama/unload", {}),
+  ollamaWarm: () => api.post("/ai/ollama/warm", {}),
+  // Semantic search index (local embeddings).
+  embedStatus: () => api.get("/ai/embed/status"),
+  embedReindex: () => api.post("/ai/embed/reindex", {}),
+  semantic: (q, limit = 60) =>
+    api.get(`/messages/semantic?q=${encodeURIComponent(q)}&limit=${limit}`),
+  // Composer rewrite + freeform ask-over-context (reader + AI assistant).
+  rewrite: (body) => api.post("/ai/rewrite", body),
+  ask: (body) => api.post("/ai/ask", body),
+  search: (q) => api.post("/ai/search", { q }),   // natural language → keyword query
 };
 
 export const calendar = {

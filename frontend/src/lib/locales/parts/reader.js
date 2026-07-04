@@ -27,6 +27,18 @@ export default {
     "reader.dismiss": "Dismiss",
     "reader.editAndSend": "Edit & send →",
     "reader.reviewBeforeSending": "Review before sending — nothing is sent automatically.",
+    // Freeform ask-about-this-email.
+    "reader.aiAnswer": "AI answer",
+    "reader.thinking": "Thinking…",
+    "reader.askPlaceholder": "Ask about this email… (e.g. tl;dr)",
+    "reader.askTldr": "TL;DR",
+    "reader.askTldrPrompt": "Give me a quick tl;dr of this email.",
+    "reader.askActions": "Action items",
+    "reader.askActionsPrompt": "List any action items, requests, or deadlines for me.",
+    "reader.askKeyPoints": "Key points",
+    "reader.askKeyPointsPrompt": "Summarize the key points as short bullets.",
+    "reader.askMoreContext": "Open the assistant with more emails as context",
+    "reader.askAssistant": "Assistant",
 
     // Empty / loading states.
     "reader.selectMessage": "Select a message to read",
@@ -68,7 +80,9 @@ export default {
     "reader.smimeSigned": "S/MIME signed",
     "reader.smimeUnknownSigner": "signer certificate present",
     "reader.failedAuth": "Failed authentication — this message may be spoofed.",
+    "reader.failedAuthShort": "Failed auth",
     "reader.senderAuthenticated": "Sender authenticated",
+    "reader.securityWarning": "Security warning",
 
     // Screener bar.
     "reader.firstTimeSender": "First-time sender — do you want mail from {addr}?",
@@ -160,6 +174,18 @@ export default {
     "reader.dismiss": "Zavřít",
     "reader.editAndSend": "Upravit a odeslat →",
     "reader.reviewBeforeSending": "Před odesláním zkontrolujte — nic se neodešle automaticky.",
+    // Volný dotaz k tomuto e-mailu.
+    "reader.aiAnswer": "Odpověď AI",
+    "reader.thinking": "Přemýšlím…",
+    "reader.askPlaceholder": "Zeptejte se na tento e-mail… (např. tl;dr)",
+    "reader.askTldr": "Shrnutí",
+    "reader.askTldrPrompt": "Dej mi rychlé shrnutí tohoto e-mailu.",
+    "reader.askActions": "Úkoly",
+    "reader.askActionsPrompt": "Vypiš mi úkoly, požadavky nebo termíny.",
+    "reader.askKeyPoints": "Hlavní body",
+    "reader.askKeyPointsPrompt": "Shrň hlavní body do krátkých odrážek.",
+    "reader.askMoreContext": "Otevřít asistenta s více e-maily jako kontextem",
+    "reader.askAssistant": "Asistent",
 
     // Prázdné stavy / načítání.
     "reader.selectMessage": "Vyberte zprávu ke čtení",
@@ -201,7 +227,9 @@ export default {
     "reader.smimeSigned": "Podepsáno S/MIME",
     "reader.smimeUnknownSigner": "certifikát podepisujícího je přítomen",
     "reader.failedAuth": "Ověření selhalo — tato zpráva může být podvržená.",
+    "reader.failedAuthShort": "Ověření selhalo",
     "reader.senderAuthenticated": "Odesílatel ověřen",
+    "reader.securityWarning": "Bezpečnostní varování",
 
     // Pruh prověřování prvních odesílatelů.
     "reader.firstTimeSender": "Odesílatel poprvé — chcete přijímat poštu od {addr}?",

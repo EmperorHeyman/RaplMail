@@ -3,13 +3,14 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import SearchBar from "./SearchBar.svelte";
+  import AdvancedSearch from "./AdvancedSearch.svelte";
   import { icons } from "../icons.js";
   import { keyCombo } from "../keys.js";
 
@@ -17,6 +18,7 @@
   let searchTimer;
   let expandedKeys = $state(new Set());
   let rowsEl;
+  let advSearchOpen = $state(false);
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
@@ -390,6 +392,7 @@
     const acts = [
       // -1: the right-clicked row isn't necessarily the keyboard-focused one.
       { label: t("list.open"), run: () => open(m, -1) },
+      ...(aiEnabled() ? [{ label: t("list.addToAiChat"), icon: icons.bolt, kw: "ai assistant chat context", run: () => addToAiChat(m) }] : []),
       { label: m.pinned ? t("list.unpin") : t("list.pinToTop"), icon: icons.pin, run: () => pinMessage(m) },
       { label: m.is_done ? t("list.markNotDone") : t("list.markDone"), icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
       { label: m.is_seen ? t("list.markUnread") : t("list.markRead"), kw: "seen", run: () => toggleSeen(m) },
@@ -489,7 +492,12 @@
       if (entry.mode === "new") { params.unread_only = true; params.new_days = app.settings.smartNewDays ?? 3; }
       untrack(() => messagesApi.list(params))
         .then((msgs) => {
-          if (smartCatMsgs[key]) smartCatMsgs = { ...smartCatMsgs, [key]: { msgs, limit: entry.limit, full: msgs.length < entry.limit, mode: entry.mode } };
+          // Preserve row identity across the refetch so open category cards don't
+          // flicker every sync (same fix as the main list).
+          if (smartCatMsgs[key]) {
+            const merged = mergeById(smartCatMsgs[key].msgs, msgs);
+            smartCatMsgs = { ...smartCatMsgs, [key]: { msgs: merged, limit: entry.limit, full: msgs.length < entry.limit, mode: entry.mode } };
+          }
         })
         .catch(() => {});
     }
@@ -517,9 +525,12 @@
   });
 
   function onSearch(v) {
-    app.search = v;
     clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => refreshMessages(), 220);
+    // app.search is set WITH the (debounced) fetch, not per keystroke — the
+    // rows block is keyed on the view scope (incl. search), so an eager
+    // assignment would tear down and remount the whole list on every letter.
+    // Typing in the bar is always a keyword search (clears any semantic mode).
+    searchTimer = setTimeout(() => { app.search = v; app.semantic = false; refreshMessages(); }, 220);
   }
   function saveSearch() {
     const name = prompt(t("list.namePrompt"), app.search);
@@ -659,6 +670,12 @@
 
 <svelte:window on:keydown={onKey} on:click={() => ctx && closeCtx()} />
 
+<AdvancedSearch open={advSearchOpen} initial={app.search}
+  smartAvailable={aiEnabled() || app.settings.semanticEnabled}
+  onclose={() => (advSearchOpen = false)}
+  onsearch={(q) => { onSearch(q); advSearchOpen = false; }}
+  onsemantic={(q) => { runSemanticSearch(q); advSearchOpen = false; }} />
+
 {#if ctx}
   <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
     <input class="ctx-search" placeholder={t("list.searchActions")} bind:value={ctxSearch} autofocus
@@ -688,6 +705,11 @@
     </div>
     <div class="searchrow">
       <SearchBar value={app.search} oninput={onSearch} />
+      <button class="adv" title={t("search.advancedTitle")} onclick={() => (advSearchOpen = true)}>{@html icons.sliders}</button>
+      {#if aiEnabled()}
+        <button class="adv aibtn" title={t("list.aiAssistant")}
+          onclick={() => openAiAssistant({ messageId: app.selectedMessageId, threadKey: app.threadKey || "" })}>{@html icons.bolt}</button>
+      {/if}
       {#if app.search.trim()}<button class="savesearch" title={t("list.saveSmartFolder")} onclick={saveSearch}>{@html icons.star} {t("list.save")}</button>{/if}
     </div>
     {#if showCats}
@@ -720,6 +742,12 @@
   {/if}
 
   <div class="rows" bind:this={rowsEl} tabindex="-1">
+    <!-- Keyed on the view scope: switching folder/category/search tears the old
+         rows down instantly instead of playing ~100 simultaneous out-flights
+         (and flip-measuring the survivors) — that mass animation was the "whole
+         app hitches on navigation" feel. Triage removals inside one view still
+         animate (they're the each-item's own out transition). -->
+    {#key `${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`}
     {#if app.loading && app.messages.length === 0}
       {#each Array(6) as _}
         <div class="skel"><div class="sk-av"></div><div class="sk-lines"><div class="sk-l"></div><div class="sk-l short"></div></div></div>
@@ -793,6 +821,7 @@
         </div>
       {/if}
     {/if}
+    {/key}
   </div>
 
   <footer class="hint">
@@ -809,6 +838,12 @@
   .search { flex: 1; }
   .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); transition: background var(--t-fast) var(--ease); }
   .savesearch:hover { background: var(--accent-soft-2); }
+  .adv { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
+    border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-2); border: 1px solid var(--border);
+    transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
+  .adv:hover { color: var(--accent); border-color: var(--accent); }
+  .adv.aibtn { color: var(--accent); }
+  .adv :global(svg) { width: 16px; height: 16px; }
   .cats { display: flex; gap: 4px; flex-wrap: wrap; }
   .cat { font-size: 12px; font-weight: 550; padding: 4px 11px; border-radius: 999px; color: var(--muted); background: var(--surface-2); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .cat:hover { background: var(--surface-3); color: var(--text); }
@@ -846,8 +881,9 @@
   .rows:focus { outline: none; }
   /* Skip layout/paint for offscreen rows entirely — the single biggest scroll
      win. Date headers are excluded: paint containment would clip their sticky
-     positioning. */
-  .cv { content-visibility: auto; contain-intrinsic-size: auto 64px; }
+     positioning. The placeholder height matches a real 3-line row (~74px), so
+     scroll distance estimates stay honest and the scrollbar doesn't jump. */
+  .cv { content-visibility: auto; contain-intrinsic-size: auto 74px; }
   /* Spark-style date section header. NOTE: no backdrop-filter here — blur on a
      sticky element repaints every scroll frame in WebView2 (felt "heavy"). */
   .datesep { position: sticky; top: 0; z-index: 4; padding: 8px 16px 5px; font-size: 10.5px; font-weight: 700;

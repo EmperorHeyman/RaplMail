@@ -219,6 +219,18 @@ class ImapSmtpProvider:
     def create_folder(self, name: str) -> None:
         self._imap().create_folder(name)
 
+    def ensure_folder(self, name: str) -> None:
+        """Create a folder only if it doesn't already exist (idempotent)."""
+        c = self._imap()
+        if not c.folder_exists(name):
+            c.create_folder(name)
+
+    def list_uids(self, folder_path: str) -> list[int]:
+        """All UIDs in a folder, oldest→newest (used to scan the device-sync folder)."""
+        c = self._imap()
+        c.select_folder(folder_path, readonly=True)
+        return sorted(c.search(["ALL"]))
+
     def delete_folder(self, path: str) -> None:
         self._imap().delete_folder(path)
 

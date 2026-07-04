@@ -1,12 +1,13 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, selectSmartInbox, selectUnifiedInbox, selectSnoozed, selectPaperTrail, selectFollowups, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
   import { t } from "./lib/i18n.svelte.js";
   import Onboarding from "./lib/components/Onboarding.svelte";
   import CommandPalette from "./lib/components/CommandPalette.svelte";
+  import GoToPalette from "./lib/components/GoToPalette.svelte";
   import VaultGate from "./lib/components/VaultGate.svelte";
   import Sidebar from "./lib/components/Sidebar.svelte";
   import MailList from "./lib/components/MailList.svelte";
@@ -14,6 +15,7 @@
   import Compose from "./lib/components/Compose.svelte";
   import MailMerge from "./lib/components/MailMerge.svelte";
   import AiInbox from "./lib/components/AiInbox.svelte";
+  import AiAssistant from "./lib/components/AiAssistant.svelte";
   import RuleModal from "./lib/components/RuleModal.svelte";
   import ConfirmDialog from "./lib/components/ConfirmDialog.svelte";
   import Settings from "./lib/components/Settings.svelte";
@@ -32,6 +34,7 @@
 
   let bootError = $state("");
   let shortcutsOpen = $state(false);
+  let goToOpen = $state(false);   // the "g" quick-jump palette
 
   // Customize mode: drag column dividers to resize (locked unless enabled).
   // During a drag we update a transient width (cheap, rAF-throttled) and only
@@ -102,21 +105,6 @@
     return () => clearInterval(t);
   });
 
-  // Chord ("g" then a letter) navigation.
-  let chordArmed = false;
-  let chordTimer = null;
-  const goInbox = () => { app.view = "mail"; (app.settings.smartInbox ? selectSmartInbox : selectUnifiedInbox)(); };
-  const chordTargets = {
-    i: goInbox,
-    s: () => { app.view = "mail"; selectSnoozed(); },
-    c: () => (app.view = "calendar"),
-    t: () => (app.view = "scheduled"),
-    f: () => { app.view = "mail"; selectFollowups(); },
-    n: () => (app.view = "newsfeed"),
-    p: () => { app.view = "mail"; selectPaperTrail(); },
-    a: () => { app.view = "settings"; },
-  };
-
   function onGlobalKey(e) {
     if (composeWindow) return;
     if (app.confirm) return;   // a confirm dialog owns the keyboard
@@ -148,16 +136,10 @@
     const combo = keyCombo(e);
     if (!combo) return;
 
-    // Chord shortcuts: press "g" then a letter to jump between views.
-    if (chordArmed && !isTyping(e)) {
-      chordArmed = false;
-      const go = chordTargets[e.key.toLowerCase()];
-      if (go) { go(); e.preventDefault(); return; }
-    }
+    // "g" opens the Go-To quick-jump palette (VS Code Ctrl+T style). The single
+    // hint letters still fire instantly inside it, so `g i` etc. stay fast.
     if (combo === "g" && !isTyping(e)) {
-      chordArmed = true;
-      clearTimeout(chordTimer);
-      chordTimer = setTimeout(() => (chordArmed = false), 1200);
+      goToOpen = true;
       e.preventDefault();
       return;
     }
@@ -269,6 +251,9 @@
 {#if app.aiInboxOpen}
   <AiInbox />
 {/if}
+{#if app.aiAssistantOpen}
+  <AiAssistant />
+{/if}
 {#if app.ruleModal}
   <RuleModal />
 {/if}
@@ -280,6 +265,7 @@
 <svelte:document on:click={onDocClick} />
 {#if !composeWindow}
   <CommandPalette />
+  <GoToPalette open={goToOpen} onclose={() => (goToOpen = false)} />
   <ShortcutsOverlay open={shortcutsOpen} onclose={() => (shortcutsOpen = false)} />
 {/if}
 <ConfirmDialog />

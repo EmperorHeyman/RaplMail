@@ -62,7 +62,7 @@
       {/if}
     </div>
     <footer>
-      <span class="hint">{@html icons.bolt} Powered by your own API key · nothing is sent automatically</span>
+      <span class="hint">{@html icons.bolt} Runs on your configured AI provider · nothing is sent automatically</span>
       <button class="btn ghost" onclick={() => (tab === "digest" ? loadDigest(true) : loadPriority())} disabled={loading}>↻ Refresh</button>
     </footer>
   </div>

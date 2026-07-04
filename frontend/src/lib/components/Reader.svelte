@@ -1,5 +1,5 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch } from "../store.svelte.js";
+  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
@@ -71,32 +71,64 @@
   }
 
   // AI actions only appear once a key is configured (and not explicitly disabled).
-  const aiOn = $derived(!!(app.settings.aiApiKey || "").trim() && app.settings.aiButtons !== false);
+  const aiOn = $derived(aiEnabled());
   // AI "Catch me up" summary.
   let summary = $state("");
   let summarizing = $state(false);
   // AI smart reply.
   let aiDraft = $state(null);    // { draft, chips }
   let drafting = $state(false);
-  $effect(() => { void app.selectedMessageId; summary = ""; aiDraft = null; });
+  // Freeform "ask about this email" (tl;dr and anything else).
+  let askQ = $state("");
+  let askA = $state("");
+  let asking = $state(false);
+  let usedAI = false;   // did we run a local-model call on this message? → free GPU on leave
+  // On navigating to a different message/thread: reset the AI panels, and if we
+  // used a local (Ollama) model here, unload it so the GPU frees when you move on.
+  $effect(() => {
+    void app.selectedMessageId; void app.threadKey;
+    if (usedAI && (app.settings.aiProvider || "") === "ollama") ai.ollamaUnload().catch(() => {});
+    usedAI = false;
+    summary = ""; aiDraft = null; askA = ""; askQ = "";
+  });
+
+  async function askAI(q) {
+    const question = (q ?? askQ).trim();
+    if (!question || !detail) return;
+    asking = true; askA = ""; usedAI = true; app.aiBusy = true;
+    try {
+      const r = await ai.ask({ instruction: question,
+        message_ids: [detail.id], thread_id: detail.thread_id || "" });
+      askA = r.answer || "(no answer)";
+    } catch (e) { notify(e.message, "error"); }
+    finally { asking = false; app.aiBusy = false; }
+  }
+  const ASK_CHIPS = $derived.by(() => [
+    { label: t("reader.askTldr"), q: t("reader.askTldrPrompt") },
+    { label: t("reader.askActions"), q: t("reader.askActionsPrompt") },
+    { label: t("reader.askKeyPoints"), q: t("reader.askKeyPointsPrompt") },
+  ]);
+  function askAssistant() {
+    openAiAssistant({ messageId: detail?.id, threadId: detail?.thread_id || "", threadKey: app.threadKey || "" });
+  }
   async function catchMeUp() {
     if (!detail) return;
-    summarizing = true; summary = "";
+    summarizing = true; summary = ""; usedAI = true; app.aiBusy = true;
     try {
       const r = await ai.summarize({ message_id: detail.id, thread_id: detail.thread_id || "" });
       summary = r.summary || "(no summary returned)";
     } catch (e) {
       notify(e.message, "error");
-    } finally { summarizing = false; }
+    } finally { summarizing = false; app.aiBusy = false; }
   }
   async function smartReply() {
     if (!detail) return;
-    drafting = true; aiDraft = null;
+    drafting = true; aiDraft = null; usedAI = true; app.aiBusy = true;
     try {
       aiDraft = await ai.draft({ message_id: detail.id, thread_id: detail.thread_id || "" });
     } catch (e) {
       notify(e.message, "error");
-    } finally { drafting = false; }
+    } finally { drafting = false; app.aiBusy = false; }
   }
   function useDraft(text) {
     if (!detail) return;
@@ -110,7 +142,49 @@
   let showOriginal = $state(false); // view the email with its own original styling
   let showAllTo = $state(false);    // expand a long recipient list
   let showQuoted = $state(false);   // reveal collapsed quoted reply history
-  $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; });
+  let secOpen = $state(null);       // which security pill is expanded (key) — one at a time
+  $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; secOpen = null; });
+
+  // Trust / auth / encryption status as COMPACT PILLS instead of stacked
+  // full-width bars — an S/MIME-signed + authenticated mail used to eat 2-3
+  // lines of header. Each pill carries its detail (hover) + optional action,
+  // revealed inline when clicked.
+  const secPills = $derived.by(() => {
+    if (!detail) return [];
+    const out = [];
+    const trusted = isTrustedSender(detail.from_addr);
+    if (trusted) {
+      out.push({ key: "trust", kind: "ok", icon: icons.shieldCheck, label: t("reader.markedSafe"),
+        detail: t("reader.youTrust", { addr: detail.from_addr }),
+        act: { label: t("reader.undo"), title: t("reader.removeSafeMarkTitle"), run: () => untrustSender(detail.from_addr) } });
+    } else if (detail.warnings?.length) {
+      out.push({ key: "warn", kind: "bad", icon: icons.shieldAlert, label: t("reader.securityWarning"),
+        detail: detail.warnings.join(" · "),
+        act: { label: t("reader.markSafe"), icon: icons.done, title: t("reader.trustSenderTitle"), run: () => trustSender(detail.from_addr) } });
+    }
+    if (detail.pgp?.type === "encrypted") {
+      out.push({ key: "pgp", kind: (detail.pgp.decrypted || detail.text) ? "ok" : "bad", icon: icons.lock, label: t("reader.pgpEncrypted"),
+        detail: detail.pgp.verified ? t("reader.pgpSigVerified", { signer: detail.pgp.signer }) : t("reader.pgpDecryptedLocally") });
+    } else if (detail.pgp?.type === "signed") {
+      out.push({ key: "pgp", kind: detail.pgp.verified ? "ok" : "bad", icon: detail.pgp.verified ? icons.shieldCheck : icons.shieldAlert,
+        label: detail.pgp.verified ? t("reader.pgpSignatureVerified") : t("reader.pgpSignatureUnverified"),
+        detail: detail.pgp.verified ? detail.pgp.signer : t("reader.importPublicKey") });
+    }
+    if (detail.smime?.type === "encrypted") {
+      out.push({ key: "smime", kind: detail.smime.decrypted ? "ok" : "bad", icon: icons.lock, label: t("reader.smimeEncrypted"),
+        detail: detail.smime.decrypted ? t("reader.smimeDecryptedLocally") : t("reader.smimeNoKey") });
+    } else if (detail.smime?.type === "signed") {
+      out.push({ key: "smime", kind: detail.smime.verified ? "ok" : "bad", icon: detail.smime.verified ? icons.shieldCheck : icons.shieldAlert,
+        label: t("reader.smimeSigned"), detail: detail.smime.signer || t("reader.smimeUnknownSigner") });
+    }
+    if (detail.auth?.status === "fail") {
+      out.push({ key: "auth", kind: "bad", icon: icons.shieldAlert, label: t("reader.failedAuthShort"), detail: detail.auth.detail || t("reader.failedAuth") });
+    } else if (detail.auth?.status === "pass" && !trusted) {
+      out.push({ key: "auth", kind: "ok", icon: icons.shieldCheck, label: t("reader.senderAuthenticated"), detail: detail.auth.detail || "" });
+    }
+    return out;
+  });
+  const secOpenPill = $derived(secPills.find((p) => p.key === secOpen) || null);
   const shownTo = $derived(detail ? (showAllTo ? detail.to_addrs : (detail.to_addrs || []).slice(0, 3)) : []);
   const processed = $derived(
     detail ? sanitizeTrackers(detail.html || "", app.settings.blockTrackers && !loadImages)
@@ -168,11 +242,19 @@
         openCompose({ to: href.slice(7).split("?")[0], subject: "", html: "", account_id: detail?.account_id });
       }
     }, true);
-    // Keep Ctrl/Cmd+N working even when focus is inside the email iframe.
+    // The email iframe grabs focus on load, so app keyboard shortcuts (Ctrl+K
+    // command palette, Ctrl+N compose) "die" while reading — the keydowns land in
+    // the iframe document, not the app window. Handle the important ones here.
     doc.addEventListener("keydown", (e) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
+      const cmd = e.ctrlKey || e.metaKey;
+      if (cmd && !e.shiftKey && !e.altKey && (e.key === "n" || e.key === "N")) {
         e.preventDefault();
         openCompose({ to: "", subject: "", html: "" });
+      } else if (cmd && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        app.paletteOpen = true;
+      } else if (e.key === "Escape") {
+        app.threadKey = null; app.selectedMessageId = null;   // back to the list
       }
     }, true);
   }
@@ -457,43 +539,45 @@
         </div>
       </div>
     {/if}
-    {#if isTrustedSender(detail.from_addr)}
-      <div class="auth-bar ok">{@html icons.shieldCheck} <b>{t("reader.markedSafe")}</b>
-        <span class="auth-detail">{t("reader.youTrust", { addr: detail.from_addr })}</span>
-        <button class="trust" title={t("reader.removeSafeMarkTitle")} onclick={() => untrustSender(detail.from_addr)}>{t("reader.undo")}</button>
-      </div>
-    {:else if detail.warnings?.length}
-      <div class="auth-bar bad">{@html icons.shieldAlert}
-        <span>{detail.warnings.join(" · ")}</span>
-        <button class="trust" title={t("reader.trustSenderTitle")} onclick={() => trustSender(detail.from_addr)}>{@html icons.done} {t("reader.markSafe")}</button>
+    {#if aiOn && (askA || asking)}
+      <div class="ai-summary">
+        <div class="ai-head">{@html icons.bolt} <b>{t("reader.aiAnswer")}</b>
+          <button class="ai-close" title={t("reader.dismiss")} onclick={() => { askA = ""; }}>{@html icons.close}</button>
+        </div>
+        {#if asking}<pre class="thinking">{t("reader.thinking")}</pre>{:else}<pre>{askA}</pre>{/if}
       </div>
     {/if}
-    {#if detail.pgp?.type === "encrypted"}
-      <div class="auth-bar {detail.pgp.decrypted || detail.text ? 'ok' : 'bad'}">{@html icons.shieldCheck}
-        <b>{t("reader.pgpEncrypted")}</b>
-        <span class="auth-detail">{detail.pgp.verified ? t("reader.pgpSigVerified", { signer: detail.pgp.signer }) : t("reader.pgpDecryptedLocally")}</span>
-      </div>
-    {:else if detail.pgp?.type === "signed"}
-      <div class="auth-bar {detail.pgp.verified ? 'ok' : 'bad'}">{@html detail.pgp.verified ? icons.shieldCheck : icons.shieldAlert}
-        <b>{detail.pgp.verified ? t("reader.pgpSignatureVerified") : t("reader.pgpSignatureUnverified")}</b>
-        <span class="auth-detail">{detail.pgp.verified ? detail.pgp.signer : t("reader.importPublicKey")}</span>
-      </div>
-    {/if}
-    {#if detail.smime?.type === "encrypted"}
-      <div class="auth-bar {detail.smime.decrypted ? 'ok' : 'bad'}">{@html icons.shieldCheck || icons.shield}
-        <b>{t("reader.smimeEncrypted")}</b>
-        <span class="auth-detail">{detail.smime.decrypted ? t("reader.smimeDecryptedLocally") : t("reader.smimeNoKey")}</span>
-      </div>
-    {:else if detail.smime?.type === "signed"}
-      <div class="auth-bar {detail.smime.verified ? 'ok' : 'bad'}">{@html detail.smime.verified ? icons.shieldCheck : icons.shieldAlert}
-        <b>{t("reader.smimeSigned")}</b>
-        <span class="auth-detail">{detail.smime.signer || t("reader.smimeUnknownSigner")}</span>
+    {#if aiOn}
+      <div class="ask-row">
+        <span class="ask-ic">{@html icons.bolt}</span>
+        <input class="ask-input" bind:value={askQ} placeholder={t("reader.askPlaceholder")}
+          onkeydown={(e) => { if (e.key === "Enter") askAI(); }} />
+        <div class="ask-chips">
+          {#each ASK_CHIPS as c}<button class="ask-chip" onclick={() => askAI(c.q)} disabled={asking}>{c.label}</button>{/each}
+          <button class="ask-chip more" title={t("reader.askMoreContext")} onclick={askAssistant}>{@html icons.chat || icons.mail} {t("reader.askAssistant")}</button>
+        </div>
       </div>
     {/if}
-    {#if detail.auth?.status === "fail"}
-      <div class="auth-bar bad">{@html icons.shieldAlert} <b>{t("reader.failedAuth")}</b> <span class="auth-detail">{detail.auth.detail}</span></div>
-    {:else if detail.auth?.status === "pass" && !isTrustedSender(detail.from_addr)}
-      <div class="auth-bar ok">{@html icons.shieldCheck} {t("reader.senderAuthenticated")} <span class="auth-detail">{detail.auth.detail}</span></div>
+    {#if secPills.length}
+      <div class="sec-strip">
+        {#each secPills as p (p.key)}
+          <button class="sec-pill {p.kind}" class:open={secOpen === p.key} title={p.detail}
+            onclick={() => (secOpen = secOpen === p.key ? null : p.key)}>
+            {@html p.icon}<span class="sp-label">{p.label}</span>
+            {#if p.detail}<span class="sp-caret" class:up={secOpen === p.key}>▾</span>{/if}
+          </button>
+        {/each}
+      </div>
+      {#if secOpenPill}
+        <div class="sec-detail {secOpenPill.kind}">
+          <span class="sd-text">{secOpenPill.detail}</span>
+          {#if secOpenPill.act}
+            <button class="sd-act" title={secOpenPill.act.title || ""} onclick={secOpenPill.act.run}>
+              {#if secOpenPill.act.icon}{@html secOpenPill.act.icon} {/if}{secOpenPill.act.label}
+            </button>
+          {/if}
+        </div>
+      {/if}
     {/if}
     {#if app.selectedKind === "screener" || detail.first_time_sender}
       <div class="screener-bar">
@@ -648,6 +732,19 @@
   .ai-chip:hover { border-color: var(--accent); color: var(--accent); }
   .ai-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
   .ai-note { font-size: 11px; color: var(--muted); }
+  .ai-summary pre.thinking { color: var(--muted); font-style: italic; }
+  .ask-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 22px 8px; }
+  .ask-ic { color: var(--accent); display: inline-flex; flex: none; }
+  .ask-input { flex: 1 1 220px; min-width: 160px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 7px 13px; color: var(--text); font-size: 13px; }
+  .ask-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
+  .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ask-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
+  .ask-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .ask-chip:disabled { opacity: 0.5; }
+  .ask-chip.more { color: var(--accent); }
+  .ask-chip.more :global(svg) { width: 13px; height: 13px; }
   .actions .btn.on { color: var(--warning); border-color: var(--warning); }
   .actions .btn.del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
   .snz-wrap { position: relative; display: inline-block; }
@@ -664,12 +761,29 @@
   .snz-menu button:hover .when { color: #e7e9ff; }
   .unsub-bar { display: flex; align-items: center; gap: 10px; padding: 8px 22px; background: var(--surface); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
   .unsub-bar button { margin-left: auto; color: var(--accent); font-weight: 600; }
-  .auth-bar { display: flex; align-items: center; gap: 8px; padding: 8px 22px; font-size: 13px; border-bottom: 1px solid var(--hairline); }
-  .auth-bar.bad { background: var(--danger-soft); color: var(--danger); }
-  .auth-bar.ok { background: var(--done-soft); color: var(--done); }
-  .auth-bar .auth-detail { color: var(--muted); font-size: 12px; margin-left: auto; }
-  .auth-bar .trust { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; border: 1px solid currentColor; color: inherit; }
-  .auth-bar .trust:hover { background: var(--surface-2); }
+  /* Security pills: trust / auth / PGP / S/MIME collapsed into one compact row. */
+  .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 22px; border-bottom: 1px solid var(--hairline); }
+  .sec-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
+    padding: 3px 10px; border-radius: 999px; border: 1px solid; cursor: pointer; line-height: 1.4;
+    transition: filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
+  .sec-pill :global(svg) { width: 13px; height: 13px; }
+  .sec-pill.ok { color: var(--done); background: var(--done-soft); border-color: color-mix(in srgb, var(--done) 32%, transparent); }
+  .sec-pill.bad { color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
+  .sec-pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 13%, transparent); border-color: color-mix(in srgb, var(--warning) 32%, transparent); }
+  .sec-pill:hover { filter: brightness(1.06); }
+  .sec-pill.open { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
+  .sp-caret { font-size: 9px; opacity: 0.65; transition: transform var(--t-fast) var(--ease); }
+  .sp-caret.up { transform: rotate(180deg); }
+  .sec-detail { display: flex; align-items: center; gap: 10px; padding: 8px 22px; font-size: 12px; border-bottom: 1px solid var(--hairline);
+    animation: pop-in var(--t) var(--ease); }
+  .sec-detail.ok { background: var(--done-soft); color: var(--done); }
+  .sec-detail.bad { background: var(--danger-soft); color: var(--danger); }
+  .sec-detail.warn { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
+  .sd-text { flex: 1; min-width: 0; }
+  .sd-act { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+    border: 1px solid currentColor; color: inherit; display: inline-flex; align-items: center; gap: 5px; }
+  .sd-act :global(svg) { width: 13px; height: 13px; }
+  .sd-act:hover { background: var(--surface-2); }
   .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: var(--accent-soft); border-bottom: 1px solid var(--hairline); font-size: 13px; }
   .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
   .screener-bar .no { color: var(--danger); font-weight: 600; }

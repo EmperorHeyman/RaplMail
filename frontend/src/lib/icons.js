@@ -83,6 +83,7 @@ export const icons = {
     '6.3 3.54 7.36 5 10.33 3.77Z"/><circle cx="12" cy="12" r="3.1"/>'
   ),
   search: line('<circle cx="11" cy="11" r="7"/><path d="m20 20-3.6-3.6"/>'),
+  sliders: line('<path d="M4 6h11"/><circle cx="18" cy="6" r="2.2"/><path d="M20 12H9"/><circle cx="6" cy="12" r="2.2"/><path d="M4 18h11"/><circle cx="18" cy="18" r="2.2"/>'),
   close: line('<path d="M6 6 18 18M18 6 6 18"/>'),
   copy: line('<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/>'),
   pin: line('<path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3z"/>'),

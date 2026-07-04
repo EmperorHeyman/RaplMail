@@ -79,6 +79,8 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "messagestate": {
         "snooze_presence": "ALTER TABLE messagestate ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",
         "is_pinned": "ALTER TABLE messagestate ADD COLUMN is_pinned BOOLEAN DEFAULT 0",
+        # Device-sync last-writer-wins timestamp (nullable on legacy rows = oldest).
+        "updated_at": "ALTER TABLE messagestate ADD COLUMN updated_at TIMESTAMP",
     },
     "account": {
         "aliases": "ALTER TABLE account ADD COLUMN aliases TEXT DEFAULT '[]'",

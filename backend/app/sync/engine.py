@@ -242,6 +242,10 @@ class SyncManager:
                 await self._maybe_digest()
             except Exception:
                 log.exception("morning digest failed")
+            try:
+                await self._maybe_embed()
+            except Exception:
+                log.exception("semantic embedding tick failed")
             with _suppress_timeout():
                 try:
                     await asyncio.wait_for(self._wake.wait(), timeout=SYNC_INTERVAL_SECONDS)
@@ -294,6 +298,27 @@ class SyncManager:
         self._last_digest_day = today
         if result:
             await self._hub.broadcast("inbox:digest", result)
+
+    async def _maybe_embed(self) -> None:
+        """Keep the semantic-search index warm: embed a small batch of not-yet-
+        indexed messages each cycle. No-op unless the user turned semantic search
+        on; index_pending() silently returns 0 if the embedding endpoint is down,
+        so a stopped Ollama never spams errors. Bulk (re)indexing of a big backlog
+        is the explicit /ai/embed/reindex job — this tick just keeps up with new mail."""
+        if not get_secret_store().is_unlocked:
+            return
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self._executor, self._embed_tick_blocking)
+
+    def _embed_tick_blocking(self) -> None:
+        from app.models import Setting
+        with Session(get_engine()) as session:
+            row = session.get(Setting, 1)
+            data = dict(row.data) if row and row.data else {}
+            if not data.get("semanticEnabled"):
+                return
+            from app.sync import embeddings
+            embeddings.index_pending(session, limit=48)
 
     async def sync_all(self) -> None:
         store = get_secret_store()
@@ -374,6 +399,11 @@ class SyncManager:
                         else:
                             # One odd folder shouldn't abort the whole account.
                             log.exception("folder sync failed: account %s folder %s", account_id, folder.path)
+                # Device-to-device sync piggybacks on this account's live
+                # connection when it's the chosen carrier (best-effort; tick()
+                # swallows its own errors so it can't break the mail sync).
+                from app.sync import devicesync
+                devicesync.tick(session, account, provider)
             finally:
                 provider.close()
             session.commit()
@@ -418,9 +448,14 @@ class SyncManager:
             log.exception("failed to prune folder %s", fpath)
 
     def _sync_folders(self, session: Session, account: Account, provider) -> None:
+        from app.sync.devicesync import SYNC_FOLDER_DEFAULT
         existing = {f.path: f for f in session.exec(
             select(Folder).where(Folder.account_id == account.id))}
         for info in provider.list_folders():
+            # The device-sync carrier folder is managed out-of-band and must stay
+            # invisible — never give it a Folder row (which would list it in the UI).
+            if info.name == SYNC_FOLDER_DEFAULT or (info.path or "").endswith(SYNC_FOLDER_DEFAULT):
+                continue
             folder = existing.get(info.path)
             if folder is None:
                 folder = Folder(account_id=account.id, name=info.name, path=info.path,

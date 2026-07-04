@@ -6,6 +6,7 @@
   import SettingsSignature from "./SettingsSignature.svelte";
   import SettingsContacts from "./SettingsContacts.svelte";
   import SettingsGeneral from "./SettingsGeneral.svelte";
+  import SettingsAi from "./SettingsAi.svelte";
   import SettingsSnippets from "./SettingsSnippets.svelte";
   import SettingsAppearance from "./SettingsAppearance.svelte";
   import SettingsWorkspaces from "./SettingsWorkspaces.svelte";
@@ -14,6 +15,7 @@
   import SettingsPgp from "./SettingsPgp.svelte";
   import SettingsSmime from "./SettingsSmime.svelte";
   import SettingsCalendar from "./SettingsCalendar.svelte";
+  import SettingsSync from "./SettingsSync.svelte";
   import SettingsRaplDesk from "./SettingsRaplDesk.svelte";
   import SettingsUtility from "./SettingsUtility.svelte";
   import SettingsDebug from "./SettingsDebug.svelte";
@@ -38,8 +40,10 @@
     { id: "signature", label: t("settingsNav.signature"), icon: icons.signature, kw: "signature html image preview text footer" },
     { id: "snippets", label: t("settingsNav.snippets"), icon: icons.bolt, kw: "snippets templates canned replies expander shortcut variables" },
     { id: "appearance", label: t("settingsNav.appearance"), icon: icons.palette, kw: "theme color colour preset dark light css radius corner rounded avatar logo favicon relative time email adapt customize layout font style vscode quick action quick-action buttons row buttons hover reader actions reply forward done flag" },
+    { id: "ai", label: t("settingsNav.ai"), icon: icons.bolt, kw: "ai assistant ollama local llm model gpt claude anthropic openai api key provider keep alive gpu vram unload catch me up reply rewrite triage briefing digest semantic search embeddings vector nomic keyless offline private" },
     { id: "shortcuts", label: t("settingsNav.shortcuts"), icon: icons.keyboard, kw: "keyboard shortcuts keybindings keys hotkeys palette" },
     { id: "calendar", label: t("settingsNav.calendar"), icon: icons.calendar || icons.general, kw: "calendar contacts caldav carddav events sync nextcloud fastmail icloud seznam radicale subscribe add calendar" },
+    { id: "sync", label: t("settingsNav.sync"), icon: icons.sync || icons.general, kw: "sync device devices link two computers pc laptop desktop cross-device settings done read state encrypted passphrase mailbox self-mail multi-device share between machines" },
     { id: "rapldesk", label: t("settingsNav.rapldesk"), icon: icons.receipt || icons.general, kw: "rapldesk tickets ticketing api key support helpdesk instance" },
     { id: "utility", label: t("settingsNav.utility"), icon: icons.bolt || icons.general, kw: "utility utilities subscription audit unsubscribe mailing list newsletter cleanup read rate dormant tools" },
     { id: "general", label: t("settingsNav.general"), icon: icons.general, kw: "mail behavior compose sending undo send smart inbox notifications desktop notification snooze presence backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement privacy tracking password security newsletter paper trail drafts" },
@@ -96,10 +100,12 @@
     {:else if tab === "pgp"}<SettingsPgp />
     {:else if tab === "smime"}<SettingsSmime />
     {:else if tab === "calendar"}<SettingsCalendar />
+    {:else if tab === "sync"}<SettingsSync />
     {:else if tab === "rapldesk"}<SettingsRaplDesk />
     {:else if tab === "signature"}<SettingsSignature />
     {:else if tab === "snippets"}<SettingsSnippets />
     {:else if tab === "appearance"}<SettingsAppearance />
+    {:else if tab === "ai"}<SettingsAi />
     {:else if tab === "shortcuts"}<SettingsShortcuts />
     {:else if tab === "utility"}<SettingsUtility />
     {:else if tab === "debug"}<SettingsDebug />

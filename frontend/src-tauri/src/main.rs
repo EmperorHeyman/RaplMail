@@ -36,12 +36,40 @@ fn set_close_to_tray(app: tauri::AppHandle, on: bool) {
     app.state::<CloseToTray>().0.store(on, Ordering::SeqCst);
 }
 
+/// Tell WebView2 to aggressively release renderer memory while the window is
+/// hidden in the tray / minimized, and go back to normal when it's visible.
+/// This is the documented lever for the renderer's working set: a tray-resident
+/// WebView2 otherwise keeps its full JS heap + image/GPU caches (hundreds of MB)
+/// alive even though nothing is on screen.
+fn set_webview_memory_target(app: &tauri::AppHandle, low: bool) {
+    #[cfg(windows)]
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.with_webview(move |wv| unsafe {
+            use webview2_com::Microsoft::Web::WebView2::Win32::{
+                ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL,
+            };
+            use windows_core::Interface;
+            if let Ok(core) = wv.controller().CoreWebView2() {
+                if let Ok(wv19) = core.cast::<ICoreWebView2_19>() {
+                    // 0 = NORMAL, 1 = LOW (matches COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_*).
+                    let _ = wv19.SetMemoryUsageTargetLevel(
+                        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL(if low { 1 } else { 0 }),
+                    );
+                }
+            }
+        });
+    }
+    #[cfg(not(windows))]
+    let _ = (app, low);
+}
+
 fn show_main(app: &tauri::AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
         let _ = w.set_focus();
     }
+    set_webview_memory_target(app, false);
 }
 
 #[tauri::command]
@@ -164,11 +192,7 @@ fn main() {
         // Must be the FIRST plugin: a second launch (e.g. Start-menu / Win+search)
         // focuses the existing window instead of spawning another instance.
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.unminimize();
-                let _ = w.set_focus();
-            }
+            show_main(app);
         }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -193,14 +217,28 @@ fn main() {
         // Closing the window hides to the tray (so IMAP IDLE + notifications keep
         // running in the background) unless the user explicitly chose Quit.
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                let app = window.app_handle();
-                let quitting = app.state::<QuitFlag>().0.load(Ordering::SeqCst);
-                let to_tray = app.state::<CloseToTray>().0.load(Ordering::SeqCst);
-                if !quitting && to_tray {
-                    let _ = window.hide();
-                    api.prevent_close();
+            match event {
+                WindowEvent::CloseRequested { api, .. } => {
+                    let app = window.app_handle();
+                    let quitting = app.state::<QuitFlag>().0.load(Ordering::SeqCst);
+                    let to_tray = app.state::<CloseToTray>().0.load(Ordering::SeqCst);
+                    if !quitting && to_tray {
+                        let _ = window.hide();
+                        api.prevent_close();
+                        // Hidden in the tray: let the renderer drop its heap/caches.
+                        set_webview_memory_target(&window.app_handle(), true);
+                    }
                 }
+                // Minimized → trim; restored/focused → back to normal.
+                WindowEvent::Resized(_) => {
+                    if window.is_minimized().unwrap_or(false) {
+                        set_webview_memory_target(&window.app_handle(), true);
+                    }
+                }
+                WindowEvent::Focused(true) => {
+                    set_webview_memory_target(&window.app_handle(), false);
+                }
+                _ => {}
             }
         })
         .setup(move |app| {

@@ -18,9 +18,9 @@
     { title: "Navigate", items: [
       [comboLabel(kb.search), "Focus search"], [comboLabel(kb.palette), "Command palette"],
       ["Ctrl/⌘ + 1…9 / 0", "Switch workspace / All"], [comboLabel(kb.help), "This cheatsheet"],
-      ["g then i / s / c", "Jump: Inbox / Snoozed / Calendar"],
-      ["g then f / n / p / t", "Follow-ups / Newsfeed / Paper Trail / Scheduled"],
-      ["g then a", "Jump: Settings"],
+      ["g", "Go to… (quick-jump palette)"],
+      ["g then i / s / c / f", "Jump: Inbox / Snoozed / Calendar / Follow-ups"],
+      ["g then n / p / t / a", "Newsfeed / Paper Trail / Scheduled / Settings"],
     ]},
     { title: "Compose", items: [
       [comboLabel(kb.compose), "New message"], ["Ctrl/⌘ + Enter", "Send"], [";shortcut + Space", "Expand a snippet"],

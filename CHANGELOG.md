@@ -11,6 +11,238 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.4.9] — 2026-07-04
+
+### Added
+- **Home-screen AI chat.** An “Ask AI about your inbox” card on Home: type plainly
+  (e.g. “shrň nové maily”) or tap **Recap new mail** — it opens the assistant with
+  your unread inbox loaded as context and answers in your language.
+- **Tiered Ollama model picker.** Settings → AI assistant now lists recommended
+  chat **and** embedding models grouped by the GPU they need (runs-anywhere /
+  mid-range / high-end), each with size and a one-line note (multilingual models
+  flagged for Czech). Installed models show a one-tap **Use**; others show **Pull**
+  with progress. Install-state is read live from Ollama; you can still pull any
+  model by name.
+
+## [0.4.8] — 2026-07-04
+
+### Added
+- **Adaptive GPU mode for Ollama.** A new “Free GPU after → Adaptive” option: the
+  model loads into VRAM when the RaplMail window is focused and is freed a few
+  seconds after you switch away — unless you're mid-question. Ready when you are,
+  off when you're not.
+- **Natural-language search.** With AI enabled, the advanced-search **Smart** mode
+  lets you type plainly — e.g. “najdi email kde se jedná o audi crash plate” — and
+  the model turns it into a search. Uses your local embedding index if you built
+  one, otherwise AI keyword extraction, then falls back to keyword search.
+  (Requires an AI provider enabled.)
+
+## [0.4.7] — 2026-07-04
+
+### Added
+- **Dedicated “AI assistant” settings tab.** The AI provider / Ollama controls
+  (model, keep-alive, install/update, free-GPU) and semantic search moved out of
+  General into their own tab, so it's easy to find.
+- **Right-click → “Add to AI chat.”** From the message list, add any email to the
+  assistant as context — it opens the assistant (or adds to it if it's already
+  open) so you can ask across several messages.
+- **Clear-conversation button** in the AI assistant, to start a fresh chat
+  without closing the window.
+
+### Changed
+- **AI assistant input is multi-line now: Enter sends, Shift+Enter starts a new
+  line.** The box grows as you type.
+
+## [0.4.6] — 2026-07-04
+
+### Fixed
+- **AI now answers in your language, everywhere.** A universal “reply in the same
+  language as the user” instruction is sent on every AI action (assistant, ask,
+  summary, reply), so writing in Czech gets a Czech answer — not English.
+- **AI assistant window keeps its size when you move it.** Resizing then dragging
+  no longer snaps it back to the default width; it behaves like the compose window.
+- **Reply / Forward buttons honor the position setting in conversations too.** The
+  threaded view always showed them at the top regardless of Appearance → “Reader
+  actions” = bottom; it now respects the setting.
+
+### Added
+- **Aggressive GPU freeing for Ollama.** A “Free GPU after” setting (immediately /
+  30s / 1m / 5m / 30m / keep loaded) controls how long Ollama keeps the model in
+  VRAM — set via the native `/api/chat` `keep_alive`. On top of that, RaplMail
+  unloads the model when you **close the AI assistant** and when you **leave a
+  message** where you used AI, so the GPU frees as soon as you’re done.
+
+## [0.4.5] — 2026-07-04
+
+### Fixed
+- **AI reply now answers in the email’s language** (it was always English). The
+  drafter is instructed to match the thread’s language — a Czech email gets a
+  Czech reply.
+- **No more “###CHIPS” gibberish in AI replies.** Small local models don’t emit
+  the exact quick-reply marker we ask for (they write `###CHIPS|`, `CHIPS:`, …),
+  so it leaked into the reply. Parsing now tolerates those variants and the
+  marker never reaches the reply body; the quick-reply chips still work.
+- **The AI assistant, Catch-me-up, and AI reply now read the full email** — not
+  just the subject and sender. Message bodies are fetched on demand (and cached)
+  when building AI context, so answers are based on the real content.
+- **Ctrl+K (command palette) works while a message is open.** The email-preview
+  iframe was swallowing the shortcut; it’s now forwarded to the app (along with
+  Ctrl+N and Escape).
+
+### Added
+- **The AI assistant is one click away.** An AI button in the message-list header
+  opens it — seeded with the open message/conversation as context — alongside
+  Ctrl+K and the reader’s Assistant chip.
+
+## [0.4.4] — 2026-07-04
+
+### Fixed
+- **Ollama “model not found” (404).** If no model was explicitly chosen, the
+  backend fell back to a default (`llama3.2`) you may not have pulled, so every
+  AI call 404’d. RaplMail now auto-selects an installed model when the configured
+  one isn’t actually present — AI works out of the box once Ollama has any model.
+
+### Added
+- **AI assistant is now a movable, minimizable window** (not a modal). It docks
+  like the compose window, so you can keep clicking and reading while it’s open,
+  drag it anywhere, and **minimize it into a floating “AI” circle** that reopens
+  it with your conversation intact.
+- **Free the GPU on demand.** A “Free GPU (unload model)” button in Settings →
+  AI assistant tells Ollama to evict the loaded model from VRAM immediately.
+  Ollama keeps a model resident for a few minutes after each request (for fast
+  follow-ups) — this is the idle GPU use you may notice; now you can reclaim it
+  instantly. Background semantic indexing also uses a 30-second keep-alive so it
+  never pins the GPU.
+- **Manage Ollama from RaplMail.** The Ollama panel shows the running version and
+  has an **Update Ollama** button (`winget upgrade`), alongside the existing
+  install/pull controls.
+
+## [0.4.3] — 2026-07-04
+
+### Added
+- **AI writing assistant in the composer.** An “✨ AI” button in the compose
+  toolbar: rephrase, improve, shorten, expand, fix spelling & grammar, change
+  tone (professional/friendly/formal/concise/confident), and translate to 8
+  languages — plus a freeform “Ask AI to…” box. Works on your selection or the
+  whole draft, in both rich-text and Markdown, and drops the result straight in.
+- **Ask about an email.** In the reader, type “tl;dr” (or anything) about the
+  open message or thread, with one-tap TL;DR / Action items / Key points chips.
+- **AI assistant with context.** A chat window (Ctrl+K → “AI assistant”, the
+  reader’s Assistant chip, or the composer’s AI menu) where you add emails as
+  context — the open message, a whole conversation, or the current list — and
+  ask across them (“summarize these”, “who still needs a reply?”, “draft an
+  answer from these three”). Multi-turn; copy an answer or turn it into a new email.
+- **Multi-language spell-check.** The composer has a spell-check language
+  switcher (Auto/EN/CS/SK/DE/PL/ES/FR/IT, remembered) so an English UI can still
+  check Czech mail. (WebView2 checks one language at a time; needs the OS’s
+  dictionary for that language installed.)
+
+### Fixed
+- **AI buttons no longer hidden when using Ollama.** “Show AI buttons” had no
+  effect with the keyless local Ollama provider because every gate still required
+  an API key. AI actions now appear whenever a provider is usable — a cloud key
+  **or** local Ollama.
+
+## [0.4.2] — 2026-07-04
+
+### Added
+- **Spell check in the composer.** Misspellings are underlined as you type in the
+  subject, message body, and Markdown editor, with right-click corrections —
+  using your OS dictionaries for the current UI language. Native to the WebView,
+  fully offline, no dependency. Toggle in Settings → General → Compose window.
+- **Ollama — first-class local AI.** A new keyless "Ollama (local, private)"
+  provider defaults to `http://localhost:11434` and powers all AI features
+  (Catch-me-up, AI reply, triage scores, morning briefing) **completely
+  offline** — nothing leaves your machine. The setup panel detects Ollama,
+  lists your pulled models, pulls a model with a live progress bar, and offers
+  a one-click install (winget) with a manual-download fallback.
+- **Semantic search (meaning-based).** Opt-in local vector search: find "that
+  quote about server migration costs" even when the message never used those
+  words. Messages are embedded via Ollama or any OpenAI-compatible embeddings
+  endpoint and stored locally; search ranks by cosine similarity. Surfaced as a
+  **Smart** toggle in the advanced-search modal, with a background indexer and a
+  "Build / update index" button in Settings. Vectors never leave the machine.
+
+### Changed
+- The AI assistant's "morning briefing", summaries, and triage now work with a
+  keyless local provider (Ollama), not only with a cloud API key.
+
+## [0.4.1] — 2026-07-04
+
+### Performance
+- **Smoother scrolling.** Hovering a row prefetches its body only after a 120 ms
+  dwell — previously, wheel-scrolling swept rows under the cursor and fired a
+  full-body fetch (+ JSON parse on the UI thread) for every row that passed,
+  which is what made scrolling feel sluggish. Offscreen row placeholders also
+  now match the real row height, so the scrollbar doesn't drift.
+- **Instant view switches.** Changing folder/category/search used to animate
+  ~100 rows flying out at once (keeping old + new lists mounted while they did);
+  switches now tear down instantly. Triage animations within a view are kept.
+- **WebView memory released when hidden.** When the window hides to the tray or
+  minimizes, the shell now tells WebView2 to aggressively release renderer
+  memory (JS heap, image/GPU caches) and restores normal behavior on show/focus.
+  A tray-resident window previously kept hundreds of MB alive while invisible.
+
+## [0.4.0] — 2026-07-04
+
+### Added
+- **Device sync over your own mailbox — local-first, no cloud, no server.**
+  Settings → **Device sync**: enable it, pick a **carrier account** (configured on
+  both machines) and set a **sync passphrase** (the same on every device), and
+  RaplMail keeps your installs in step. On a change (or **Sync now**), your
+  changed per-message state (done / snooze / pin) plus config (settings, rules,
+  signatures, sender tags) is encrypted with a passphrase-derived key (the
+  provider only sees ciphertext) and appended to a hidden `RaplMail Sync` folder;
+  every device reads that folder, decrypts, and merges.
+  - Fixes cross-device **"done" not propagating**: the old mechanism used a custom
+    IMAP keyword that Exchange/M365 (and many servers) silently drop. This channel
+    doesn't depend on custom-keyword support, so it works everywhere.
+  - Merge is keyed by **(account email + Message-ID)** with **last-writer-wins** by
+    timestamp; state for not-yet-synced mail is parked and applied when it arrives.
+    Device-local sync settings are protected, so a peer's config can't disable your
+    sync or change your carrier account.
+  - The sync folder is hidden from the app, and each sync message is self-describing
+    (marked read, plain-language body) so it never looks alarming in another mail
+    client. Verified by 8 unit tests + the full 36-test backend suite; end-to-end
+    two-machine validation is left to the user.
+
+## [0.3.5] — 2026-07-04
+
+### Changed
+- **Security shown as pills, not stacked rows.** A signed-and-authenticated
+  message used to stack two or three full-width bars in the reader header
+  (S/MIME + "sender authenticated" + trust/warnings), wasting vertical space.
+  Trust, authentication, PGP and S/MIME now collapse into a single compact **pill
+  strip** — each pill shows its detail on hover and expands inline (with its
+  action, e.g. Mark safe / Undo) when clicked.
+- **Spark-style recipient pills.** Compose **To:/Cc:** now render committed
+  recipients as name pills — a picked contact shows as "Jane Doe", not the raw
+  address — with backspace-to-edit and one-click removal. The value RaplMail
+  sends is unchanged (still a comma-separated address string); only the input got
+  friendlier.
+- **`g` is now a quick-jump palette.** The invisible `g`+letter chord became a
+  VS Code Ctrl+T-style palette: `g` opens a searchable list of destinations
+  (Inbox, All Inboxes, Snoozed, Follow-ups, Paper Trail, Newsletter feed,
+  Calendar, Scheduled, Settings) with hint letters shown. The single-letter
+  accelerators still fire instantly, so `g i` etc. stay fast — the menu just
+  makes them discoverable and type-to-filter.
+
+### Added
+- **Advanced search modal.** A new button beside the search bar opens a structured
+  builder: From / To with live contact autocomplete, Subject, "has the words"
+  (body), a status segment (Unread / Read / Flagged / Done), a has-attachment
+  toggle, and quick presets. It reads and writes the same query the inline bar and
+  backend understand, previews the query it will run, and only emits operators the
+  backend actually supports.
+
+### Fixed
+- **List no longer flickers on sync.** Background syncs used to replace every row
+  object wholesale, re-rendering the whole list (avatars, shields, focus) and
+  making it blink each cycle. The refresh now merges results **by id in place**,
+  reusing the existing row object and only updating fields that changed — so
+  unchanged rows don't re-render. Applied to the main list and expanded
+  Smart-Inbox category cards.
+
 ## [0.3.4] — 2026-07-04
 
 ### Changed

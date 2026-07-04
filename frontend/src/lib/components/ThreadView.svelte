@@ -10,6 +10,9 @@
   let expanded = $state(new Set());
   let loading = $state(false);
   let _key = null;   // previous threadKey — to tell a switch apart from a live refresh
+  // Honor the Appearance setting for where Reply/Forward/… sit (top vs bottom),
+  // same as the single-message reader — otherwise conversations always showed top.
+  const actionsBottom = $derived(app.settings.readerActionsPos === "bottom");
 
   // Cap how many messages auto-expand: the clicked one + the newest + unread,
   // but never a wall of 20 open bodies at once.
@@ -257,12 +260,7 @@
     <header>
       <div class="subject">{subject}</div>
       <div class="sub">{list.length === 1 ? t("reader.messagesInConversationOne") : t("reader.messagesInConversation", { n: list.length })}</div>
-      <div class="actions">
-        <button class="btn" onclick={() => replyTo(list[list.length - 1])}>{@html icons.reply} {t("reader.reply")}</button>
-        <button class="btn" onclick={() => forwardMsg(list[list.length - 1])}>{@html icons.forward} {t("reader.forward")}</button>
-        <button class="btn" onclick={archiveAll}>{@html icons.archive} {t("reader.archiveAll")}</button>
-        <button class="btn" onclick={doneAll}>{@html icons.done} {t("reader.doneAll")}</button>
-      </div>
+      {#if !actionsBottom}<div class="actions">{@render threadActions()}</div>{/if}
     </header>
     <div class="scroll">
       {#each list as m (m.id)}
@@ -309,8 +307,16 @@
         </div>
       {/each}
     </div>
+    {#if actionsBottom}<div class="actions actions-bottom">{@render threadActions()}</div>{/if}
   {/if}
 </section>
+
+{#snippet threadActions()}
+  <button class="btn" onclick={() => replyTo(list[list.length - 1])}>{@html icons.reply} {t("reader.reply")}</button>
+  <button class="btn" onclick={() => forwardMsg(list[list.length - 1])}>{@html icons.forward} {t("reader.forward")}</button>
+  <button class="btn" onclick={archiveAll}>{@html icons.archive} {t("reader.archiveAll")}</button>
+  <button class="btn" onclick={doneAll}>{@html icons.done} {t("reader.doneAll")}</button>
+{/snippet}
 
 <style>
   .thread { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
@@ -319,6 +325,7 @@
   .subject { font-size: 19px; font-weight: 700; }
   .sub { color: var(--muted); font-size: 12px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+  .actions-bottom { margin-top: 0; padding: 12px 22px; border-top: 1px solid var(--border); background: var(--surface); }
   .scroll { flex: 1; overflow-y: auto; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 8px; }
   .msg { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); flex: none; }
   .mhead { display: flex; align-items: center; gap: 10px; padding: 0 10px 0 0; }

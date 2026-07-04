@@ -203,6 +203,7 @@
       notify("Password will be required on startup again");
     } catch (e) { notify(e.message, "error"); } finally { busy = false; }
   }
+
 </script>
 
 <div class="wrap">
@@ -240,6 +241,10 @@
         </select>
       </label>
     {/if}
+    <label class="check" style="margin-top:6px">
+      <input type="checkbox" checked={app.settings.spellCheck !== false} onchange={(e) => setCompose({ spellCheck: e.currentTarget.checked })} />
+      <div><b>Spell check</b><span>Underline misspellings as you type in the subject and message body, with right-click corrections. Uses your operating system's dictionaries for the current language — fully offline.</span></div>
+    </label>
   </section>
 
   <section class="card">
@@ -447,59 +452,6 @@
     <p class="hint">These take effect in the installed app — not in the browser dev view.</p>
   </section>
 
-  <section class="card">
-    <h3>AI assistant <span class="tag">bring your own key</span></h3>
-    <p class="hint">Powers “Catch me up”, AI reply, and inbox triage. Your key is stored locally and calls go
-      straight from this app to the provider you choose — there's no RaplMail server in between.</p>
-    <label class="fieldrow"><span>Provider</span>
-      <select value={app.settings.aiProvider || "anthropic"}
-        onchange={(e) => saveSettings({ aiProvider: e.currentTarget.value })}>
-        <option value="anthropic">Anthropic (Claude)</option>
-        <option value="openai">OpenAI</option>
-        <option value="openai-compatible">OpenAI-compatible (Groq, OpenRouter, Ollama, …)</option>
-      </select>
-    </label>
-    <label class="fieldrow"><span>API key</span>
-      <input type="password" placeholder={(app.settings.aiProvider || "anthropic") === "anthropic" ? "sk-ant-…" : "sk-…"}
-        value={app.settings.aiApiKey || ""}
-        onchange={(e) => saveSettings({ aiApiKey: e.currentTarget.value.trim() })} />
-    </label>
-    {#if (app.settings.aiProvider || "anthropic") === "openai-compatible"}
-      <label class="fieldrow"><span>API base URL</span>
-        <input placeholder="https://api.groq.com/openai/v1" value={app.settings.aiBaseUrl || ""}
-          onchange={(e) => saveSettings({ aiBaseUrl: e.currentTarget.value.trim() })} />
-      </label>
-    {/if}
-    <label class="fieldrow"><span>Model (optional)</span>
-      <input placeholder={(app.settings.aiProvider || "anthropic") === "anthropic" ? "claude-haiku-4-5-20251001" : "gpt-4o-mini"}
-        value={app.settings.aiModel || ""}
-        onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
-    </label>
-    <p class="hint">{app.settings.aiApiKey ? "✓ Key set — AI actions are active." : "No key — AI buttons stay hidden until you add one."}</p>
-    {#if app.settings.aiApiKey}
-      <label class="check">
-        <input type="checkbox" checked={app.settings.aiButtons !== false}
-          onchange={(e) => saveSettings({ aiButtons: e.currentTarget.checked })} />
-        <div><b>Show AI buttons</b><span>“Catch me up” / “AI reply” in the reader and the inbox-assistant command. Turn off to hide them even with a key set.</span></div>
-      </label>
-    {/if}
-    <label class="check">
-      <input type="checkbox" checked={!!app.settings.digestEnabled}
-        onchange={(e) => saveSettings({ digestEnabled: e.currentTarget.checked })} />
-      <div>
-        <b>Daily morning briefing</b>
-        <span>Once a day, deliver an AI digest of your unread inbox as a notification (needs the key above).</span>
-      </div>
-    </label>
-    {#if app.settings.digestEnabled}
-      <label class="fieldrow"><span>Deliver at</span>
-        <select value={app.settings.digestHour ?? 8} onchange={(e) => saveSettings({ digestHour: Number(e.currentTarget.value) })}>
-          {#each Array(24) as _, h}<option value={h}>{String(h).padStart(2, "0")}:00</option>{/each}
-        </select>
-      </label>
-    {/if}
-  </section>
-
   <h2 class="group-head">Notifications &amp; scheduling</h2>
   <section class="card">
     <h3>Notifications</h3>
@@ -653,7 +605,5 @@
   .kv code { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); padding: 5px 9px; border-radius: var(--radius-sm); font-size: 12px; overflow-x: auto; white-space: nowrap; }
   .kv code.key { letter-spacing: 0.04em; }
   .apibox .hint { margin: 4px 0 0; }
-  .fieldrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
-  .fieldrow > span { width: 140px; flex: none; color: var(--muted); font-size: 13px; }
-  .fieldrow input { flex: 1; }
+  .btn.sm { padding: 4px 9px; font-size: 12px; }
 </style>

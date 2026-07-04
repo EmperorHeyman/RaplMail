@@ -1,11 +1,124 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen, confirmDialog } from "../store.svelte.js";
+  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen, confirmDialog, saveSettings, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { icons } from "../icons.js";
-  import { signatures as sigApi, compose as composeApi } from "../api.js";
+  import { signatures as sigApi, compose as composeApi, ai } from "../api.js";
   import RecipientInput from "./RecipientInput.svelte";
-  import { t } from "../i18n.svelte.js";
+  import { t, currentLocale } from "../i18n.svelte.js";
   import { mdToHtml } from "../markdown.js";
+
+  // Native spell-check (WebView2/Chromium + OS dictionaries). One attribute — no
+  // dependency, works offline. `lang` steers the dictionary. WebView2 checks one
+  // language at a time, so the composer has a language switcher (persisted) for
+  // people who write in more than one language (e.g. English UI, Czech mail).
+  const spellOn = $derived(app.settings.spellCheck !== false);
+  const SPELL_LANGS = [
+    { id: "auto", label: "Auto" }, { id: "en", label: "EN" }, { id: "cs", label: "CS" },
+    { id: "sk", label: "SK" }, { id: "de", label: "DE" }, { id: "pl", label: "PL" },
+    { id: "es", label: "ES" }, { id: "fr", label: "FR" }, { id: "it", label: "IT" },
+  ];
+  let spellSel = $state(app.settings.spellCheckLang || "auto");
+  const spellLang = $derived(spellSel === "auto" ? currentLocale() : spellSel);
+  function setSpellLang(v) { spellSel = v; saveSettings({ spellCheckLang: v }); }
+
+  // --- AI writing assistant (rephrase / tone / translate / grammar / ask) ---
+  let mdEl;                        // <textarea> ref (markdown mode) for selection ops
+  let aiMenu = $state(false);
+  let aiBusy = $state(false);
+  let aiToneMenu = $state(false);
+  let aiTransMenu = $state(false);
+  let aiCustom = $state("");
+  let _savedRange = null;          // cloned selection range (rich mode; imperative only)
+  let _savedText = $state("");     // selected text (either mode); "" ⇒ act on whole body
+  const TONES = ["professional", "friendly", "formal", "concise", "confident"];
+  const TRANSLATE_LANGS = [
+    { label: "English", name: "English" }, { label: "Čeština", name: "Czech" },
+    { label: "Slovenčina", name: "Slovak" }, { label: "Deutsch", name: "German" },
+    { label: "Español", name: "Spanish" }, { label: "Français", name: "French" },
+    { label: "Italiano", name: "Italian" }, { label: "Polski", name: "Polish" },
+  ];
+
+  // Capture the current selection when the menu opens (mousedown fires before the
+  // click steals focus / collapses the selection). Cloned so it survives the menu.
+  function openAiMenu(e) {
+    e.preventDefault();
+    _savedRange = null; _savedText = "";
+    if (mdMode) {
+      if (mdEl && mdEl.selectionStart !== mdEl.selectionEnd)
+        _savedText = mdEl.value.substring(mdEl.selectionStart, mdEl.selectionEnd);
+    } else {
+      const sel = window.getSelection();
+      if (sel && sel.rangeCount && !sel.isCollapsed && editor &&
+          editor.contains(sel.getRangeAt(0).commonAncestorContainer)) {
+        _savedRange = sel.getRangeAt(0).cloneRange();
+        _savedText = sel.toString();
+      }
+    }
+    aiToneMenu = false; aiTransMenu = false;
+    aiMenu = !aiMenu;
+  }
+
+  // Replace the editable body (keeping the signature + quoted thread) with text.
+  function replaceBody(text) {
+    if (!editor) return;
+    for (const n of [...editor.childNodes]) {
+      if (n.nodeType === 1 && n.classList &&
+          (n.classList.contains("rapl-sig-wrap") || n.classList.contains("rapl-quoted-block"))) continue;
+      editor.removeChild(n);
+    }
+    const frag = document.createDocumentFragment();
+    for (const line of text.split("\n")) {
+      const div = document.createElement("div");
+      if (line.trim() === "") div.innerHTML = "<br>"; else div.textContent = line;
+      frag.appendChild(div);
+    }
+    editor.insertBefore(frag, editor.firstChild);
+  }
+
+  function applyRewrite(out) {
+    if (mdMode) {
+      if (_savedText && mdEl && mdEl.selectionStart !== mdEl.selectionEnd) {
+        const s = mdEl.selectionStart, en = mdEl.selectionEnd;
+        mdSource = mdSource.slice(0, s) + out + mdSource.slice(en);
+      } else {
+        mdSource = out;
+      }
+    } else if (_savedRange) {
+      editor.focus();
+      const sel = window.getSelection();
+      sel.removeAllRanges(); sel.addRange(_savedRange);
+      document.execCommand("insertText", false, out);   // undoable
+    } else {
+      replaceBody(out);
+    }
+    dirty = true; scheduleSave();
+    _savedRange = null; _savedText = "";
+  }
+
+  async function runRewrite(action, instruction = "") {
+    const source = (_savedText && _savedText.trim())
+      ? _savedText : (mdMode ? mdSource : bodyPlainNoQuote());
+    if (!source.trim()) { notify(t("compose.aiNothing"), "error"); return; }
+    aiBusy = true; app.aiBusy = true;
+    try {
+      const r = await ai.rewrite({ text: source, action, instruction });
+      const out = (r.result || "").trim();
+      if (!out) { notify(t("compose.aiEmpty"), "error"); return; }
+      applyRewrite(out);
+      aiMenu = false;
+    } catch (e) { notify(e.message, "error"); }
+    finally { aiBusy = false; app.aiBusy = false; }
+  }
+  function runCustom() {
+    const q = aiCustom.trim();
+    if (!q) return;
+    aiCustom = "";
+    runRewrite("custom", q);
+  }
+  function openAssistantFromCompose() {
+    aiMenu = false;
+    openAiAssistant();   // opens the full assistant; user adds mails as context there
+  }
 
   let { standalone = false } = $props();
 
@@ -615,7 +728,7 @@
       {#if !showCc}<button class="cc-toggle" onclick={() => (showCc = true)}>{t("compose.cc")}</button>{/if}
     </div>
     {#if showCc}<div class="f"><span>{t("compose.cc")}</span><RecipientInput bind:value={c.cc} /></div>{/if}
-    <label class="f"><span>{t("compose.subject")}</span><input bind:value={c.subject} /></label>
+    <label class="f"><span>{t("compose.subject")}</span><input bind:value={c.subject} spellcheck={spellOn} lang={spellLang} /></label>
   </div>
 
   <div class="toolbar">
@@ -627,6 +740,45 @@
       <button class="tool" title={t("compose.clearFormatting")} onmousedown={(e) => { e.preventDefault(); exec("removeFormat"); }}>{@html icons.clearFormat}</button>
     {/if}
     <button class="tool md-toggle" class:on={mdMode} title={t("compose.markdownMode")} onclick={toggleMd}>{t("compose.markdown")}</button>
+    {#if aiEnabled()}
+      <div class="ai-pick">
+        <button class="tool ai" class:busy={aiBusy} title={t("compose.aiTitle")} onmousedown={openAiMenu} disabled={aiBusy}>
+          {@html icons.bolt} {aiBusy ? t("compose.aiWorking") : t("compose.ai")} ⌄
+        </button>
+        {#if aiMenu}
+          <div class="ai-menu">
+            <div class="ai-src">{_savedText.trim() ? t("compose.aiOnSelection") : t("compose.aiOnDraft")}</div>
+            <button onclick={() => runRewrite("rephrase")}>{@html icons.sparkles || icons.bolt} {t("compose.aiRephrase")}</button>
+            <button onclick={() => runRewrite("improve")}>{t("compose.aiImprove")}</button>
+            <button onclick={() => runRewrite("shorten")}>{t("compose.aiShorten")}</button>
+            <button onclick={() => runRewrite("expand")}>{t("compose.aiExpand")}</button>
+            <button onclick={() => runRewrite("grammar")}>{t("compose.aiGrammar")}</button>
+            <div class="ai-sub">
+              <button class="ai-subhead" onclick={() => { aiToneMenu = !aiToneMenu; aiTransMenu = false; }}>{t("compose.aiTone")} <span>›</span></button>
+              {#if aiToneMenu}<div class="ai-submenu">
+                {#each TONES as tone}<button onclick={() => runRewrite(tone)}>{t("compose.tone." + tone)}</button>{/each}
+              </div>{/if}
+            </div>
+            <div class="ai-sub">
+              <button class="ai-subhead" onclick={() => { aiTransMenu = !aiTransMenu; aiToneMenu = false; }}>{t("compose.aiTranslate")} <span>›</span></button>
+              {#if aiTransMenu}<div class="ai-submenu">
+                {#each TRANSLATE_LANGS as l}<button onclick={() => runRewrite("translate", l.name)}>{l.label}</button>{/each}
+              </div>{/if}
+            </div>
+            <div class="ai-custom">
+              <input placeholder={t("compose.aiAskPlaceholder")} bind:value={aiCustom}
+                onkeydown={(e) => { if (e.key === "Enter") runCustom(); }} />
+            </div>
+            <button class="ai-assistant-link" onclick={openAssistantFromCompose}>{@html icons.chat || icons.mail} {t("compose.aiAssistant")}</button>
+          </div>
+        {/if}
+      </div>
+    {/if}
+    {#if spellOn}
+      <select class="spell-lang" title={t("compose.spellLang")} value={spellSel} onchange={(e) => setSpellLang(e.currentTarget.value)}>
+        {#each SPELL_LANGS as l}<option value={l.id}>{l.label}</option>{/each}
+      </select>
+    {/if}
     <span class="tspace"></span>
     {#if !mdMode && (app.settings.templates || []).length}
       <div class="tpl-pick">
@@ -645,10 +797,11 @@
   </div>
 
   <div class="editor" class:hidden={mdMode} contenteditable="true" role="textbox" tabindex="0" aria-label={t("compose.messageBody")}
+    spellcheck={spellOn} lang={spellLang}
     bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} onclick={onEditorClick} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
     data-placeholder={t("compose.bodyPlaceholder")}></div>
   {#if mdMode}
-    <textarea class="editor mdbody" bind:value={mdSource} oninput={onBodyInput}
+    <textarea class="editor mdbody" bind:this={mdEl} bind:value={mdSource} oninput={onBodyInput} spellcheck={spellOn} lang={spellLang}
       aria-label={t("compose.messageBody")} placeholder={t("compose.markdownPlaceholder")}></textarea>
   {/if}
 
@@ -784,6 +937,33 @@
   .later-menu .custom { display: flex; gap: 6px; padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
   .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
   .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
+  .tool.ai { color: var(--accent); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+  .tool.ai :global(svg) { width: 14px; height: 14px; }
+  .tool.ai.busy { opacity: 0.7; }
+  .spell-lang { font-size: 11px; padding: 3px 6px; border-radius: 6px; background: var(--surface-2);
+    border: 1px solid var(--border); color: var(--muted); }
+  .ai-pick { position: relative; }
+  .ai-menu { position: absolute; top: 100%; left: 0; margin-top: 6px; z-index: 30; min-width: 210px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    animation: pop-in var(--t) var(--ease); transform-origin: top left; }
+  .ai-menu > button, .ai-subhead { display: flex; align-items: center; gap: 7px; text-align: left; width: 100%;
+    padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text); }
+  .ai-menu > button:hover, .ai-subhead:hover { background: var(--accent); color: #fff; }
+  .ai-menu > button :global(svg) { width: 14px; height: 14px; }
+  .ai-src { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
+    padding: 5px 10px 3px; }
+  .ai-sub { position: relative; }
+  .ai-subhead { justify-content: space-between; }
+  .ai-subhead span { color: var(--faint); }
+  .ai-submenu { display: flex; flex-direction: column; padding: 2px 0 2px 10px; }
+  .ai-submenu button { text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 13px; color: var(--text); }
+  .ai-submenu button:hover { background: var(--accent); color: #fff; }
+  .ai-custom { padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+  .ai-custom input { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px;
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
+  .ai-assistant-link { color: var(--accent) !important; font-size: 12px !important; border-top: 1px solid var(--border); margin-top: 4px; }
+  .ai-assistant-link:hover { background: var(--surface-3) !important; color: var(--accent) !important; }
   .tpl-pick { position: relative; }
   .tpl-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 180px; max-height: 260px; overflow-y: auto; animation: pop-in var(--t) var(--ease); transform-origin: bottom left; }
   .tpl-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }

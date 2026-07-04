@@ -102,6 +102,19 @@
     if (suppressClick) { suppressClick = false; return; }
     if (dx === 0) onopen();
   }
+
+  // Prefetch on hover only after a short DWELL. Wheel-scrolling sweeps rows
+  // under a stationary cursor, and an immediate mouseenter prefetch fired a
+  // full-body fetch (+ JSON parse on the main thread) for every row that passed
+  // — a request storm that made scrolling feel sluggish. A 120ms dwell means a
+  // scroll pass (enter→leave in a few ms) fetches nothing, while a real hover
+  // still warms the body long before the click lands.
+  let _dwell;
+  function onEnter() {
+    clearTimeout(_dwell);
+    _dwell = setTimeout(() => prefetchBody(message.id, true), 120);
+  }
+  function onLeave() { clearTimeout(_dwell); }
 </script>
 
 <div class="wrap" class:swiping={dragging}>
@@ -124,7 +137,8 @@
     onpointercancel={onPointerUp}
     onclick={onRowClick}
     oncontextmenu={(e) => onmenu?.(e)}
-    onmouseenter={() => prefetchBody(message.id, true)}
+    onmouseenter={onEnter}
+    onmouseleave={onLeave}
   >
     <button class="avatar" class:checked class:selecting class:haslogo={hasLogo}
       style={acctColor ? `border-color:${acctColor}` : ""}

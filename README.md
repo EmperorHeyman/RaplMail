@@ -1,113 +1,142 @@
 # RaplMail
 
-A fast, local-first, privacy-respecting desktop email client for power users — built to replace Spark/Thunderbird with great keyboard-driven triage, real developer tooling, and no cloud middleman.
+A fast, local-first desktop email client for people who live in their inbox.
 
-- **Local-first & private** — everything runs on your machine. A Python backend (FastAPI) talks IMAP/SMTP directly to your providers; the UI is a Tauri (Rust) desktop shell. There is **no RaplMail server** — your mail, keys, and AI API key never leave your computer.
-- **Stack** — Tauri 2 + Svelte 5 frontend · FastAPI + SQLModel/SQLite (WAL + FTS) backend, shipped as a bundled sidecar · packaged to a signed Windows installer (macOS build via CI).
+RaplMail brings the keyboard-driven triage of modern email apps to your own machine, with no cloud middleman. A Python backend speaks IMAP and SMTP directly to your providers, a Tauri (Rust) shell renders a Svelte interface, and everything (your mail, your keys, your AI settings) stays on your computer. There is no RaplMail server to route your mail through.
 
----
+## At a glance
 
-## Accounts & sign-in
+- **Local-first and private.** No RaplMail account, no proxy, no telemetry. Your data never leaves your device.
+- **Keyboard-driven triage.** Press `e` to mark a message done, snooze it, pin it, bundle it, or split your inbox. The workflow power users miss from Spark, done right.
+- **Optional local AI.** Run models on your own machine with Ollama (no API key needed), or bring your own OpenAI, Anthropic, or OpenAI-compatible key. Summaries, replies, meaning-based search, and an assistant that can act on your mailbox when you ask it to.
+- **Real search.** Substring matching across every field, operators, regex, and full-text search inside attachments.
+- **A compose window that respects you.** WYSIWYG editor, one-drag signatures with inline images, templates, send later, and mail merge.
+- **Small and quick.** Roughly 100 to 200 MB of RAM, instant SQLite full-text search, and smooth scrolling over large mailboxes.
 
-- **Auto-discovery** — type your email and RaplMail figures out the servers: known-provider table, **MX-based detection** (vanity domains hosted on Seznam, Google Workspace, Microsoft 365, Zoho, Fastmail, iCloud, Centrum…), Thunderbird ISPDB, provider autoconfig, and DNS SRV records.
-- **Microsoft 365 / Outlook** — OAuth2 device-code sign-in (no password stored).
-- **Gmail / Google Workspace** — OAuth2 sign-in.
-- **Any IMAP/SMTP** — verified on add; password sealed in the encrypted vault.
-- **Per-account health dashboard** — live status (Connected / Syncing / Error), ⚡ IMAP-IDLE indicator, message/folder counts, last-sync time, errors, and a **Reconnect** button to re-enter a password without removing the account.
-- **Multiple identities / send-as aliases** per account.
+## Requirements
 
-## Triage (the Spark workflow, done right)
+- Windows 10 or 11 (64-bit). A macOS build is produced by the included CI workflow.
+- An email account: Microsoft 365 / Outlook, Gmail / Google Workspace, or any IMAP/SMTP provider.
 
-- **Done** (`e`) — hide a message from the inbox without moving it; a slider reveals done mail. Works on individual rows **and inside Smart-Inbox group cards**.
-- **Snooze** — presets or an exact time; plus **"until I'm back"** presence snooze that resurfaces mail when an idle-time monitor detects you've returned to the desk.
-- **Pin** important mail to the top (survives re-sync).
-- **VIP senders** — float to the top with a ⭐ and always notify (bypass quiet hours / focus rule).
-- **Bundles** — collapse 3+ notifications from one sender into one card; archive the whole bundle at once.
-- **Mute sender / mute conversation** (whole reply-all thread auto-archived on arrival).
-- **Rules & blocking** — by sender/domain/subject → move/archive/delete/mark-read/mark-done/block, with live preview.
-- **Screener** — first-time senders wait for approval.
-- **Universal undo** toast for Done & Snooze.
-- **Keyboard-first** — full shortcut set, `g`-then-letter chord navigation, and a `?` cheatsheet. `Ctrl/Cmd+R` checks for new mail.
+## Install
+
+Grab the latest installer from the releases page and run it:
+
+- `RaplMail_x.y.z_x64-setup.exe` (NSIS), or
+- `RaplMail_x.y.z_x64_en-US.msi` (MSI)
+
+On first launch you choose a master password. It unlocks a local encrypted vault that seals your account credentials and keys. Add an account and RaplMail auto-discovers the server settings for you. Updates are delivered through a signed release feed and can self-install from Settings.
+
+## Accounts and sign-in
+
+- **Auto-discovery.** Type your email address and RaplMail figures out the servers using a known-provider table, MX-based detection (vanity domains hosted on Seznam, Google Workspace, Microsoft 365, Zoho, Fastmail, iCloud, Centrum, and more), the Thunderbird ISPDB, provider autoconfig, and DNS SRV records.
+- **Microsoft 365 / Outlook** via OAuth2 device-code sign-in (no password stored).
+- **Gmail / Google Workspace** via OAuth2 sign-in.
+- **Any IMAP/SMTP** account, verified when you add it, with the password sealed in the encrypted vault.
+- **Per-account health dashboard** with live status (Connected, Syncing, Error), an IMAP-IDLE indicator, message and folder counts, last-sync time, error details, and a Reconnect button to re-enter a password without removing the account.
+- **Multiple identities and send-as aliases** per account.
+
+## Triage
+
+- **Done** (`e`): hide a message from the inbox without moving it on the server, then reveal done mail with a toggle. Works on individual rows and inside Smart Inbox group cards.
+- **Snooze** to a preset or an exact time, plus an "until I'm back" presence snooze that resurfaces mail when an idle-time monitor notices you have returned to the desk.
+- **Pin** important mail to the top (it survives re-sync).
+- **VIP senders** float to the top and always notify, bypassing quiet hours and focus rules.
+- **Bundles** collapse three or more notifications from one sender into a single card you can archive at once.
+- **Mute sender** or **mute conversation** (the whole reply-all thread is auto-archived on arrival).
+- **Rules and blocking** by sender, domain, or subject, with actions to move, archive, delete, mark read, mark done, or block, and a live preview against existing mail.
+- **Screener** holds first-time senders for your approval.
+- **Drag a message onto a folder** to move it, single or multi-selected.
+- **Universal undo** toast for done, snooze, move, and bulk actions.
+- **Keyboard-first**, with a full customizable shortcut set and a searchable command palette (`Ctrl+K`). Arrow keys move through the list and open mail as you go.
 
 ## Views
 
-- **Home dashboard** — live clock, "up next" calendar, latest mail, quick actions.
-- **Smart Inbox** — important mail in the main flow; chosen categories collapse into cards showing the **newest messages** with live counts.
-- **All Inboxes** (unified), **Snoozed**, **Scheduled**, **Newsletter Feed**, **Paper Trail** (receipts/invoices/orders), **Follow-ups** (sent mail with no reply in N days), **Calendar**.
+- **Home dashboard** with a live clock, an "up next" calendar strip, latest mail, an inbox AI chat, and quick actions.
+- **Smart Inbox** keeps important mail in the main flow while chosen categories collapse into cards that show the newest messages with live counts.
+- **All Inboxes** (unified), **Snoozed**, **Scheduled**, **Newsletter Feed**, **Paper Trail** (receipts, invoices, orders), **Follow-ups** (sent mail with no reply after N days), and **Calendar**.
 
-## Compose & send
+## Compose and send
 
-- Rich WYSIWYG editor with **drag-drop inline images**.
-- **One-drag signatures** with embedded images (inline CID — they actually render for recipients), live preview, per-account defaults.
-- **Templates / canned replies** with `{{variables}}`.
-- **Send Later** — schedule a send; background worker delivers it; cancel from the Scheduled view.
-- **Mail merge** — one template + a CSV/recipient list → individualized messages (separate sends, no shared To/Cc).
-- **Send-as identities/aliases**, **Auto-BCC** by recipient domain.
-- **Drafts** — local autosave + restore, and **Save to IMAP Drafts** for cross-device sync.
-- **PGP sign / encrypt** (inline) and a **read-receipt** tracking-pixel toggle.
-- **Attachment reminder** — warns if you mention an attachment but didn't attach one (EN+CZ).
-- Offline-resilient **send/action queue** (retried by a worker when the connection returns).
+- Rich WYSIWYG editor with drag-and-drop inline images, and a Markdown mode.
+- **One-drag signatures** with embedded images (inline CID, so they actually render for recipients), a live preview, and per-account defaults.
+- **Templates and canned replies** with `{{variables}}`.
+- **Send Later**: schedule a send and cancel it from the Scheduled view; a background worker delivers it.
+- **Mail merge**: one template plus a recipient list becomes individualized messages (separate sends, never a shared To or Cc).
+- **Send-as identities and aliases**, and **auto-BCC** by recipient domain.
+- **Drafts** with local autosave and restore, plus save to IMAP Drafts for cross-device sync.
+- **PGP sign and encrypt** (inline), and a read-receipt tracking-pixel toggle.
+- **Attachment reminder** that warns if you mention an attachment but forgot to attach one (English and Czech).
+- An offline-resilient send and action queue that a worker retries when the connection returns.
 
 ## Reading
 
-- **Attachments** — open with the OS default app, save individually, or **Download all**.
-- **Just-the-diff** — collapse nested "On … wrote:" quote history (EN+CZ markers).
+- **Attachments** open with the OS default app, save individually, or download all at once, with file-type badges and image thumbnails.
+- **Just the new text**: collapse nested "On ... wrote:" quote history (English and Czech markers).
 - **Code-block syntax highlighting** in the reader.
-- **Rich link unfurls** (OpenGraph preview card; off by default).
-- **Anti-spoof shield** — DMARC/DKIM/SPF verdict from your provider's Authentication-Results, plus homoglyph/punycode and link-text-vs-href warnings.
-- **PGP** — verify signatures and decrypt encrypted mail with your keys; badge in the reader.
-- Tracker-pixel blocking; collapse long recipient lists; per-account color stripes.
+- **Rich link unfurls** with an OpenGraph preview card (off by default).
+- **Anti-spoof shield**: a DMARC, DKIM, and SPF verdict read from your provider's Authentication-Results, plus homoglyph and punycode warnings and link-text-versus-href checks.
+- **PGP**: verify signatures and decrypt encrypted mail with your keys, shown as a badge in the reader.
+- Tracker-pixel blocking, collapsible long recipient lists, per-account color accents, and an adjustable reading width so long lines do not stretch across a wide screen.
 
-## AI assistant (bring-your-own-key)
+## AI assistant
 
-Your own Anthropic API key, stored locally; calls go straight to the provider.
+RaplMail's AI is optional and private by design. Run models locally with Ollama and no API key ever leaves your machine, point it at any OpenAI-compatible endpoint (LM Studio, llama.cpp, vLLM), or bring your own OpenAI or Anthropic key. When you use a cloud key, calls go straight from your machine to that provider. There is never a RaplMail server in the middle.
 
-- **Catch me up** — summarize a whole thread (TL;DR + key points + action items).
-- **AI reply** — draft a reply in your tone + one-tap quick replies (never auto-sends).
-- **Inbox assistant** — a prioritized "catch me up on my inbox" digest and a **priority score** (0–100) for unread mail.
-- **Morning briefing** — optional once-a-day digest delivered as a notification.
+- **One-click local setup.** Install Ollama and pull a recommended model from Settings, or search the whole model library live and pull anything (chat or embedding).
+- **An assistant that can act.** Ask how a feature works and it explains, or ask it to change your mail ("mark all unread as read", "archive everything from noreply@..."). It proposes the exact action with a sample of the affected messages and only runs it after you confirm.
+- **Catch me up.** Summarize a whole thread into a TL;DR with key points and action items.
+- **AI reply.** Draft a reply in your tone with one-tap quick replies. It never sends on its own.
+- **Composer rewrites.** Rephrase, fix grammar, change tone, translate, shorten, or expand the text you are writing.
+- **Inbox digest and priority triage.** A prioritized "catch me up on my inbox" and a priority score from 0 to 100 for unread mail, plus an optional once-a-day morning briefing.
+- Replies and rewrites match the language you write in.
 
-AI buttons stay hidden until a key is set, and can be toggled off entirely.
+AI buttons stay hidden until a provider is usable and can be turned off entirely.
 
 ## Search
 
-- **Substring matching across every field** — sender, recipients (to/cc), subject, snippet, and cached body — so partial words match (`ertel` → `erteltrading@…`).
-- **Operators** (space-tolerant): `from:`, `to:`, `cc:`, `subject:`, `has:attachment`, `is:unread|read|flagged|done`.
+- **Substring matching across every field**: sender, recipients (to and cc), subject, snippet, and cached body, so partial words match (`ertel` finds `erteltrading@...`).
+- **Operators** (space-tolerant): `from:`, `to:`, `cc:`, `subject:`, `has:attachment`, and `is:unread|read|flagged|done`.
 - **Regex** search with `/pattern/`.
-- **Full-text inside attachments** — text/code/CSV/JSON and Office files (`.docx/.xlsx/.pptx`) are indexed so search matches words inside files.
-- Chip-based search bar with contact suggestions; **save any query as a smart folder**.
+- **Semantic search**: an optional local embedding index finds mail by meaning, not just keywords, and a natural-language mode turns a plain request into a query.
+- **Full-text inside attachments**: text, code, CSV, and JSON files plus Office documents (`.docx`, `.xlsx`, `.pptx`) are indexed, so search matches words inside files.
+- A chip-based search bar with contact suggestions, and the option to save any query as a smart folder.
 
-## Security & privacy
+## Security and privacy
 
-- **Encrypted vault** — credentials sealed with a master password (Argon2id + Fernet).
-- **Encryption-at-rest** — optional sealing of cached message bodies with a vault-held key.
-- **PGP (OpenPGP)** — verify / decrypt / sign / encrypt; manage keys in Settings.
-- **Plus-address generator + tracking** — mint `you+service@domain` per site and see who leaked your address (⚠ flag when more than one sender uses an alias); mute an alias in one click.
-- **Anti-spoof** DMARC/DKIM/SPF visualizer + lookalike-domain warnings.
+- **Encrypted vault**: credentials are sealed with your master password (Argon2id and Fernet).
+- **Encryption at rest**: optional sealing of cached message bodies with a vault-held key.
+- **PGP (OpenPGP)**: verify, decrypt, sign, and encrypt, with key management in Settings.
+- **Plus-address generator and tracking**: mint `you+service@domain` per site and see who leaked your address (flagged when more than one sender uses an alias), then mute an alias in one click.
+- **Anti-spoof**: a DMARC, DKIM, and SPF visualizer with lookalike-domain warnings.
 
-## Calendar & contacts
+## Calendar and contacts
 
-- **Email-derived calendar** — meeting invites parsed from mail; RSVP; bulk scan.
-- **CalDAV / CardDAV** — sync external calendars and address books (Nextcloud, Fastmail, iCloud, Seznam, Radicale…) from Settings → Calendar & Contacts.
+- **Email-derived calendar**: meeting invites are parsed from mail, with RSVP and a bulk scan.
+- **CalDAV and CardDAV**: sync external calendars and address books (Nextcloud, Fastmail, iCloud, Seznam, Radicale, and more) from Settings > Calendar and Contacts.
 
-## Developer / power-user tooling
+## Appearance
 
-- **Local metrics API** — opt-in read-only `/metrics` (JSON) + `/metrics/prometheus` for Home Assistant / ESP32 / dashboards, protected by a stable API key.
-- **`raplmail-cli`** (`backend/cli/raplmail_cli.py`) — `unread`, `search`, `accounts`, `metrics`, and `send` (pipe terminal output into a draft: `make 2>&1 | raplmail-cli send -t me@x.com -s "build log"`).
-- **Themes & appearance** — programmer color presets (One Dark, Dracula, Monokai, Nord, Gruvbox, Solarized, Tokyo Night, GitHub Dark), light/auto day-night, UI scale, corner roundness, custom CSS (optionally applied inside email bodies).
+- A large set of themes grouped by category (Essentials, High contrast, Neutral, Color, Editor), including a true-black OLED theme and programmer favorites (One Dark, Dracula, Monokai, Nord, Gruvbox, Solarized, Tokyo Night, GitHub Dark).
+- Generate a full palette from a single accent color, or tune each color token by hand.
+- Light, dark, and automatic day-and-night modes, adjustable UI scale, corner roundness, message density, and optional custom CSS (which can also be applied inside email bodies).
 
-## Platform & distribution
+## For power users and developers
 
-- **System tray** — closing the window minimizes to tray (IMAP IDLE + sync keep running); tray menu Open/Quit; taskbar **unread badge**.
+- **Local metrics API**: an opt-in, read-only `/metrics` (JSON) and `/metrics/prometheus` for Home Assistant, an ESP32, or a dashboard, protected by a stable API key.
+- **`raplmail-cli`** (`backend/cli/raplmail_cli.py`) with `unread`, `search`, `accounts`, `metrics`, and `send`. Pipe terminal output straight into a draft, for example `make 2>&1 | raplmail-cli send -t me@x.com -s "build log"`.
+- English and Czech interface languages, switchable in Settings.
+
+## Platform and distribution
+
+- **System tray**: closing the window minimizes to the tray (IMAP IDLE and sync keep running), with an Open/Quit menu and a taskbar unread badge.
 - **Launch at login** (autostart).
-- **Auto-updater** — Tauri updater plugin checks a signed release feed, verifies the signature, and self-installs (Settings → Updates → Check for updates).
-- **Windows installers** — MSI + NSIS, signed. **macOS** build via the included GitHub Actions workflow (`.dmg`).
-
----
+- **Auto-updater**: the Tauri updater checks a signed release feed, verifies the signature, and self-installs from Settings > Updates.
+- **Windows installers**: MSI and NSIS, signed. A macOS build (`.dmg`) is produced by the included GitHub Actions workflow.
 
 ## Building from source
 
-**Prerequisites:** Python 3.13, Node 20+, Rust (stable), and the Tauri prerequisites for your OS.
+**Prerequisites:** Python 3.13, Node 20 or newer, Rust (stable), and the Tauri prerequisites for your OS.
 
 ```bash
 # 1. Backend deps
@@ -131,10 +160,10 @@ cd ../backend && .venv/Scripts/python -m PyInstaller raplmail-backend.spec --noc
 cp dist/raplmail-backend.exe ../frontend/src-tauri/binaries/raplmail-backend-x86_64-pc-windows-msvc.exe
 #   build the app:
 cd ../frontend && npx tauri build
-# → installers in frontend/src-tauri/target/release/bundle/
+# installers land in frontend/src-tauri/target/release/bundle/
 ```
 
-**Auto-updater signing:** releases are signed with a minisign key (private key gitignored at `frontend/src-tauri/.tauri-updater.key`; public key baked into `tauri.conf.json`). Set `TAURI_SIGNING_PRIVATE_KEY` (+ password) when building to emit signed update artifacts, and publish them with a `latest.json` at the configured endpoint.
+**Auto-updater signing:** releases are signed with a minisign key (the private key is gitignored at `frontend/src-tauri/.tauri-updater.key`, the public key is baked into `tauri.conf.json`). Set `TAURI_SIGNING_PRIVATE_KEY` and its password when building to emit signed update artifacts, and publish them with a `latest.json` at the configured endpoint.
 
 ## Tests
 
@@ -142,36 +171,30 @@ cd ../frontend && npx tauri build
 cd backend && .venv/Scripts/python -m pytest -q
 ```
 
-Covers the API surface (health, settings, metrics auth, AI graceful-degradation, plus-aliases), attachment text extraction, OpenPGP round-trips, encryption-at-rest, and CalDAV/CardDAV parsing.
+The suite covers the API surface (health, settings, metrics auth, AI graceful degradation, plus-aliases, message moves), attachment text extraction, OpenPGP round-trips, encryption at rest, and CalDAV/CardDAV parsing.
 
----
+## Why RaplMail?
 
-## ⚖️ Why RaplMail? (Comparison Matrix)
+Most email clients make you pick one of two compromises: fast workflows trapped inside a paid cloud middleman (Superhuman, Spark), or local privacy bundled with a heavy legacy interface (Thunderbird, Mailspring). RaplMail gives you the speed and triage of a modern client while keeping 100 percent of your data, keys, and credentials on your own machine.
 
-Most modern email clients force you to choose between two compromises: **fast UI workflows trapped inside a paid cloud middleman** (Superhuman, Spark), or **local privacy bundled with heavy legacy/bloated UI frameworks** (Thunderbird, Mailspring).
-
-RaplMail is built to give you the speed and triage workflows of modern SaaS email clients while keeping 100% of your data, keys, and credentials on your own machine.
-
-| Feature / Architecture | **RaplMail** | **Spark** | **Thunderbird** | **Superhuman** | **Mimestream** | **Hey** | **MS Outlook** |
+| Feature / Architecture | RaplMail | Spark | Thunderbird | Superhuman | Mimestream | Hey | MS Outlook |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Pricing** | **Free / Local** | Freemium / Paid | Free | $30 / mo | $50 / yr | $99 / yr | Included w/ Bloatware |
-| **Any IMAP/SMTP Support** | ✅ **Yes** | ✅ Yes | ✅ Yes | ❌ *No* | ❌ *No* | ❌ *No* | 🟡 *Yes, if you survive the 4 nested wizards* |
-| **Zero Cloud Middleman** | ✅ **100% Local** | ❌ *No* | ✅ 100% Local | ❌ *No* | ✅ Direct API | ❌ *No* | ❌ *No (routes everything to Microsoft)* |
-| **UI Stack & Performance** | **Tauri 2 + Svelte 5** | Web / Electron | C++ / Gecko | Web Wrapper | Native macOS | Web Wrapper | **Win32 Legacy Layer Cake / Web-Wrap Frankenstein** |
-| **Spark-Style Triage (`e` to Done)** | ✅ **Yes** | ✅ Yes | ❌ *No* | ✅ Yes | 🟡 *Partial* | 🟡 *Partial* | ❌ *No (Only `Delete` or archive loops)* |
-| **Hey-Style Defense Tools** | ✅ **Yes** <br>*(Screener, Feed, Receipts)* | ❌ *No* | ❌ *No* | ❌ *No* | ❌ *No* | ✅ **Yes** | ❌ *No (Prepare for infinite spam)* |
-| **Custom IMAP Auto-Discovery** | ✅ **Instant (DNS/MX/ISPDB)** | ✅ Yes | ✅ Yes | ❌ *N/A* | ❌ *N/A* | ❌ *N/A* | ❌ *Fails entirely, drops you into an M365 upsell funnel* |
-| **Offline Action Queue** | ✅ **Instant local UX** <br>*(Background retry)* | 🟡 *Partial* | ❌ *Blocking UI* | ✅ Yes | ✅ Yes | ❌ *No* | ❌ **"Outlook is not responding" (Sync Freeze)** |
-| **RAM Footprint** | **~100-200 MB** | ~400+ MB | ~200+ MB | ~300+ MB | ~60 MB | ~300+ MB | **Your Entire Available Memory Pool** |
+| Pricing | **Free, local** | Freemium | Free | $30 / mo | $50 / yr | $99 / yr | Included with the bloatware |
+| Any IMAP/SMTP | **Yes** | Yes | Yes | No | No | No | Yes, if you survive four nested wizards |
+| Zero cloud middleman | **100% local** | No | 100% local | No | Direct API | No | No, routes everything to Microsoft |
+| UI stack | **Tauri 2 + Svelte 5** | Web / Electron | C++ / Gecko | Web wrapper | Native macOS | Web wrapper | Win32 legacy layer cake |
+| Spark-style triage (`e` to done) | **Yes** | Yes | No | Yes | Partial | Partial | No, only delete or archive loops |
+| Hey-style defenses (Screener, Feed, Receipts) | **Yes** | No | No | No | No | Yes | No, prepare for infinite spam |
+| Custom IMAP auto-discovery | **Instant (DNS/MX/ISPDB)** | Yes | Yes | N/A | N/A | N/A | Fails, then drops you into an M365 upsell funnel |
+| Offline action queue | **Instant local UX, background retry** | Partial | Blocking UI | Yes | Yes | No | "Outlook is not responding" |
+| Local AI (no cloud required) | **Yes (Ollama)** | No | No | No | No | No | No |
+| RAM footprint | **~100 to 200 MB** | ~400 MB and up | ~200 MB and up | ~300 MB and up | ~60 MB | ~300 MB and up | your entire available memory pool |
 
----
+### The short version
 
-### TL;DR vs. The Industry
-
-* **vs. Spark & Superhuman:** You get the exact same keyboard-first triage (`e` to complete, snooze, bundle cards, split inboxes) without routing your sensitive emails through a third-party server proxy or paying $30+/month.
-* **vs. Thunderbird:** You get a lightweight, modern design system with fast SQLite FTS5 search, inline WYSIWYG/Markdown compose, and advanced workflows out of the box—without battling 20-year-old UI paradigms.
-* **vs. Hey (Basecamp):** You get modern inbox defenses (first-time sender Screener, newsletter feeds, order receipt paper trails) directly on your **existing custom domains and IMAP accounts**, rather than being locked into an `@hey.com` walled garden.
-* **vs. Microsoft Outlook:** Outlook wasn't designed for the person sitting at the keyboard; it was designed for corporate IT compliance lawyers. If you enjoy manual port configurations hidden behind four legacy Win32 modal dialogs, loading spinner crashes while syncing a local `.ost` file, and an interface that looks like it was optimized for Windows 2000, keep using Outlook. If you want an app that instantly auto-discovers custom domain SMTP settings and lets you triage via keyboard chords, use RaplMail.
-
+- **Versus Spark and Superhuman:** the same keyboard-first triage (`e` to complete, snooze, bundle cards, split inboxes) without routing your sensitive email through a third-party proxy or paying $30 or more per month.
+- **Versus Thunderbird:** a lightweight, modern interface with fast SQLite full-text search, inline WYSIWYG and Markdown compose, and advanced workflows out of the box, without fighting twenty-year-old UI paradigms.
+- **Versus Hey:** modern inbox defenses (a first-time-sender Screener, newsletter feeds, order and receipt paper trails) on your existing custom domains and IMAP accounts, instead of a walled garden that forces an `@hey.com` address.
+- **Versus Microsoft Outlook:** Outlook was not designed for the person at the keyboard, it was designed for corporate IT compliance. If you enjoy manual port configuration hidden behind four legacy modal dialogs, loading-spinner crashes while it syncs a local `.ost` file, and an interface that looks optimized for Windows 2000, keep using Outlook. If you want an app that instantly auto-discovers custom-domain SMTP settings and lets you triage from the keyboard, use RaplMail.
 
 Made by [RAPL Group](https://rapl-group.eu/).

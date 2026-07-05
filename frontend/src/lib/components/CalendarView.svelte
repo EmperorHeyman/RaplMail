@@ -225,7 +225,7 @@
 
 <svelte:window onpointerup={dragUp} />
 
-<section class="cal">
+<section class="cal stagger-in">
   <header>
     <div class="nav">
       <button class="btn ghost" onclick={prev} title={view === "week" ? "Previous week" : "Previous month"}>‹</button>

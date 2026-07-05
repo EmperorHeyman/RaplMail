@@ -43,7 +43,14 @@
         return;
       }
     }
-    try { await api.create(draft); notify("Rule saved"); draft = newDraft(); preview = null; await load(); }
+    try {
+      await api.create(draft);
+      // Also apply to mail already in the box (rules otherwise only run on new mail).
+      let applied = 0;
+      try { applied = (await api.apply(draft)).applied || 0; } catch {}
+      notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
+      draft = newDraft(); preview = null; await load();
+    }
     catch (e) { notify(e.message, "error"); }
   }
   async function remove(r) { await api.remove(r.id); await load(); }

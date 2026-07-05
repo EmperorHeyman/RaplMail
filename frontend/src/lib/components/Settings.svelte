@@ -21,6 +21,7 @@
   import SettingsDebug from "./SettingsDebug.svelte";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import { SETTINGS_INDEX } from "../settingsIndex.js";
 
   let tab = $state(app.settingsTab || "accounts");
   if (app.settingsTab) app.settingsTab = null;
@@ -69,10 +70,56 @@
       return terms.every((w) => hay.includes(w));
     });
   });
-  // If the current tab is filtered out, jump to the first match.
+  const tabLabel = (id) => tabs.find((tb) => tb.id === id)?.label || id;
+  // Matching INDIVIDUAL settings — so search jumps to the exact control, not just
+  // its category. Ranked so a label hit beats a keyword-only hit.
+  const results = $derived.by(() => {
+    const q = _norm(query);
+    if (!q) return [];
+    const terms = q.split(" ");
+    return SETTINGS_INDEX
+      .map((r) => {
+        const label = _norm(r.label);
+        const hay = label + " " + _norm(r.kw) + " " + _norm(tabLabel(r.tab));
+        if (!terms.every((w) => hay.includes(w))) return null;
+        const score = terms.every((w) => label.includes(w)) ? 0 : 1;   // label match first
+        return { ...r, score };
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.score - b.score)
+      .slice(0, 24);
+  });
+  // If the current tab is filtered out, jump to the first match (only while the
+  // category list is what's showing — not while the user is scanning results).
   $effect(() => {
+    if (query.trim()) return;
     if (filtered.length && !filtered.some((t) => t.id === tab)) tab = filtered[0].id;
   });
+
+  // Jump to a specific setting: open its tab, clear the search, then briefly
+  // flash the matching control in the panel so the eye lands on it. Best-effort —
+  // if the label isn't found (e.g. localized text), we still land on the tab.
+  function openSetting(r) {
+    tab = r.tab;
+    query = "";
+    requestAnimationFrame(() => requestAnimationFrame(() => flashSetting(r.label)));
+  }
+  function flashSetting(label) {
+    const panel = document.querySelector(".settings .panel");
+    if (!panel) return;
+    const target = _norm(label);
+    const els = panel.querySelectorAll("label, h2, h3, h4, .field > b, .field, .row, .token, button, summary");
+    let best = null;
+    for (const el of els) {
+      const txt = _norm(el.textContent);
+      // Match, but skip big wrapper elements so we flash the actual control.
+      if (txt.includes(target) && txt.length < target.length + 80) { best = el; break; }
+    }
+    if (!best) return;
+    best.scrollIntoView({ block: "center", behavior: "smooth" });
+    best.classList.add("setting-flash");
+    setTimeout(() => best.classList.remove("setting-flash"), 1700);
+  }
 </script>
 
 <section class="settings">
@@ -82,15 +129,25 @@
       <input type="search" placeholder={t("settingsNav.searchPlaceholder")} bind:value={query} />
     </div>
     <nav>
+      {#if query.trim() && results.length}
+        <div class="nav-head">{t("settingsNav.settingsHead")}</div>
+        {#each results as r}
+          <button class="result" onclick={() => openSetting(r)}>
+            <span class="r-label">{r.label}</span>
+            <span class="r-cat">{tabLabel(r.tab)}</span>
+          </button>
+        {/each}
+        <div class="nav-head">{t("settingsNav.sectionsHead")}</div>
+      {/if}
       {#each filtered as t}
         <button class="tab" class:active={tab === t.id} onclick={() => (tab = t.id)}>
           <span class="t-ic">{@html t.icon}</span> {t.label}
         </button>
       {/each}
-      {#if filtered.length === 0}<span class="no-match">{t("settingsNav.noMatch", { query })}</span>{/if}
+      {#if filtered.length === 0 && results.length === 0}<span class="no-match">{t("settingsNav.noMatch", { query })}</span>{/if}
     </nav>
   </aside>
-  <div class="panel">
+  <div class="panel stagger-in">
     <h1>{tabs.find((tb) => tb.id === tab)?.label || t("settingsNav.title")}</h1>
     {#if tab === "accounts"}<SettingsAccounts />
     {:else if tab === "workspaces"}<SettingsWorkspaces />
@@ -138,6 +195,15 @@
   .search input:focus { box-shadow: none; }
   .no-match { color: var(--muted); font-size: 12.5px; padding: 9px 10px; display: block; }
   nav { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 1px; }
+  .nav-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); padding: 10px 10px 4px; }
+  .nav-head:first-child { padding-top: 2px; }
+  /* Exact-setting result: setting name on top, its category underneath. */
+  .result { display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; border-radius: 8px; text-align: left; width: 100%;
+    transition: background var(--t-fast) var(--ease); }
+  .result:hover { background: var(--hover); }
+  .r-label { font-size: 13px; font-weight: 550; color: var(--text); }
+  .r-cat { font-size: 11px; color: var(--faint); }
+  .result:hover .r-cat { color: var(--muted); }
   .tab {
     position: relative; display: flex; align-items: center; gap: 10px;
     padding: 8px 10px; border-radius: 8px; color: var(--muted); font-weight: 550;

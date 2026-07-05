@@ -43,6 +43,7 @@ export default {
 
     // Recipient / subject fields.
     "compose.from": "From",
+    "compose.sendingFromAccount": "Sending from this account",
     "compose.sendAsIdentity": "Send as",
     "compose.to": "To",
     "compose.toPlaceholder": "Start typing a name or email…",
@@ -155,6 +156,7 @@ export default {
 
     // Pole příjemců / předmětu.
     "compose.from": "Od",
+    "compose.sendingFromAccount": "Odesílá se z tohoto účtu",
     "compose.sendAsIdentity": "Odeslat jako",
     "compose.to": "Komu",
     "compose.toPlaceholder": "Začněte psát jméno nebo e-mail…",

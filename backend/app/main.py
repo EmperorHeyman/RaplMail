@@ -34,6 +34,13 @@ async def lifespan(app: FastAPI):
     manager = SyncManager(hub)
     app.state.sync = manager
     await manager.start()
+    # Bring up the local Ollama server on launch if the user opted in (and it
+    # isn't already running). Background thread so it never delays startup.
+    import threading as _threading
+
+    from app.api.ai import autostart_ollama_if_configured
+    _threading.Thread(target=autostart_ollama_if_configured, daemon=True,
+                      name="ollama-autostart").start()
     # Everything created during startup (modules, routes, engine) lives for the
     # whole process — freeze it out of the cyclic GC so collections only scan
     # request-lifetime objects (fewer + faster GC pauses).
@@ -43,6 +50,14 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await manager.stop()
+        # Stop the hidden Ollama serve we started (and its runner child) so it
+        # doesn't outlive the app. Best-effort; a hard kill by the shell may skip
+        # this, in which case the next launch reuses/cleans it up.
+        try:
+            from app.api.ai import shutdown_managed_ollama
+            shutdown_managed_ollama()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 # Version is injected by the Tauri shell (RAPLMAIL_VERSION) so /health and the

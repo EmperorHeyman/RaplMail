@@ -147,9 +147,16 @@
   let seededQuote = "";             // reply/forward quoted block, kept aside in md mode
 
   function defaultSigFor(acctId) {
+    // This account's OWN signature always wins — its default first, then any of
+    // its signatures — before falling back to a global (all-accounts) one. The
+    // old code fell through to sigs[0], so writing from A123 grabbed the
+    // rapl-group signature just because it happened to be first / the global
+    // default. Never borrow another account's signature.
     return sigs.find((s) => s.account_id === acctId && s.is_default)
+        || sigs.find((s) => s.account_id === acctId)
         || sigs.find((s) => s.account_id == null && s.is_default)
-        || sigs[0] || null;
+        || sigs.find((s) => s.account_id == null)
+        || null;
   }
 
   // Render the signature into the body (Spark-style), restoring inline images so
@@ -713,6 +720,9 @@
   <div class="fields">
     <label class="f"><span>{t("compose.from")}</span>
       <div class="from-row">
+        {#if app.accounts.length > 1}
+          <span class="from-dot" style="background:{app.accounts.find((a) => a.id === accountId)?.color || 'var(--muted)'}" title={t("compose.sendingFromAccount")}></span>
+        {/if}
         <select bind:value={accountId} onchange={() => (fromIdentity = "")}>
           {#each app.accounts as a}<option value={a.id}>{a.display_name && a.display_name !== a.email ? `${a.display_name} <${a.email}>` : a.email}</option>{/each}
         </select>
@@ -900,6 +910,7 @@
   .f input, .f select { flex: 1; border: none; background: transparent; padding: 4px 0; color: var(--text); }
   .f input:focus, .f select:focus { border: none; }
   .from-row { flex: 1; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .from-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
   .from-row select { flex: 1; min-width: 0; }
   .from-row .ident { flex: 0 1 auto; max-width: 50%; color: var(--accent); }
   .cc-toggle { color: var(--accent); font-size: 13px; }

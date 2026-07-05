@@ -1265,6 +1265,37 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
     raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown action {a}")
 
 
+class MoveIn(BaseModel):
+    ids: list[int]
+    folder_id: int
+
+
+@router.post("/move")
+async def move_messages(body: MoveIn, request: Request, session: Session = Depends(get_session)) -> dict:
+    """Move messages to an arbitrary folder (drag-a-message-onto-a-folder in the
+    UI). Queued + flushed to IMAP in the background exactly like archive/delete:
+    hide the rows now, move them on the server soon, retried until reachable. IMAP
+    moves live within one account, so messages whose account differs from the
+    destination folder — or that are already in it — are skipped."""
+    dest = session.get(Folder, body.folder_id)
+    if not dest:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Destination folder not found.")
+    msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))).all()
+    moved: list[int] = []
+    for m in msgs:
+        if m.account_id != dest.account_id or m.folder_id == dest.id:
+            continue
+        m.pending_action = "move"
+        session.add(m)
+        moved.append(m.id)
+    if not moved:
+        return {"queued": 0}
+    session.add(ActionQueue(kind="move", payload={"ids": moved, "folder_id": dest.id}))
+    session.commit()
+    request.app.state.sync.request_sync()  # flush soon
+    return {"queued": len(moved)}
+
+
 def _persist_snooze(session: Session, msg: Message, until) -> None:
     if not msg.message_id:
         return
@@ -1320,6 +1351,39 @@ def _flush_move(ids: list[int], action: str) -> None:
                 provider.close()
 
 
+def _flush_move_to(ids: list[int], folder_id: int) -> None:
+    """Move messages to a specific destination folder on the server, then drop the
+    local rows (the next sync re-materializes them under the destination). Commits
+    per-message; connection errors propagate so the queue retries. Same account
+    only (an IMAP MOVE is within one connection)."""
+    from sqlalchemy import delete as sa_delete
+
+    from app.core.db import get_engine
+    from app.models import CalendarEvent
+    from app.sync.engine import build_provider
+
+    with Session(get_engine()) as session:
+        dest = session.get(Folder, folder_id)
+        if not dest:
+            return                       # folder deleted meanwhile — nothing to do
+        msgs = [m for m in session.exec(select(Message).where(Message.id.in_(ids)))
+                if m.account_id == dest.account_id and m.folder_id != dest.id]
+        if not msgs:
+            return
+        account = session.get(Account, dest.account_id)
+        provider = build_provider(account)   # connection errors propagate -> retry
+        try:
+            for m in msgs:
+                src = session.get(Folder, m.folder_id)
+                if src:
+                    provider.move(src.path, m.uid, dest.path)
+                session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id == m.id))
+                session.delete(m)
+                session.commit()
+        finally:
+            provider.close()
+
+
 def process_action_queue() -> int:
     """Flush queued archive/delete/send actions to IMAP/SMTP, retrying on failure."""
     from app.core.db import get_engine
@@ -1334,6 +1398,8 @@ def process_action_queue() -> int:
         try:
             if kind in ("archive", "delete"):
                 _flush_move(payload.get("ids", []), kind)
+            elif kind == "move":
+                _flush_move_to(payload.get("ids", []), payload.get("folder_id"))
             elif kind == "send":
                 from app.api.compose import _deliver_blocking
                 _deliver_blocking(payload)
@@ -1353,7 +1419,7 @@ def process_action_queue() -> int:
                         # Give up: un-hide the affected messages so they don't
                         # vanish forever (they were never actually moved/deleted
                         # on the server). They reappear in the normal views.
-                        if kind in ("archive", "delete"):
+                        if kind in ("archive", "delete", "move"):
                             ids = payload.get("ids", [])
                             if ids:
                                 for m in session.exec(select(Message).where(Message.id.in_(ids))):

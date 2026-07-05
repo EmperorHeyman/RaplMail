@@ -99,6 +99,15 @@ input:focus, textarea:focus, select:focus {
 /* The native dropdown popup uses these (fixes black-on-dark option text). */
 select option { background: var(--surface-2); color: var(--text); }
 input::placeholder, textarea::placeholder { color: var(--faint); }
+/* Checkboxes / radios must NOT inherit the text-input padding, border, or focus
+   ring above — that made them oversized and made the "Default" checkbox visibly
+   jump/re-ring on click. Render them as native accent-colored controls. */
+input[type="checkbox"], input[type="radio"] {
+  width: auto; padding: 0; margin: 0; border: none; background: none;
+  border-radius: 0; box-shadow: none; accent-color: var(--accent); vertical-align: middle;
+}
+input[type="checkbox"]:hover, input[type="radio"]:hover,
+input[type="checkbox"]:focus, input[type="radio"]:focus { border: none; box-shadow: none; }
 
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -167,6 +176,30 @@ input::placeholder, textarea::placeholder { color: var(--faint); }
 @keyframes pop-in {
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: none; }
+}
+
+/* Reusable row-by-row entrance cascade (the home-screen effect). Add the class
+   to any container and its direct children rise in, staggered by position. The
+   `backwards` fill holds later children hidden until their turn so nothing
+   flashes. Only the first several are staggered; the rest rise together. Honors
+   prefers-reduced-motion via the global guard below. */
+.stagger-in > * { animation: rise-in var(--t-slow) var(--ease) backwards; }
+.stagger-in > *:nth-child(2) { animation-delay: 40ms; }
+.stagger-in > *:nth-child(3) { animation-delay: 80ms; }
+.stagger-in > *:nth-child(4) { animation-delay: 120ms; }
+.stagger-in > *:nth-child(5) { animation-delay: 160ms; }
+.stagger-in > *:nth-child(6) { animation-delay: 200ms; }
+.stagger-in > *:nth-child(7) { animation-delay: 240ms; }
+.stagger-in > *:nth-child(n+8) { animation-delay: 280ms; }
+
+/* Brief highlight when the settings search jumps you to an exact control. */
+.setting-flash {
+  animation: setting-flash 1.7s var(--ease);
+  border-radius: var(--radius-sm);
+}
+@keyframes setting-flash {
+  0%, 12% { box-shadow: 0 0 0 3px var(--accent); background: var(--accent-soft); }
+  100% { box-shadow: 0 0 0 0 transparent; background: transparent; }
 }
 
 @media (prefers-reduced-motion: reduce) {

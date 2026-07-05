@@ -173,7 +173,7 @@
   const prioClass = (p) => `p-${p || "normal"}`;
 </script>
 
-<section class="tickets">
+<section class="tickets stagger-in">
   <header>
     <div class="htop">
       <h2>{@html icons.receipt || ""} Tickets</h2>

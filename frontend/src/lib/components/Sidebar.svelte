@@ -1,7 +1,7 @@
 <script>
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
-  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog, syncAllAccounts } from "../store.svelte.js";
+  import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog, syncAllAccounts, moveMessages } from "../store.svelte.js";
   import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
   import { t } from "../i18n.svelte.js";
@@ -18,6 +18,17 @@
 
   let manage = $state(false);
   let dragId = $state(null);
+  // Folder that a dragged message is hovering over (drag-a-message-to-move). Only
+  // same-account folders are valid targets (an IMAP move stays within one account).
+  let dropTarget = $state(null);
+  const canDropMsg = (f) => app.dragMessageIds.length > 0 && app.dragAccountId === f.account_id && !manage;
+  function onFolderDrop(e, f) {
+    e.preventDefault();
+    dropTarget = null;
+    if (!canDropMsg(f)) return;
+    moveMessages(app.dragMessageIds, f);
+    app.dragMessageIds = []; app.dragAccountId = null;
+  }
   let creatingFor = $state(null);
   let newFolderName = $state("");
   let rootCreating = $state(false);
@@ -259,7 +270,10 @@
           <button class="addbtn" title={t("nav.newFolder")} onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>＋</button>
           {#if manage}<button class="addbtn del" title={t("nav.removeThisAccount")} onclick={() => removeAccount(g.account)}>{@html icons.trash}</button>{/if}
         {:else}
-          <span class="dot rail-dot" style="background:{g.account.color}" title={g.account.email}></span>
+          <!-- Collapsed rail: the old per-account color circle wasn't clickable
+               and just looked noisy. Replace it with a quiet hairline that still
+               separates each account's folder icons (email on hover). -->
+          <span class="rail-sep" title={g.account.email}></span>
         {/if}
       </div>
 
@@ -274,14 +288,17 @@
         {#each g.folders as f (f.id)}
           <div class="folder-row" animate:flip={{ duration: 150 }}
             class:dim={isHidden(f)} class:dragtarget={manage && dragId != null && dragId !== f.id}
+            class:dropok={dropTarget === f.id}
             class:gone={!manage && isHidden(f)}
             draggable={manage}
             ondragstart={() => (dragId = f.id)}
             ondragend={() => (dragId = null)}
-            ondragover={(e) => { if (manage) e.preventDefault(); }}
-            ondragenter={() => { if (manage) reorderLive(g, f.id); }}>
+            ondragover={(e) => { if (manage) { e.preventDefault(); } else if (canDropMsg(f)) { e.preventDefault(); dropTarget = f.id; } }}
+            ondragenter={() => { if (manage) reorderLive(g, f.id); }}
+            ondragleave={() => { if (dropTarget === f.id) dropTarget = null; }}
+            ondrop={(e) => onFolderDrop(e, f)}>
             {#if manage && !collapsed}<span class="grip" title={t("nav.dragToReorder")}>⠿</span>{/if}
-            <button class="nav-it" title={f.name}
+            <button class="nav-it" title={collapsed ? `${f.name} — ${g.account.email}` : f.name}
               class:active={app.selectedKind === "folder" && app.selectedFolderId === f.id && app.view === "mail"}
               onclick={() => { if (!manage) openFolder(f); }}>
               <span class="ic">{@html folderIcon(f.role)}</span>
@@ -456,7 +473,7 @@
   .chev { display: grid; place-items: center; width: 10px; flex: none; transition: transform var(--t) var(--ease); }
   .chev.open { transform: rotate(90deg); }
   .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2.5px color-mix(in srgb, currentColor 0%, transparent); }
-  .rail-dot { width: 10px; height: 10px; margin: 10px auto 2px; }
+  .rail-sep { display: block; height: 1px; margin: 9px 12px 3px; background: var(--hairline); border-radius: 1px; }
   .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .addbtn { color: var(--accent); font-size: 15px; padding: 0 6px; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
   .acct:hover .addbtn, .addbtn:focus-visible { opacity: 1; }
@@ -470,6 +487,9 @@
   .folder-row.dim { opacity: 0.5; }
   .folder-row.gone { display: none; }
   .folder-row.dragtarget { outline: 1px dashed var(--border); }
+  /* A message is being dragged onto this folder — highlight it as a drop target. */
+  .folder-row.dropok { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
+  .folder-row.dropok :global(.nav-it) { color: var(--accent); }
   .grip { cursor: grab; color: var(--faint); padding: 0 2px; }
   .eye, .del { padding: 4px 7px; border-radius: 7px; color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .eye:hover, .del:hover { background: var(--hover); }

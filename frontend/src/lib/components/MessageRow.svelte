@@ -3,6 +3,7 @@
   import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
+  import { avatarColor } from "../avatar.js";
   import { listTime, relativeTime } from "../time.js";
   let { message, focused, selected, checked = false, selecting = false, screener = false, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
   const done = $derived(message.is_done);
@@ -74,6 +75,9 @@
   const fmtTime = (iso) => (app.settings.relativeTime ? relativeTime(iso) : listTime(iso));
 
   const initial = $derived((message.from_name || message.from_addr || "?").trim()[0]?.toUpperCase() || "?");
+  // Stable per-sender color for the initial-fallback disc (only when there's no
+  // favicon logo and the row isn't marked done — those have their own look).
+  const initialBg = $derived(avatarColor(message.from_addr || message.from_name));
 
   function onPointerDown(e) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
@@ -81,6 +85,10 @@
     // — pointer capture would steal the click from it, so "Done"/select/snooze
     // would silently open the mail instead of running their action.
     if (e.target?.closest?.("button")) return;
+    // Leave the mouse to native drag-and-drop (drag a message onto a folder to
+    // move it). Swipe-to-done stays a touch/pen gesture — capturing the mouse
+    // pointer here would suppress the row's HTML5 drag.
+    if (e.pointerType === "mouse") return;
     dragging = true;
     startX = e.clientX;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -141,7 +149,7 @@
     onmouseleave={onLeave}
   >
     <button class="avatar" class:checked class:selecting class:haslogo={hasLogo}
-      style={acctColor ? `border-color:${acctColor}` : ""}
+      style={`${acctColor ? `border-color:${acctColor};` : ""}${!hasLogo && !done ? `background:${initialBg};` : ""}`}
       title={t("list.select")} onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
@@ -200,8 +208,8 @@
   }
   .row {
     position: relative; width: 100%; text-align: left;
-    display: flex; gap: 11px; align-items: flex-start;
-    padding: 11px 14px; border-bottom: 1px solid var(--hairline);
+    display: flex; gap: var(--row-gap, 11px); align-items: flex-start;
+    padding: var(--row-pad-y, 11px) 14px; border-bottom: 1px solid var(--hairline);
     background: var(--bg); transition: background var(--t-fast) var(--ease);
   }
   .wrap.swiping .row { transition: none; }
@@ -214,7 +222,7 @@
   .row.unread .from, .row.unread .subject { font-weight: 700; }
 
   .avatar {
-    position: relative; flex: none; width: 34px; height: 34px; border-radius: 50%;
+    position: relative; flex: none; width: var(--row-av, 34px); height: var(--row-av, 34px); border-radius: 50%;
     box-sizing: border-box;
     display: grid; place-items: center; font-weight: 700; font-size: 14px; line-height: 1;
     background: linear-gradient(135deg, var(--accent), #8a6df0); color: #fff;

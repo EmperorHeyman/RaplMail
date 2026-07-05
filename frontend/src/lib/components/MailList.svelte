@@ -3,7 +3,7 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -467,6 +467,20 @@
     } catch (e) { notify(t("list.bulkFailed", { error: e.message }), "error"); refreshMessages({ background: true }); }
   }
 
+  // Drag a message (or the whole multi-selection) onto a sidebar folder to move
+  // it. We stash the ids + account in the store so the Sidebar's drop handler can
+  // validate (same-account only) and call moveMessages. Native HTML5 DnD.
+  function onRowDragStart(e, msg) {
+    const ids = selectedIds.length && selectedIds.includes(msg.id) ? [...selectedIds] : [msg.id];
+    app.dragMessageIds = ids;
+    app.dragAccountId = msg.account_id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try { e.dataTransfer.setData("text/plain", ids.join(",")); } catch {}
+    }
+  }
+  function onRowDragEnd() { app.dragMessageIds = []; app.dragAccountId = null; }
+
   // Clear selection + per-view caches when the view changes (a different scope
   // has different category contents).
   $effect(() => {
@@ -478,6 +492,20 @@
     groupMode = {};
     catShown = {};
     mainShown = 30;
+  });
+
+  // Row-by-row entrance cascade (like the home screen). Replays on every view
+  // switch — the rows block is re-keyed on this same value — then switches OFF a
+  // moment later so scrolling more rows in / triage reorders don't re-animate.
+  const viewKey = $derived(`${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`);
+  let intro = $state(false);
+  let _introTimer;
+  $effect(() => {
+    void viewKey;
+    intro = true;
+    clearTimeout(_introTimer);
+    _introTimer = setTimeout(() => { intro = false; }, 650);
+    return () => clearTimeout(_introTimer);
   });
 
   // Keep expanded category lists live: refetch them in place when a sync lands
@@ -555,12 +583,15 @@
     // slot in `items`, so don't move keyboard focus to the group card (that's
     // what made a subsequent `e` mass-complete the whole category).
     if (index >= 0) focusIndex = index;
-    // Conversations open as conversations — no extra "View conversation" click.
-    // Siblings visible in the loaded list flip the thread view on instantly;
-    // siblings elsewhere (other folders/pages) are caught by the Reader's
-    // thread check, which promotes the view once the thread comes back >1.
+    // Conversations open as conversations — but ONLY when the user has
+    // "Conversation threading" turned on. With it off, every message opens as a
+    // single mail (opening a thread sibling used to still flip the thread view,
+    // which looked like the toggle was ignored). Siblings visible in the loaded
+    // list flip the thread view instantly; siblings elsewhere are caught by the
+    // Reader's thread check (also gated on the setting).
     app.threadKey =
-      (message.thread_id && app.messages.some((m) => m.thread_id === message.thread_id && m.id !== message.id))
+      (app.settings.threading && message.thread_id &&
+       app.messages.some((m) => m.thread_id === message.thread_id && m.id !== message.id))
         ? message.thread_id : null;
     app.selectedMessageId = message.id;
     if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
@@ -591,10 +622,14 @@
       }
       focusIndex = i;
     };
-    if (combo === kb.next) {
-      step(1); e.preventDefault();
-    } else if (combo === kb.prev) {
-      step(-1); e.preventDefault();
+    if (combo === kb.next || combo === kb.prev) {
+      step(combo === kb.next ? 1 : -1);
+      // Arrowing through the list opens the focused mail immediately (Spark-style)
+      // — no separate Enter needed. Only for real messages; group cards / loaders
+      // just move the highlight and open on Enter.
+      const it = items[focusIndex];
+      if (it?.kind === "msg") open(it.msg, focusIndex);
+      e.preventDefault();
     } else if (combo === kb.open) {
       const it = items[focusIndex];
       if (it.kind === "msg") open(it.msg, focusIndex);
@@ -643,6 +678,13 @@
     app.selectedKind === "papertrail" ? t("list.paperTrail") :
     app.selectedKind === "followups" ? t("list.followUps") :
     (app.folders.find((f) => f.id === app.selectedFolderId)?.name || t("list.inbox"))
+  );
+
+  // Show "Mark all read" when the current view has any unread — either in the
+  // loaded stream or hidden inside a Smart Inbox group card.
+  const hasUnread = $derived(
+    app.messages.some((m) => !m.is_seen) ||
+    (smartActive() && Object.values(app.smartGroupData || {}).some((g) => (g?.unread || 0) > 0))
   );
 
   const CATS = $derived.by(() => ([
@@ -697,11 +739,18 @@
   <header>
     <div class="row1">
       <h2>{title}</h2>
-      <label class="slider" title={t("list.showDoneTip")}>
-        <input type="checkbox" checked={app.showDone} onchange={toggleShowDone} />
-        <span class="track"><span class="knob"></span></span>
-        <span class="lbl">{app.showDone ? t("list.showingAll") : t("list.showDone")}</span>
-      </label>
+      <div class="row1-actions">
+        {#if hasUnread}
+          <button class="markread" title={t("list.markAllReadTip")} onclick={markAllRead}>
+            {@html icons.doneAll || icons.done} {t("list.markAllRead")}
+          </button>
+        {/if}
+        <label class="slider" title={t("list.showDoneTip")}>
+          <input type="checkbox" checked={app.showDone} onchange={toggleShowDone} />
+          <span class="track"><span class="knob"></span></span>
+          <span class="lbl">{app.showDone ? t("list.showingAll") : t("list.showDone")}</span>
+        </label>
+      </div>
     </div>
     <div class="searchrow">
       <SearchBar value={app.search} oninput={onSearch} />
@@ -741,13 +790,13 @@
     </div>
   {/if}
 
-  <div class="rows" bind:this={rowsEl} tabindex="-1">
+  <div class="rows" class:intro bind:this={rowsEl} tabindex="-1">
     <!-- Keyed on the view scope: switching folder/category/search tears the old
          rows down instantly instead of playing ~100 simultaneous out-flights
          (and flip-measuring the survivors) — that mass animation was the "whole
          app hitches on navigation" feel. Triage removals inside one view still
          animate (they're the each-item's own out transition). -->
-    {#key `${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`}
+    {#key viewKey}
     {#if app.loading && app.messages.length === 0}
       {#each Array(6) as _}
         <div class="skel"><div class="sk-av"></div><div class="sk-lines"><div class="sk-l"></div><div class="sk-l short"></div></div></div>
@@ -760,6 +809,9 @@
     {:else}
       {#each items.slice(0, mainShown) as item, i (item.kind === "msg" ? "m" + item.msg.id : item.kind === "group" ? "g" + item.key : item.key)}
         <div class:bundled={item.kind === "msg" && item.inGroup} class:cv={item.kind !== "header"}
+             draggable={item.kind === "msg"}
+             ondragstart={item.kind === "msg" ? (e) => onRowDragStart(e, item.msg) : undefined}
+             ondragend={item.kind === "msg" ? onRowDragEnd : undefined}
              animate:flip={{ duration: 130 }} out:fly={{ x: 48, duration: 140 }}>
           {#if item.kind === "header"}
             <div class="datesep">{bucketLabel(item.label)}</div>
@@ -832,8 +884,14 @@
 <style>
   .list { display: flex; flex-direction: column; border-right: 1px solid var(--hairline); min-height: 0; background: var(--bg); }
   header { padding: 14px 16px 11px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 10px; }
-  .row1 { display: flex; align-items: center; justify-content: space-between; }
-  h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; }
+  .row1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .row1-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+  .markread { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 12px; font-weight: 600;
+    color: var(--muted); padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
+    transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .markread:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .markread :global(svg) { width: 14px; height: 14px; }
+  h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .searchrow { display: flex; gap: 8px; align-items: center; }
   .search { flex: 1; }
   .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); transition: background var(--t-fast) var(--ease); }
@@ -879,6 +937,20 @@
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   .rows:focus { outline: none; }
+  /* Row-by-row entrance cascade, gated to the ~650ms after a view switch (the
+     .intro class) so windowed appends and triage reorders never replay it.
+     Reuses the global rise-in keyframe; `backwards` holds rows hidden until
+     their turn. Only the first rows get a stagger delay; the rest rise together. */
+  .rows.intro > * { animation: rise-in var(--t-slow) var(--ease) backwards; }
+  .rows.intro > *:nth-child(2) { animation-delay: 30ms; }
+  .rows.intro > *:nth-child(3) { animation-delay: 60ms; }
+  .rows.intro > *:nth-child(4) { animation-delay: 90ms; }
+  .rows.intro > *:nth-child(5) { animation-delay: 120ms; }
+  .rows.intro > *:nth-child(6) { animation-delay: 150ms; }
+  .rows.intro > *:nth-child(7) { animation-delay: 180ms; }
+  .rows.intro > *:nth-child(8) { animation-delay: 210ms; }
+  .rows.intro > *:nth-child(9) { animation-delay: 240ms; }
+  .rows.intro > *:nth-child(n+10) { animation-delay: 270ms; }
   /* Skip layout/paint for offscreen rows entirely — the single biggest scroll
      win. Date headers are excluded: paint containment would clip their sticky
      positioning. The placeholder height matches a real 3-line row (~74px), so
@@ -926,7 +998,7 @@
   .muted, .empty { color: var(--muted); padding: 24px 16px; text-align: center; }
   .empty { display: flex; flex-direction: column; gap: 12px; align-items: center; margin-top: 48px; line-height: 1.6; animation: rise-in var(--t-slow) var(--ease); }
   .big { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 20px;
-    background: var(--surface-2); color: var(--muted); font-size: 28px; box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent); }
+    background: var(--accent-soft); color: var(--accent); font-size: 28px; box-shadow: inset 0 0 0 1px var(--accent-soft-2); }
   .big :global(svg) { width: 30px; height: 30px; }
 
   footer.hint { padding: 8px 14px; border-top: 1px solid var(--hairline); color: var(--faint); font-size: 11px; }

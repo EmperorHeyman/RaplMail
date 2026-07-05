@@ -11,6 +11,185 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.5.6] — 2026-07-05
+
+### Fixed
+- **Ollama console windows are gone for good.** The earlier fixes reduced the
+  flashes but couldn't stop them entirely, because the model-runner process
+  inherits its console visibility from whatever started the server, and the Ollama
+  tray app starts it with a visible console. RaplMail now runs its *own* hidden
+  `ollama serve` on a private loopback port (started with a hidden console, which
+  the model runner inherits) and routes all of the app's AI traffic to it. The
+  tray Ollama is left running but idle, so it never spawns a runner and never
+  flashes a window. Loading a model, unloading it, and freeing the GPU are all
+  silent now.
+
+### Added
+- **"Hide Ollama's console windows" toggle** (Settings → AI assistant, on by
+  default on Windows). Turns the managed hidden server on or off at runtime; off
+  falls back to the tray/configured server.
+- The hidden server replicates the tray server's `OLLAMA_*` configuration (models
+  directory, GPU backend, context length) so it sees exactly the same models. As a
+  safety net, RaplMail only routes traffic to the hidden server if it can see every
+  model the configured server has; otherwise it leaves the configured server in
+  charge (correctness over cosmetics).
+
+### Changed
+- **Restart** now restarts RaplMail's hidden server (not the user's tray Ollama)
+  when managed mode is on, and the hidden server is shut down cleanly when the app
+  exits or the toggle is turned off.
+
+## [0.5.5] — 2026-07-05
+
+### Fixed
+- **"Free GPU" no longer flashes console windows.** It used to ping the configured
+  model when nothing was loaded, which made Ollama load a model (spawning a runner
+  process / console window) just to unload it. It now only unloads what's actually
+  resident, so freeing does nothing when nothing is loaded.
+- **Broader detection of the windowless Ollama app.** Start/Restart now find
+  `ollama app.exe` in more locations (Program Files, the uninstall registry key),
+  so RaplMail launches the windowless desktop service instead of a console
+  `ollama serve` whose model-runners pop black windows.
+
+_Note: any remaining console windows on model load come from Ollama itself and are
+version-dependent (older builds ran model runners with a visible console). Updating
+Ollama (Settings → AI assistant → Update Ollama) and hitting Restart once, so the
+windowless app takes over, resolves them._
+
+## [0.5.4] — 2026-07-05
+
+### Fixed
+- **Rules matched nothing (preview showed 0) even when mail clearly matched.** The
+  match scan only looked at ~2000 rows in no particular order, so recent mail (a
+  daily report) was never checked. Rules now match across the whole mailbox in the
+  database — accurate and fast.
+- **Sender rules match the display name, not just the address.** "from contains
+  ZERV Reporter" now hits mail from `ZERV Reporter <tickety@…>`.
+- **Ollama no longer opens black console windows.** It's now launched via the
+  windowless Ollama desktop app (its own model-runner processes were what popped
+  the consoles); falls back to a hidden `ollama serve` if the app isn't installed.
+- **Model picker recognises what you actually pulled.** `mistral:7b` in the
+  recommended list now matches an installed `mistral` / `mistral:latest`, while
+  `gemma3:12b` and `gemma3:27b` stay distinct.
+
+### Changed
+- The AI's **Create rule** card now shows how many emails you already have would
+  be affected (with a sample), so you can sanity-check the rule before creating it.
+
+## [0.5.3] — 2026-07-05
+
+### Added
+- **The AI assistant can create rules.** Ask it to handle mail automatically
+  ("always mark the ZERV daily report as done") and it proposes a rule (field,
+  operator, value, action) for you to confirm. On confirm it creates the rule and
+  applies it to matching mail you already have.
+- **Rules apply to existing mail.** Creating a rule (from the quick modal, the
+  Rules settings, or the AI) now also runs it against mail already in the box, not
+  just future arrivals (new `POST /rules/apply`).
+
+### Fixed
+- **Subject rules now actually do something.** They previously only ran on newly
+  arrived mail, so a rule for a report already in your inbox looked broken. It now
+  applies on create; contains, exact, and regex all work.
+- **Ollama no longer flashes black console windows** when it starts or restarts
+  (CREATE_NO_WINDOW instead of a detached process, so its model runners stay
+  hidden too).
+- **Model picker is tag-aware.** gemma3:12b and gemma3:27b are distinct now, so
+  only the model you're actually using shows "Using"; installed-but-inactive
+  models show an "Installed" tag so you can see what you have.
+
+### Changed
+- The rule editor modal is larger and roomier.
+
+## [0.5.2] — 2026-07-05
+
+### Added
+- **Start Ollama with RaplMail.** A checkbox in Settings > AI assistant brings the
+  local Ollama server up on launch (if you opted in and it isn't already running).
+- **Start / Restart Ollama buttons.** When Ollama is installed but not running you
+  can start it in one click, and a Restart button recovers a stuck server (handy
+  after an app update) instead of only being told to run `ollama serve` yourself.
+
+### Fixed
+- The "Ollama installed but not running" state now offers a real Start action
+  rather than just a hint.
+
+## [0.5.1] — 2026-07-05
+
+### Fixed
+- **Signatures used the wrong account's default.** Composing from one account
+  could insert another account's signature (it fell through to the first/global
+  one). An account's own signature now always wins before any global fallback.
+- **Sluggish scrolling in Settings** — a redundant `zoom: 1` was forcing the
+  browser off its fast-scroll path; `zoom` is now only applied when the UI scale
+  is actually not 100%.
+- **The “Default” signature checkbox jumped when clicked** — checkboxes/radios
+  were inheriting text-input padding + a focus ring; reset to clean native
+  accent-colored controls (across all of Settings).
+- **Semantic indexing was extremely slow (0 GPU).** It embedded one message per
+  request and let the model unload every 30s. Now it uses Ollama's batch
+  `/api/embed` endpoint (whole batch in one request, GPU-batched) and keeps the
+  model warm, falling back to per-text on older Ollama builds.
+
+### Changed
+- The email body now sits in a framed card (border, rounded corners, subtle
+  shadow) matching the header and conversation cards.
+
+## [0.5.0] — 2026-07-05
+
+A big polish-and-capability release: the AI assistant grows hands, the whole app
+gets a visual pass, and the theming system is rebuilt.
+
+### Added
+- **Agentic AI assistant.** The assistant now knows RaplMail and can *do* things:
+  ask “how do I snooze a mail?” and it explains, or “mark all unread as read” /
+  “archive everything from noreply@…” and it proposes the exact action (with a
+  sample of the affected mail) for you to confirm before anything runs. Backed by
+  a new `/ai/agent` endpoint; actions execute through the existing bulk path.
+- **Mark all as seen** button on the mail-list header — clears every unread in the
+  current view (including mail tucked inside Smart Inbox cards), with undo.
+- **Drag a message onto a folder** to move it (single or a whole multi-selection);
+  the target folder highlights, and the move is queued + flushed to IMAP in the
+  background with retry. New `POST /messages/move` endpoint.
+- **10+ new theme presets**, categorized (Essentials · High contrast · Neutral ·
+  Color · Editor): **True Black** (OLED), Contrast Dark/Light, Paper, Snow,
+  Carbon, Graphite, Mono, Sepia, Ocean, Amethyst, Crimson. Neutral/black presets
+  set the whole grey ramp, so “everything looks blue” is gone.
+- **Generate a palette from one color** — pick an accent + Dark/Light base and the
+  full grey ramp is derived on that hue.
+- **Reading width** (Appearance) — cap email bodies to a centered column on wide
+  screens (Full / Narrow / Medium / Wide; default Medium).
+- **Message density** (Appearance) — Compact / Comfortable / Cozy row spacing.
+- **Attachment type badges + image thumbnails** in the reader and thread view.
+- **Home-screen greeting tint** — the hero aurora shifts with the time of day.
+- **Command palette**: fuzzy matching plus Home, Smart Inbox, Sent, Drafts,
+  Screener, Paper Trail, Follow-ups, Calendar, Tickets, Scheduled, Newsletter
+  Feed, and Mark-all-read.
+
+### Changed
+- **Settings search finds the exact setting**, not just the category — results
+  jump to and briefly flash the specific control.
+- **Conversation view redesigned** — each reply is a rounded card tagged with the
+  sender’s colored avatar; your own replies align right (chat-style).
+- **Colored per-sender avatars** in the list (stable color per sender) instead of
+  one identical accent disc; shared with the conversation view.
+- **Row-by-row entrance animation** extended from Home to the mail list and the
+  other tabs.
+- **Reader header** is now a rounded card (with a per-account color accent),
+  matching the conversation cards; switching messages cross-fades.
+- Empty states use the accent treatment; the theme-preset swatches are real
+  mini-previews (background + panel + accent), fixing the light/dark mix-up.
+- On the desktop, dragging a message row with the mouse now starts a
+  drag-to-folder; swipe-to-done remains a touch/pen gesture.
+
+### Fixed
+- **Conversation threading “off” is respected** — with threading disabled, mail no
+  longer opens as a thread (both the list-open and the reader auto-promote paths).
+- Arrow-up/down now opens the focused mail immediately (Spark-style), no separate
+  Enter needed.
+- The folded sidebar’s non-clickable account circles are gone (a quiet hairline
+  separates each account’s folders; hovering a rail folder shows its account).
+
 ## [0.4.10] — 2026-07-04
 
 ### Added

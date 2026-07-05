@@ -32,6 +32,16 @@
     const h = now.getHours();
     return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
   });
+  // Tie the hero's aurora to the time of day so the greeting and the color agree:
+  // indigo night → warm-gold morning → bright-blue afternoon → sunset evening.
+  const heroTint = $derived.by(() => {
+    const h = now.getHours();
+    if (h < 5) return ["#3b4cca", "#6d3bd0", "#1f6feb"];   // deep night
+    if (h < 12) return ["#f6a641", "#ff7a59", "#5e8bff"];  // morning gold/peach
+    if (h < 18) return ["#2f7ad6", "#0fa3a3", "#5e8bff"];  // bright afternoon
+    return ["#ff7a59", "#c04bd0", "#6d5bd0"];              // sunset evening
+  });
+  const heroStyle = $derived(`--aur-1:${heroTint[0]}; --aur-2:${heroTint[1]}; --aur-3:${heroTint[2]}`);
   const clock = $derived(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }));
   const dateStr = $derived(now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" }));
   const firstName = $derived((app.accounts[0]?.display_name || app.accounts[0]?.email || "").split(/[ @]/)[0]);
@@ -107,7 +117,7 @@
 </script>
 
 <section class="dash">
-  <header class="hero">
+  <header class="hero" style={heroStyle}>
     <div class="aurora" aria-hidden="true"><span></span><span></span><span></span></div>
     <div class="hero-in">
       <div>
@@ -232,9 +242,12 @@
     box-shadow: var(--shadow-sm); }
   .aurora { position: absolute; inset: 0; z-index: 0; filter: blur(46px); opacity: 0.6; pointer-events: none; }
   .aurora span { position: absolute; width: 240px; height: 240px; border-radius: 50%; }
-  .aurora span:nth-child(1) { background: var(--accent); top: -90px; left: 8%; }
-  .aurora span:nth-child(2) { background: #8a6df0; top: -60px; right: 14%; width: 200px; height: 200px; }
-  .aurora span:nth-child(3) { background: #0fa3a3; bottom: -130px; left: 38%; width: 280px; height: 280px; opacity: 0.5; }
+  /* Blob colors come from the time-of-day tint (--aur-*), with the theme accent
+     as the fallback so a custom accent still shows through. */
+  .aurora span { transition: background 1.2s var(--ease); }
+  .aurora span:nth-child(1) { background: var(--aur-1, var(--accent)); top: -90px; left: 8%; }
+  .aurora span:nth-child(2) { background: var(--aur-2, #8a6df0); top: -60px; right: 14%; width: 200px; height: 200px; }
+  .aurora span:nth-child(3) { background: var(--aur-3, #0fa3a3); bottom: -130px; left: 38%; width: 280px; height: 280px; opacity: 0.5; }
   .hero-in { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
   .hero h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
   .date { margin: 4px 0 0; color: var(--muted); font-size: 14px; }

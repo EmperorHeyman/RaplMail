@@ -1,6 +1,6 @@
 <script>
   import { app, saveSettings, applyTheme, THEME_TOKENS, notify } from "../store.svelte.js";
-  import { PRESETS } from "../themes.js";
+  import { PRESETS, PRESET_CATEGORIES } from "../themes.js";
 
   // Effective email appearance mode (migrates the old two booleans).
   const emailMode = $derived(
@@ -72,6 +72,55 @@
     applyTheme();
     notify(`Theme: ${p.name}`);
   }
+  // Presets grouped by category (in the order themes.js declares them).
+  const DEF = Object.fromEntries(THEME_TOKENS);   // token -> default (dark) value
+  const presetGroups = PRESET_CATEGORIES
+    .map((cat) => ({ cat, items: PRESETS.filter((p) => p.category === cat) }))
+    .filter((g) => g.items.length);
+  // A token's value for a preset, falling back to the default dark palette so the
+  // preview chip shows the REAL background/surface, not just the accent (that's
+  // why Light's deep-blue accent used to read as "darker" than Dark).
+  const pv = (p, token) => p.theme[token] || DEF[token];
+  // Highlight the preset currently in effect (Dark = the empty {} theme).
+  function isActivePreset(p) {
+    const cur = app.settings.theme || {};
+    const keys = new Set([...Object.keys(cur), ...Object.keys(p.theme)]);
+    for (const k of keys) if ((cur[k] || "") !== (p.theme[k] || "")) return false;
+    return true;
+  }
+
+  // --- Generate a whole palette from ONE accent color ------------------------
+  // Pull the accent's hue, then build a low-saturation grey ramp on that hue for
+  // a dark or light base — so you don't hand-tune 11 tokens.
+  let genAccent = $state(app.settings.theme?.["--accent"] || "#5e8bff");
+  let genBase = $state("dark");
+  function hexToHsl(hex) {
+    let h = (hex || "").replace("#", "");
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    const r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2;
+    let hue = 0, s = 0;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      hue = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      hue /= 6;
+    }
+    return [Math.round(hue * 360), Math.round(s * 100), Math.round(l * 100)];
+  }
+  function generatePalette(accent, base) {
+    const [hue] = hexToHsl(accent);
+    const H = (l, s) => `hsl(${hue} ${s}% ${l}%)`;
+    if (base === "light") {
+      return { "--bg": H(97, 30), "--surface": "#ffffff", "--surface-2": H(95, 26), "--surface-3": H(91, 22),
+        "--border": H(85, 18), "--text": H(14, 26), "--muted": H(40, 18), "--accent": accent };
+    }
+    return { "--bg": H(7, 16), "--surface": H(11, 15), "--surface-2": H(16, 14), "--surface-3": H(22, 14),
+      "--border": H(27, 13), "--text": H(93, 16), "--muted": H(62, 12), "--accent": accent };
+  }
+  function applyGenerated() {
+    applyPreset({ name: "Generated", theme: generatePalette(genAccent, genBase) });
+  }
   function setMode(mode) { saveSettings({ themeMode: mode }); applyTheme(); }
   function setRadius(v) { saveSettings({ radius: Number(v) }); applyTheme(); }
   function setScale(v) { saveSettings({ uiScale: Number(v) }); applyTheme(); }
@@ -94,18 +143,36 @@
 
   <section class="card" class:dim={auto}>
     <h3>Presets</h3>
-    <div class="presets">
-      {#each PRESETS as p}
-        <button class="preset" onclick={() => applyPreset(p)}>
-          <span class="swatch" style="background:{p.theme['--accent'] || '#5b8def'}"></span>{p.name}
-        </button>
-      {/each}
-    </div>
+    <p class="hint">Each preview shows the actual background, panel and accent — pick a mood, then fine-tune below.</p>
+    {#each presetGroups as g}
+      <div class="preset-cat">{g.cat}</div>
+      <div class="presets">
+        {#each g.items as p}
+          <button class="preset" class:active={isActivePreset(p)} onclick={() => applyPreset(p)} title={p.name}>
+            <span class="chip" style="background:{pv(p, '--bg')}; border-color:{pv(p, '--border')}">
+              <span class="chip-bar" style="background:{pv(p, '--surface-2')}"></span>
+              <span class="chip-dot" style="background:{pv(p, '--accent')}"></span>
+              <span class="chip-line" style="background:{pv(p, '--muted')}"></span>
+            </span>
+            <span class="preset-name">{p.name}</span>
+          </button>
+        {/each}
+      </div>
+    {/each}
   </section>
 
   <section class="card" class:dim={auto}>
     <div class="head"><h3>Custom colors</h3><button class="btn ghost" onclick={reset}>Reset all</button></div>
-    <p class="hint">Changes apply live. Each is a CSS variable used across the whole app.</p>
+    <div class="gen">
+      <span class="gen-lbl">Generate from one color</span>
+      <input class="gen-swatch" type="color" bind:value={genAccent} title="Accent color" />
+      <div class="seg">
+        <button class="segbtn" class:on={genBase === "dark"} onclick={() => (genBase = "dark")}>Dark base</button>
+        <button class="segbtn" class:on={genBase === "light"} onclick={() => (genBase = "light")}>Light base</button>
+      </div>
+      <button class="btn" onclick={applyGenerated}>Generate palette</button>
+    </div>
+    <p class="hint">Or tune each token below — every one is a CSS variable used across the whole app.</p>
     <div class="tokens">
       {#each THEME_TOKENS as [token, def]}
         <label class="token">
@@ -129,6 +196,32 @@
       <input type="range" min="0" max="22" value={app.settings.radius} oninput={(e) => setRadius(e.currentTarget.value)} />
       <span class="val">{app.settings.radius}px</span>
     </label>
+    <div class="field">
+      <b>Message density</b>
+      <span class="fhint">How tightly rows are packed in the message list.</span>
+      <div class="seg">
+        {#each [
+          { v: "compact", t: "Compact", d: "Tightest — fit the most messages on screen." },
+          { v: "comfortable", t: "Comfortable", d: "The default balance of density and breathing room." },
+          { v: "cozy", t: "Cozy", d: "Roomiest — extra padding and a larger avatar." },
+        ] as o}
+          <button class="segbtn" class:on={(app.settings.density || "comfortable") === o.v} title={o.d}
+            onclick={() => { saveSettings({ density: o.v }); applyTheme(); }}>{o.t}</button>
+        {/each}
+      </div>
+    </div>
+    <div class="field">
+      <b>Reading width</b>
+      <span class="fhint">Cap the width of email bodies so long lines don't stretch across a wide screen.</span>
+      <div class="seg">
+        {#each [
+          { v: 0, t: "Full" }, { v: 680, t: "Narrow" }, { v: 820, t: "Medium" }, { v: 1000, t: "Wide" },
+        ] as o}
+          <button class="segbtn" class:on={(app.settings.emailMaxWidth ?? 820) === o.v}
+            onclick={() => saveSettings({ emailMaxWidth: o.v })}>{o.t}</button>
+        {/each}
+      </div>
+    </div>
     <div class="field">
       <b>Email appearance</b>
       <span class="fhint">How email bodies are rendered in a dark theme.</span>
@@ -296,10 +389,25 @@
   .docs td { padding: 4px 8px 4px 0; vertical-align: top; color: var(--muted); }
   .docs td:first-child { width: 200px; white-space: nowrap; }
   .docs code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
-  .presets { display: flex; gap: 10px; flex-wrap: wrap; }
-  .preset { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); font-weight: 550; }
-  .preset:hover { border-color: var(--accent); }
-  .swatch { width: 14px; height: 14px; border-radius: 50%; }
+  .preset-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin: 14px 0 8px; }
+  .preset-cat:first-of-type { margin-top: 6px; }
+  .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+  .preset { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 8px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--surface-2); font-weight: 550; text-align: center;
+    transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease); }
+  .preset:hover { border-color: var(--accent); transform: translateY(-1px); }
+  .preset.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft-2); }
+  /* Mini live-preview of the theme: real background, a panel bar, an accent dot,
+     and a "text" line — so light/dark/black read at a glance. */
+  .chip { position: relative; display: block; height: 46px; border: 1px solid; border-radius: 8px; overflow: hidden; }
+  .chip-bar { position: absolute; left: 7px; top: 7px; width: 42%; height: 32px; border-radius: 5px; }
+  .chip-dot { position: absolute; right: 8px; top: 9px; width: 11px; height: 11px; border-radius: 50%; }
+  .chip-line { position: absolute; right: 8px; bottom: 9px; width: 34%; height: 4px; border-radius: 3px; opacity: 0.85; }
+  .preset-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .gen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 14px;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .gen-lbl { font-size: 13px; font-weight: 600; }
+  .gen-swatch { width: 34px; height: 26px; padding: 2px; border-radius: 6px; cursor: pointer; }
   .tokens { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .token { display: flex; align-items: center; gap: 10px; }
   .token input[type=color] { width: 38px; height: 30px; padding: 2px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; }

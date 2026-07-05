@@ -14,7 +14,25 @@
   let pull = $state(null);       // { active, model, status, percent, error, done }
   let install = $state(null);    // { active, status, error, done, ok }
   let unloading = $state(false);
+  let starting = $state(false);
   let _pullTimer, _installTimer;
+
+  async function startOllama() {
+    starting = true;
+    try {
+      const r = await ai.ollamaStart(app.settings.aiBaseUrl || "");
+      notify(r.running ? "Ollama started" : "Couldn't start Ollama — is it installed?", r.running ? "info" : "error");
+    } catch (e) { notify(e.message || "Couldn't start Ollama", "error"); }
+    finally { starting = false; refreshOllama(); }
+  }
+  async function restartOllama() {
+    starting = true;
+    try {
+      const r = await ai.ollamaRestart(app.settings.aiBaseUrl || "");
+      notify(r.running ? "Ollama restarted" : "Restarted, but couldn't confirm it's up", r.running ? "info" : "error");
+    } catch (e) { notify(e.message || "Couldn't restart Ollama", "error"); }
+    finally { starting = false; refreshOllama(); }
+  }
 
   async function refreshOllama() {
     ollama.loading = true;
@@ -25,8 +43,7 @@
       // call 404s. Auto-select the first installed model so it just works.
       if ((app.settings.aiProvider || "") === "ollama" && (ollama.models || []).length) {
         const cur = (app.settings.aiModel || "").trim();
-        const baseName = (s) => s.split(":")[0];
-        const ok = cur && ollama.models.some((m) => baseName(m) === baseName(cur));
+        const ok = cur && ollama.models.some((m) => sameModel(m, cur));
         if (!ok) saveSettings({ aiModel: ollama.models[0] });
       }
     } catch { ollama = { ...ollama, loading: false }; }
@@ -68,9 +85,11 @@
   }
 
   // One-click setup: switch to Ollama, turn on AI, adaptive GPU, and pull+use the
-  // tier's model. If it's already installed, just switch to it.
+  // tier's model. If it's already installed, just switch to it. ollamaManaged runs
+  // our own hidden serve so the model-runner console windows never flash.
   function quickSetup(model) {
-    saveSettings({ aiProvider: "ollama", aiButtons: true, ollamaKeepAlive: "adaptive" });
+    saveSettings({ aiProvider: "ollama", aiButtons: true, ollamaKeepAlive: "adaptive", ollamaManaged: true });
+    ai.ollamaManaged(true).catch(() => {});   // bring the hidden serve up now
     if (isInstalled(model)) { useModel(model, "chat"); notify("All set — " + model + " is ready."); }
     else startPull(model, true);
   }
@@ -162,11 +181,26 @@
     { name: "mxbai-embed-large", size: "670 MB", tier: "mid", note: "Higher-quality embeddings" },
   ];
   const TIERS = ["low", "mid", "high"];
-  const _base = (s) => (s || "").split(":")[0];
-  const isInstalled = (name) => (ollama.models || []).some((m) => _base(m) === _base(name));
+  // Model identity, tag-aware but tolerant of the default tag:
+  //  - gemma3:12b vs gemma3:27b  -> DIFFERENT (both explicit sizes)
+  //  - mistral:7b (our catalog) vs mistral / mistral:latest (what you pulled) -> SAME
+  // i.e. a bare name or ":latest" is the family default and matches any single
+  // catalog tag; two explicit non-latest tags must match exactly. (The old
+  // base-name match lit up every gemma3 variant as "Using" at once.)
+  const _parts = (s) => {
+    s = (s || "").trim(); const i = s.indexOf(":");
+    return i < 0 ? [s.toLowerCase(), ""] : [s.slice(0, i).toLowerCase(), s.slice(i + 1).toLowerCase()];
+  };
+  function sameModel(a, b) {
+    const [ba, ta] = _parts(a), [bb, tb] = _parts(b);
+    if (ba !== bb) return false;
+    const defA = !ta || ta === "latest", defB = !tb || tb === "latest";
+    return defA || defB ? true : ta === tb;
+  }
+  const isInstalled = (name) => (ollama.models || []).some((m) => sameModel(m, name));
   const chatActive = $derived(app.settings.aiModel || (ollama.models || [])[0] || "");
   const embedActive = $derived(app.settings.embedModel || "nomic-embed-text");
-  const isActive = (name, kind) => _base(kind === "embed" ? embedActive : chatActive) === _base(name);
+  const isActive = (name, kind) => sameModel(kind === "embed" ? embedActive : chatActive, name);
   function useModel(name, kind) { saveSettings(kind === "embed" ? { embedModel: name } : { aiModel: name }); }
 
   // Keep Ollama status fresh whenever it's the chat OR the embeddings provider.
@@ -193,6 +227,7 @@
             {#if isActive(m.name, kind)}
               <span class="musing">{@html icons.done} Using</span>
             {:else if isInstalled(m.name)}
+              <span class="minstalled">Installed</span>
               <button class="btn sm" onclick={() => useModel(m.name, kind)}>Use</button>
             {:else}
               <button class="btn sm ghost" onclick={() => startPull(m.name)} disabled={pull?.active}>↓ Pull</button>
@@ -226,7 +261,17 @@
           <b>{ollama.running ? "Ollama is running" : ollama.installed ? "Ollama installed (not running)" : "Ollama not detected"}</b>
           {#if ollama.version}<span class="ver">v{ollama.version}</span>{/if}
           <button class="btn ghost sm" onclick={refreshOllama} disabled={ollama.loading}>{@html icons.sync} {ollama.loading ? "…" : "Refresh"}</button>
+          {#if ollama.installed || ollama.running}
+            <button class="btn ghost sm" onclick={restartOllama} disabled={starting} title="Stop and start the Ollama server (fixes a stuck server)">{starting ? "…" : "Restart"}</button>
+          {/if}
         </div>
+        {#if ollama.installed || ollama.running}
+          <label class="autostart">
+            <input type="checkbox" checked={app.settings.ollamaAutostart === true}
+              onchange={(e) => { saveSettings({ ollamaAutostart: e.currentTarget.checked }); if (e.currentTarget.checked && !ollama.running) startOllama(); }} />
+            <span>Start Ollama automatically when RaplMail launches</span>
+          </label>
+        {/if}
         {#if !ollama.installed && !ollama.running}
           <p class="hint">Ollama runs open models (Llama, Qwen, Mistral…) locally. Install it once, then pull a model.</p>
           <div class="rowbtns">
@@ -272,7 +317,7 @@
                   <div class="mrow" class:active={isActive(name, "chat")}>
                     <div class="minfo"><span class="mname">{name}</span></div>
                     {#if isActive(name, "chat")}<span class="musing">{@html icons.done} Using</span>
-                    {:else if isInstalled(name)}<button class="btn sm" onclick={() => useModel(name, "chat")}>Use</button>
+                    {:else if isInstalled(name)}<span class="minstalled">Installed</span><button class="btn sm" onclick={() => useModel(name, "chat")}>Use</button>
                     {:else}<button class="btn sm ghost" onclick={() => startPull(name)} disabled={pull?.active}>↓ Pull</button>{/if}
                   </div>
                 {/each}
@@ -303,13 +348,22 @@
           {#if (app.settings.ollamaKeepAlive || "5m") === "adaptive"}
             <p class="hint" style="margin:0">Adaptive: the model loads into VRAM when the RaplMail window is focused and is freed a few seconds after you switch away — unless you're mid-question. Ready when you are, off when you're not.</p>
           {/if}
+          <label class="check" style="margin-top:10px">
+            <input type="checkbox" checked={app.settings.ollamaManaged !== false}
+              onchange={(e) => { const v = e.currentTarget.checked; saveSettings({ ollamaManaged: v }); ai.ollamaManaged(v).catch(() => {}); refreshOllama(); }} />
+            <span>Hide Ollama's console windows <small>— RaplMail runs its own hidden Ollama server so the model loader never flashes black windows on load/unload (Windows). Your tray Ollama is left running but idle.</small></span>
+          </label>
           <div class="rowbtns" style="margin-top:10px">
             <button class="btn" onclick={freeGpu} disabled={unloading}>{@html icons.bolt} {unloading ? "Freeing…" : "Free GPU now"}</button>
             <button class="btn ghost" onclick={updateOllama} disabled={install?.active}>{install?.active ? (install.status || "Updating…") : "Update Ollama"}</button>
           </div>
           <p class="hint" style="margin-top:8px">Ollama keeps the model in VRAM after each request for fast follow-ups — that's the idle GPU use. Lower “Free GPU after” frees it sooner (at the cost of a reload on the next request). RaplMail also unloads the model when you close the AI assistant or leave a message where you used AI.</p>
         {:else}
-          <p class="hint">Ollama is installed but the server isn't responding. Start it (run <code>ollama serve</code> or launch the Ollama app), then Refresh.</p>
+          <p class="hint">Ollama is installed but the server isn't running. Start it here to use local AI.</p>
+          <div class="rowbtns">
+            <button class="btn primary" onclick={startOllama} disabled={starting}>{@html icons.bolt} {starting ? "Starting…" : "Start Ollama"}</button>
+            <button class="btn" onclick={restartOllama} disabled={starting}>Restart</button>
+          </div>
         {/if}
         <details class="adv"><summary>Advanced</summary>
           <label class="fieldrow"><span>Server URL</span>
@@ -449,10 +503,12 @@
   /* Ollama local-AI panel */
   .ollama { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 10px; }
-  .ollama-head { display: flex; align-items: center; gap: 8px; }
+  .ollama-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .ollama-head b { font-size: 13px; }
   .ollama-head .ver { font-size: 11px; color: var(--faint); font-family: ui-monospace, monospace; }
-  .ollama-head > button { margin-left: auto; }
+  /* Right-align the action buttons as a group (Refresh, Restart). */
+  .ollama-head > button:first-of-type { margin-left: auto; }
+  .autostart { display: flex; align-items: center; gap: 8px; margin: 8px 0 2px; font-size: 13px; color: var(--text); cursor: pointer; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
   .dot.on { background: var(--done); box-shadow: 0 0 0 3px color-mix(in srgb, var(--done) 25%, transparent); }
   .pullrow { display: flex; flex-direction: column; gap: 8px; }
@@ -485,6 +541,9 @@
   .mnote { font-size: 12px; color: var(--muted); }
   .musing { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; color: var(--accent); white-space: nowrap; }
   .musing :global(svg) { width: 13px; height: 13px; }
+  /* Installed-but-not-active: a quiet tag so you can see what you already have. */
+  .minstalled { font-size: 11px; font-weight: 600; color: var(--done); white-space: nowrap;
+    padding: 2px 8px; border-radius: 999px; background: var(--done-soft); }
   .pullcustom { display: flex; gap: 8px; }
   .pullcustom input { flex: 1; background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 7px 10px; color: var(--text); }
   .prog { height: 6px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }

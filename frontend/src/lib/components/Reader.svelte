@@ -1,9 +1,11 @@
 <script>
   import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, openAiAssistant } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose } from "../api.js";
+  import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
+  import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
+  import { fade } from "svelte/transition";
   import ThreadView from "./ThreadView.svelte";
 
   // A conversation opened explicitly (threadKey set) always shows as a thread,
@@ -37,10 +39,13 @@
   // have thread siblings (they may live in other folders/pages, so the list
   // couldn't know), promote the pane to the thread view automatically. The
   // fetched thread is handed to ThreadView so it doesn't re-fetch.
+  // Gated on the "Conversation threading" setting: with it off, a mail always
+  // stays a single message (this effect was the other half of the "threading
+  // off but I still see threads" bug).
   $effect(() => {
     void app.syncTick;                 // re-check when a sync lands (your reply arrived)
     const d = detail;
-    if (!d || !d.thread_id || app.threadKey) return;
+    if (!app.settings.threading || !d || !d.thread_id || app.threadKey) return;
     const tid = d.thread_id, mid = d.id;
     messagesApi.thread(tid)
       .then((msgs) => {
@@ -392,6 +397,31 @@
   });
 
   const attachments = $derived((detail?.attachments || []).filter((a) => !a.inline));
+  // Per-account color for the reader header accent (multi-account cohesion — the
+  // same color that stripes this account's rows in the list).
+  const readerAcctColor = $derived(app.accounts.find((a) => a.id === detail?.account_id)?.color || null);
+  const multiAcct = $derived(app.accounts.length > 1);
+
+  // Image attachments get an inline thumbnail: fetch the bytes (authenticated),
+  // make an object URL, and revoke it when the message changes / on unmount.
+  let thumbs = $state({});
+  let _thumbUrls = [];
+  $effect(() => {
+    const id = detail?.id;
+    const atts = attachments;
+    _thumbUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} });
+    _thumbUrls = []; thumbs = {};
+    if (!id) return;
+    for (const a of atts) {
+      if (!isImageName(a.filename)) continue;
+      fetchAttachment(id, a.index).then((blob) => {
+        if (app.selectedMessageId !== id) return;
+        const url = URL.createObjectURL(blob); _thumbUrls.push(url);
+        thumbs = { ...thumbs, [a.index]: url };
+      }).catch(() => {});
+    }
+    return () => { _thumbUrls.forEach((u) => { try { URL.revokeObjectURL(u); } catch {} }); };
+  });
   function humanSize(n) {
     if (!n) return "";
     if (n < 1024) return `${n} B`;
@@ -470,7 +500,9 @@
   {:else if error}
     <div class="placeholder err">{error}</div>
   {:else if detail}
-    <header>
+    {#key app.selectedMessageId}
+    <div class="msgfade" in:fade={{ duration: 120 }}>
+    <header style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
       <div class="subject">{detail.subject || t("reader.noSubject")}</div>
       <div class="meta">
         <span class="addr-wrap">
@@ -612,8 +644,15 @@
         {#each attachments as a}
           <span class="att" class:busy={downloading === a.index}>
             <button class="att-open" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(a)}>
-              <span class="att-name">{a.filename}</span>
-              {#if a.size}<span class="att-size">{humanSize(a.size)}</span>{/if}
+              {#if thumbs[a.index]}
+                <img class="att-thumb" src={thumbs[a.index]} alt="" />
+              {:else}
+                <span class="att-badge {fileKind(a.filename)}">{fileExt(a.filename)}</span>
+              {/if}
+              <span class="att-meta">
+                <span class="att-name">{a.filename}</span>
+                {#if a.size}<span class="att-size">{humanSize(a.size)}</span>{/if}
+              </span>
               {#if downloading === a.index}<span class="att-dl">…</span>{/if}
             </button>
             <button class="att-save" title={t("reader.saveToDownloads")} onclick={() => saveAtt(a)}>{@html icons.sent || "↓"}</button>
@@ -650,9 +689,13 @@
         </span>
       </a>
     {/if}
-    <iframe title={t("reader.messageFrameTitle")} bind:this={frame} onload={wireFrameLinks}
-      sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
+    <div class="body-card">
+      <iframe title={t("reader.messageFrameTitle")} bind:this={frame} onload={wireFrameLinks}
+        sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
+    </div>
     {#if actionsBottom}{@render actionsBar()}{/if}
+    </div>
+    {/key}
   {/if}
 </section>
 
@@ -689,15 +732,21 @@
 
 <style>
   .reader { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  /* Wraps the single message so it cross-fades in when you switch mails (keyed on
+     the selected id) instead of hard-popping. */
+  .msgfade { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
   .placeholder { flex: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); animation: rise-in var(--t-slow) var(--ease); }
   .placeholder .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 22px;
-    background: var(--surface-2); color: var(--muted); font-size: 32px;
-    box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 5%, transparent); }
+    background: var(--accent-soft); color: var(--accent); font-size: 32px;
+    box-shadow: inset 0 0 0 1px var(--accent-soft-2); }
   .placeholder .big :global(svg) { width: 34px; height: 34px; }
   .placeholder.err { color: var(--danger); }
   .placeholder .rapl-link { margin-top: 2px; font-size: 12px; color: var(--accent); text-decoration: none; opacity: 0.8; }
   .placeholder .rapl-link:hover { opacity: 1; text-decoration: underline; }
-  header { padding: 18px 22px 14px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 6px; }
+  /* Rounded "message header" card — mirrors the thread's per-message cards for a
+     unified feel (was a flat full-width bar with a bottom border). */
+  header { margin: 14px 16px 8px; padding: 15px 18px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 6px; }
   .subject { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
   .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; align-items: flex-start; }
   .to { color: var(--faint); font-size: 12px; }
@@ -792,10 +841,19 @@
   .att { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 300px; overflow: hidden; }
   .att:hover { border-color: var(--accent); }
   .att.busy { opacity: 0.6; }
-  .att-open { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; min-width: 0; }
+  .att-open { display: inline-flex; align-items: center; gap: 9px; padding: 5px 10px 5px 6px; min-width: 0; }
   .att-save { display: inline-flex; align-items: center; padding: 0 9px; border-left: 1px solid var(--border); color: var(--muted); }
   .att-save:hover { background: var(--surface-3); color: var(--accent); }
-  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .att-thumb { width: 28px; height: 28px; border-radius: 5px; object-fit: cover; flex: none; background: var(--surface-3); }
+  .att-badge { flex: none; display: grid; place-items: center; width: 30px; height: 24px; border-radius: 5px;
+    font-size: 9px; font-weight: 800; letter-spacing: 0.02em; color: #fff; background: var(--muted); }
+  .att-badge.pdf { background: #d84a4a; } .att-badge.image { background: #2ba36b; }
+  .att-badge.doc { background: #3e6fe6; } .att-badge.sheet { background: #1a9d5c; }
+  .att-badge.slide { background: #e07b2e; } .att-badge.archive { background: #c9922b; }
+  .att-badge.code { background: #6d5bd0; } .att-badge.audio { background: #b2478f; }
+  .att-badge.video { background: #c0453f; }
+  .att-meta { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; }
+  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; max-width: 200px; }
   .att-size { font-size: 11px; color: var(--faint); flex: none; }
   .att-dl { color: var(--accent); }
   .att-all { font-size: 12px; padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--accent); color: var(--accent); background: transparent; }
@@ -817,5 +875,11 @@
   .tracker-bar .tlink:first-of-type { margin-left: auto; }
   .tracker-list { margin: 0; padding: 0 22px 10px 40px; max-height: 120px; overflow-y: auto; }
   .tracker-list li { color: var(--faint); font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; line-height: 1.6; }
+  /* The message body sits in its own framed card (border + shadow + rounded)
+     instead of a bare full-bleed div, so it reads as "the email" — matching the
+     header card and the conversation cards. */
+  .body-card { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 16px 14px;
+    border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
   iframe { flex: 1; border: none; width: 100%; background: var(--bg); }
 </style>

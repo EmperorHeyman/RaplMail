@@ -3,6 +3,8 @@
   import { messages as messagesApi, openAttachment, openExternal, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc } from "../email.js";
+  import { senderHue, avatarColor, initialOf as initialFor } from "../avatar.js";
+  import { fileExt, fileKind } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
 
   let list = $state([]);          // thread messages, oldest first
@@ -129,6 +131,16 @@
     if (!acct) return [];
     return [acct.email, ...(acct.aliases || [])].map((x) => (x || "").toLowerCase().trim()).filter(Boolean);
   }
+
+  // Per-sender identity: a stable color + initial (shared with the list, via
+  // avatar.js) so a person looks the same everywhere, plus whether it's from ME
+  // (mine = accent + right-aligned, chat-style).
+  function isMine(m) { return myIdentities(m).includes((m.from_addr || "").toLowerCase()); }
+  function avatarBg(m) {
+    return isMine(m) ? "background: var(--accent);"
+                     : `background: ${avatarColor(m.from_addr || m.from_name)};`;
+  }
+  function initialOf(m) { return initialFor(m.from_name || m.from_addr); }
   function replyTo(m) {
     openCompose({ to: m.from_addr, subject: reSubjectOf(m), in_reply_to: m.message_id || "",
                   account_id: m.account_id, html: quoteOf(m) });
@@ -264,12 +276,15 @@
     </header>
     <div class="scroll">
       {#each list as m (m.id)}
-        <div class="msg" class:open={expanded.has(m.id)} id={"tmsg-" + m.id}>
+        <div class="msg" class:open={expanded.has(m.id)} class:mine={isMine(m)} id={"tmsg-" + m.id}
+             style="--sender: hsl({senderHue(m.from_addr || m.from_name)} 52% 48%);">
           <div class="mhead" class:unread={!m.is_seen}>
             <button class="mh-main" onclick={() => toggle(m)}>
-              <span class="chev">{expanded.has(m.id) ? "▾" : "▸"}</span>
-              <span class="who">{m.from_name || m.from_addr}</span>
-              {#if !expanded.has(m.id)}<span class="snip">{m.snippet}</span>{/if}
+              <span class="avatar" style={avatarBg(m)}>{initialOf(m)}</span>
+              <span class="who-wrap">
+                <span class="who">{m.from_name || m.from_addr}</span>
+                {#if !expanded.has(m.id)}<span class="snip">{m.snippet}</span>{/if}
+              </span>
             </button>
             {#if bodies[m.id]?.warnings?.length}
               <span class="warn" title={bodies[m.id].warnings.join(" · ")}>{@html icons.shieldAlert}</span>
@@ -292,7 +307,8 @@
                 <div class="atts">
                   {#each atts as a}
                     <button class="att" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(m, a)}>
-                      {@html icons.attachment} <span class="att-name">{a.filename}</span>
+                      <span class="att-badge {fileKind(a.filename)}">{fileExt(a.filename)}</span>
+                      <span class="att-name">{a.filename}</span>
                     </button>
                   {/each}
                 </div>
@@ -326,25 +342,44 @@
   .sub { color: var(--muted); font-size: 12px; }
   .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
   .actions-bottom { margin-top: 0; padding: 12px 22px; border-top: 1px solid var(--border); background: var(--surface); }
-  .scroll { flex: 1; overflow-y: auto; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 8px; }
-  .msg { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; background: var(--surface); flex: none; }
-  .mhead { display: flex; align-items: center; gap: 10px; padding: 0 10px 0 0; }
+  .scroll { flex: 1; overflow-y: auto; padding: 14px 16px 28px; display: flex; flex-direction: column; gap: 12px; }
+  /* Each reply is its own rounded card, tagged with the sender's color + initial
+     so multiple people in one conversation read at a glance. Mine align right
+     with an accent tint (chat-style); everyone else's align left. */
+  .msg { border: 1px solid var(--border); border-left: 3px solid color-mix(in srgb, var(--sender) 62%, var(--border));
+    border-radius: 16px; overflow: hidden; background: var(--surface); flex: none;
+    max-width: 94%; align-self: flex-start; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: box-shadow var(--t-fast) var(--ease); }
+  .msg.open { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10); }
+  .msg.mine { align-self: flex-end; border-left: 1px solid var(--border); border-right: 3px solid var(--accent);
+    background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+  .mhead { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 0; }
   .mhead:hover { background: var(--surface-2); }
+  .msg.mine .mhead:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
   .mhead.unread .who { font-weight: 700; }
-  .mh-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; padding: 11px 0 11px 14px; }
-  .chev { width: 12px; color: var(--muted); flex: none; }
-  .who { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
-  .snip { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mh-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; padding: 10px 0 10px 12px; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    color: #fff; font-size: 13px; font-weight: 700; }
+  .who-wrap { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
+  .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13.5px; }
+  .snip { min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .warn { color: var(--danger); display: inline-flex; flex: none; }
-  .date { color: var(--faint); font-size: 12px; flex: none; }
+  .date { color: var(--faint); font-size: 11.5px; flex: none; }
   .mh-acts { display: flex; gap: 2px; flex: none; }
   .mib { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--muted); }
   .mib:hover { background: var(--surface-3); color: var(--accent); }
   .tnote { padding: 6px 14px; font-size: 11px; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--border); }
   .atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--surface); }
-  .att { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; font-size: 12px;
+  .att { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 5px; font-size: 12px;
          border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 260px; }
   .att:hover { border-color: var(--accent); }
+  .att-badge { flex: none; display: grid; place-items: center; width: 28px; height: 22px; border-radius: 5px;
+    font-size: 8.5px; font-weight: 800; color: #fff; background: var(--muted); }
+  .att-badge.pdf { background: #d84a4a; } .att-badge.image { background: #2ba36b; }
+  .att-badge.doc { background: #3e6fe6; } .att-badge.sheet { background: #1a9d5c; }
+  .att-badge.slide { background: #e07b2e; } .att-badge.archive { background: #c9922b; }
+  .att-badge.code { background: #6d5bd0; } .att-badge.audio { background: #b2478f; }
+  .att-badge.video { background: #c0453f; }
   .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   iframe { width: 100%; height: 200px; border: none; border-top: 1px solid var(--border); background: var(--bg); display: block; }
   .loadingbody { padding: 16px; color: var(--muted); }

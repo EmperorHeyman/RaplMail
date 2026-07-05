@@ -50,10 +50,15 @@ export default {
     "list.blockSender": "Block sender",
     "list.createRule": "Create rule…",
 
-    // Show-done toggle & save search.
+    // Show-done toggle, mark-all-read & save search.
     "list.showDone": "Show done",
     "list.showingAll": "Showing all",
     "list.showDoneTip": "Show messages you've marked done alongside the rest",
+    "list.markAllRead": "Mark all read",
+    "list.markAllReadTip": "Mark every unread message in this view as read",
+    "list.allReadAlready": "Everything's already read here",
+    "list.movedN": "{n} moved to {folder}",
+    "list.moveNothing": "Nothing to move there",
     "list.saveSmartFolder": "Save as smart folder",
     "list.namePrompt": "Name this saved search:",
 
@@ -178,10 +183,15 @@ export default {
     "list.blockSender": "Blokovat odesílatele",
     "list.createRule": "Vytvořit pravidlo…",
 
-    // Přepínač hotových a uložení hledání.
+    // Přepínač hotových, označit vše přečtené a uložení hledání.
     "list.showDone": "Zobrazit hotové",
     "list.showingAll": "Zobrazuji vše",
     "list.showDoneTip": "Zobrazit i zprávy označené jako hotové společně s ostatními",
+    "list.markAllRead": "Označit vše jako přečtené",
+    "list.markAllReadTip": "Označit všechny nepřečtené zprávy v tomto zobrazení jako přečtené",
+    "list.allReadAlready": "Tady už je vše přečtené",
+    "list.movedN": "{n} přesunuto do {folder}",
+    "list.moveNothing": "Není co přesunout",
     "list.saveSmartFolder": "Uložit jako chytrou složku",
     "list.namePrompt": "Pojmenujte toto uložené hledání:",
 

@@ -1,7 +1,7 @@
 // Central reactive app state using Svelte 5 runes.
 import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai } from "./api.js";
 import { playSound } from "./sound.js";
-import { setLocale } from "./i18n.svelte.js";
+import { setLocale, t } from "./i18n.svelte.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
 export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
@@ -70,6 +70,8 @@ const DEFAULT_SETTINGS = {
   spellCheck: true,              // native (WebView2/OS) spell-check in the composer
   spellCheckLang: "auto",        // spell-check dictionary: "auto" (UI lang) | en | cs | sk | de | …
   ollamaKeepAlive: "5m",         // how long Ollama keeps the model in VRAM after a request ("30s".."-1")
+  ollamaAutostart: false,        // start the local Ollama server when RaplMail launches
+  ollamaManaged: true,           // Windows: run our OWN hidden `ollama serve` so the model-runner console windows never flash (routes traffic to it; leaves the tray Ollama idle)
   semanticEnabled: false,        // local meaning-based search (embeddings) — opt-in
   embedProvider: "ollama",       // embeddings source: "ollama" | "openai-compatible"
   embedBaseUrl: "",              // embeddings endpoint (blank → Ollama localhost:11434)
@@ -134,6 +136,8 @@ const DEFAULT_SETTINGS = {
   smartNewDays: 3,              // "new" = unread AND received within this many days
   smartOrderMode: "recency",    // "recency" | "custom"
   smartOrder: [],               // category ids, top→bottom, when custom
+  density: "comfortable",       // message-list row density: comfortable | compact | cozy
+  emailMaxWidth: 820,           // reading-width cap for email bodies (px; 0 = full width)
 };
 
 // Stored keybinds replace the defaults wholesale (the settings merge is
@@ -183,8 +187,57 @@ export const app = $state({
   toast: null,
   confirm: null,                 // { title, message, confirmLabel, danger, resolve } — in-app confirm dialog
   syncTick: 0,                   // bumped on each sync:done so views can refresh live
+  dragMessageIds: [],            // message ids being dragged (drag-onto-folder to move)
+  dragAccountId: null,           // account of the dragged messages (moves stay in-account)
   settings: loadSettings(),
 });
+
+// Move messages to a folder (drag-a-message-onto-a-folder). Optimistic: drop the
+// rows from the current view now; the backend queues the IMAP move + retries.
+export async function moveMessages(ids, folder) {
+  const list = [...(ids || [])];
+  if (!list.length || !folder) return;
+  const idset = new Set(list);
+  app.messages = app.messages.filter((m) => !idset.has(m.id));   // optimistic hide
+  if (idset.has(app.selectedMessageId)) { app.selectedMessageId = null; app.threadKey = null; }
+  try {
+    const r = await messages.move(list, folder.id);
+    const n = r?.queued ?? 0;
+    notify(n ? t("list.movedN", { n, folder: folder.name }) : t("list.moveNothing"));
+    refreshMessages({ background: true });
+    refreshQueue();
+  } catch (e) {
+    notify(t("list.couldntUpdate"), "error");
+    refreshMessages({ background: true });
+  }
+}
+
+// Mark every unread message in the current view read (loaded rows + any hidden
+// inside Smart Inbox group cards). Shared by the list button and the command
+// palette. Optimistic + undo.
+export async function markAllRead() {
+  const ids = new Set(app.messages.filter((m) => !m.is_seen).map((m) => m.id));
+  const scope = (smartActive() || app.selectedKind === "unified") ? { role: "inbox" }
+    : (app.selectedKind === "folder" ? { folder_id: app.selectedFolderId } : null);
+  if (scope) {
+    try {
+      const unread = await messages.list({ ...scope, unread_only: true, include_done: app.showDone, limit: 2000 });
+      (unread || []).forEach((m) => ids.add(m.id));
+    } catch {}
+  }
+  const list = [...ids];
+  if (!list.length) { notify(t("list.allReadAlready")); return; }
+  for (const m of app.messages) if (ids.has(m.id)) m.is_seen = true;   // optimistic -N on badges
+  try {
+    await messages.bulk(list, "seen");
+    notify(t("list.bulkRead", { n: list.length }), "info", () => {
+      messages.bulk(list, "unseen")
+        .then(() => refreshMessages({ background: true }))
+        .catch(() => notify(t("list.couldntUndo"), "error"));
+    });
+    refreshMessages({ background: true });
+  } catch (e) { notify(t("list.couldntUpdate"), "error"); refreshMessages({ background: true }); }
+}
 
 export async function refreshQueue() {
   try { const q = await messages.queueStatus(); app.queuePending = q.pending; app.queueFailed = q.failed; } catch {}
@@ -242,7 +295,17 @@ export function applyTheme() {
   // UI scale (font/zoom). WebView2/Chromium honors `zoom`, which scales the whole
   // px-based UI cleanly.
   const scale = app.settings.uiScale ?? 1;
-  root.style.setProperty("zoom", String(scale));
+  // Only apply `zoom` when actually scaling — an explicit `zoom: 1` still forces
+  // Chromium/WebView2 off its fast-scroll path, which made long panes (Settings)
+  // scroll sluggishly for no reason.
+  if (scale && scale !== 1) root.style.setProperty("zoom", String(scale));
+  else root.style.removeProperty("zoom");
+  // List density → row vertical padding / gap / avatar size, consumed by the
+  // message rows (var fallbacks keep the "comfortable" look if unset).
+  const D = ({ comfortable: [11, 11, 34], compact: [6, 9, 28], cozy: [15, 13, 36] }[app.settings.density] || [11, 11, 34]);
+  root.style.setProperty("--row-pad-y", `${D[0]}px`);
+  root.style.setProperty("--row-gap", `${D[1]}px`);
+  root.style.setProperty("--row-av", `${D[2]}px`);
   // User custom CSS (escape hatch for buttons, spacing, anything).
   let el = document.getElementById("rapl-custom-css");
   if (!el) { el = document.createElement("style"); el.id = "rapl-custom-css"; document.head.appendChild(el); }

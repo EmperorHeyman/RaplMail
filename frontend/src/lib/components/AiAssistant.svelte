@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, notify, openCompose, openMessageById } from "../store.svelte.js";
-  import { ai, messages as messagesApi } from "../api.js";
+  import { app, notify, openCompose, openMessageById, refreshMessages } from "../store.svelte.js";
+  import { ai, messages as messagesApi, rules as rulesApi } from "../api.js";
   import { icons } from "../icons.js";
 
   // A NON-modal, docked chat window (like the compose panel): you keep clicking
@@ -55,9 +55,72 @@
     "Summarize this",
     "What needs a reply?",
     "Draft a reply",
-    "Extract action items & deadlines",
-    "List the key facts and decisions",
+    "Mark all unread as read",
+    "How do I mark a message done?",
   ];
+
+  // Human labels for a proposed mailbox action (returned by /ai/agent).
+  const OP_VERB = {
+    mark_seen: "Mark as read", mark_unseen: "Mark as unread",
+    mark_done: "Mark as done", mark_undone: "Mark as not done",
+    flag: "Flag", unflag: "Unflag", archive: "Archive", delete: "Delete",
+  };
+  function filterDesc(f) {
+    const p = [];
+    if (f.unread) p.push("unread");
+    if (f.seen) p.push("read");
+    if (f.flagged) p.push("flagged");
+    if (f.from) p.push(`from “${f.from}”`);
+    if (f.subject) p.push(`about “${f.subject}”`);
+    return p.length ? ` (${p.join(", ")})` : "";
+  }
+  function actionLabel(a) {
+    if (!a.count) return `Nothing matches ${(OP_VERB[a.op] || a.op).toLowerCase()}${filterDesc(a.filters)}.`;
+    const noun = a.count === 1 ? "email" : "emails";
+    const cap = a.capped ? ` (first ${a.ids.length})` : "";
+    return `${OP_VERB[a.op] || a.op} ${a.count} ${noun}${filterDesc(a.filters)}${cap}?`;
+  }
+  async function runAction(m) {
+    const a = m.action;
+    if (a.status !== "pending" || !a.ids.length) return;
+    a.status = "running"; app.aiBusy = true;
+    try {
+      await messagesApi.bulk(a.ids, a.action);
+      a.status = "done";
+      refreshMessages({ background: true });
+    } catch (e) {
+      a.status = "error"; a.error = e.message || "Action failed";
+    } finally { app.aiBusy = false; }
+  }
+  function cancelAction(m) { if (m.action.status === "pending") m.action.status = "cancelled"; }
+
+  // A proposed filtering RULE from the agent ("automatically mark … done").
+  const RULE_FIELD = { from: "sender", from_domain: "sender domain", to: "recipient", subject: "subject", body: "body", category: "category" };
+  const RULE_OP = { contains: "contains", equals: "is exactly", ends_with: "ends with", regex: "matches" };
+  const RULE_ACT = { mark_done: "mark as done", mark_read: "mark as read", archive: "archive", delete: "delete", move: "move", block: "block", mute_notifications: "mute notifications" };
+  function ruleLabel(rl) {
+    const to = rl.action === "move" && rl.action_arg ? ` to “${rl.action_arg}”` : "";
+    return `Create rule: if ${RULE_FIELD[rl.match_field] || rl.match_field} ${RULE_OP[rl.match_op] || rl.match_op} “${rl.match_value}” then ${RULE_ACT[rl.action] || rl.action}${to}.`;
+  }
+  const ruleSpec = (rl) => ({ name: rl.name || "", enabled: true, order: 0, account_id: null,
+    match_field: rl.match_field, match_op: rl.match_op, match_value: rl.match_value,
+    action: rl.action, action_arg: rl.action_arg || "" });
+  async function runRule(m) {
+    const rl = m.rule;
+    if (rl.status !== "pending") return;
+    rl.status = "running"; app.aiBusy = true;
+    try {
+      const spec = ruleSpec(rl);
+      await rulesApi.create(spec);
+      let applied = 0;
+      try { applied = (await rulesApi.apply(spec)).applied || 0; } catch {}
+      rl.status = "done"; rl.applied = applied;
+      refreshMessages({ background: true });
+    } catch (e) {
+      rl.status = "error"; rl.error = e.message || "Couldn't create the rule";
+    } finally { app.aiBusy = false; }
+  }
+  function cancelRule(m) { if (m.rule.status === "pending") m.rule.status = "cancelled"; }
 
   function hasCtx(id) { return context.some((c) => c.id === id); }
   function addMsg(m) {
@@ -111,8 +174,21 @@
     const history = conv.slice(0, -1).map((m) => ({ role: m.role, content: m.content }));
     scrollSoon();
     try {
-      const r = await ai.ask({ instruction: q, message_ids: context.map((c) => c.id), history });
-      conv = [...conv, { role: "assistant", content: r.answer || "(no answer)" }];
+      // The agent both answers questions AND can propose a mailbox action to run.
+      const r = await ai.agent({ instruction: q, message_ids: context.map((c) => c.id), history });
+      if (r.kind === "action") {
+        conv = [...conv, { role: "assistant", content: actionLabel(r),
+                           action: { ...r, status: r.count ? "pending" : "empty" } }];
+      } else if (r.kind === "rule") {
+        // Preview how many EXISTING emails it would touch, so the user can sanity-
+        // check the rule (e.g. spot a 0-match / wrong proposal) before creating it.
+        let count = null, sample = [];
+        try { const p = await rulesApi.preview(ruleSpec(r.rule)); count = p.match_count; sample = p.sample_subjects || []; } catch {}
+        conv = [...conv, { role: "assistant", content: ruleLabel(r.rule),
+                           rule: { ...r.rule, status: "pending", count, sample } }];
+      } else {
+        conv = [...conv, { role: "assistant", content: r.answer || "(no answer)" }];
+      }
     } catch (e) {
       conv = [...conv, { role: "assistant", content: "⚠ " + (e.message || "AI request failed") }];
     } finally {
@@ -177,7 +253,7 @@
           {/each}
         </div>
       {:else}
-        <p class="ctx-empty">Add emails as context — the open message, a whole conversation, or the current list — then ask. (General questions work with no context too.)</p>
+        <p class="ctx-empty">Add emails as context, then ask — or just tell me what to do: “mark all unread as read”, “archive everything from noreply@…”, or “how do I snooze a mail?”</p>
       {/if}
     </div>
 
@@ -189,12 +265,69 @@
       {/if}
       {#each conv as m}
         <div class="turn {m.role}">
-          <div class="bubble">{m.content}</div>
-          {#if m.role === "assistant"}
-            <div class="turn-actions">
-              <button onclick={() => copy(m.content)}>{@html icons.copy || ""} Copy</button>
-              <button onclick={() => toCompose(m.content)}>{@html icons.compose || ""} New email</button>
+          {#if m.action}
+            <div class="bubble action">
+              <div class="act-head">{@html icons.bolt} {m.content}</div>
+              {#if m.action.sample?.length}
+                <ul class="act-sample">
+                  {#each m.action.sample as s}<li><b>{s.from}</b> — {s.subject || "(no subject)"}</li>{/each}
+                  {#if m.action.count > m.action.sample.length}<li class="more">…and {m.action.count - m.action.sample.length} more</li>{/if}
+                </ul>
+              {/if}
+              {#if m.action.status === "pending"}
+                <div class="act-btns">
+                  <button class="act-go" onclick={() => runAction(m)}>{@html icons.done || ""} Do it</button>
+                  <button class="act-no" onclick={() => cancelAction(m)}>Cancel</button>
+                </div>
+              {:else if m.action.status === "running"}
+                <div class="act-status">Working…</div>
+              {:else if m.action.status === "done"}
+                <div class="act-status ok">{@html icons.done || "✓"} Done</div>
+              {:else if m.action.status === "cancelled"}
+                <div class="act-status">Cancelled</div>
+              {:else if m.action.status === "error"}
+                <div class="act-status err">⚠ {m.action.error}</div>
+              {/if}
             </div>
+          {:else if m.rule}
+            <div class="bubble action">
+              <div class="act-head">{@html icons.bolt} {m.content}</div>
+              {#if m.rule.count != null}
+                <div class="act-affect">
+                  {m.rule.count === 0
+                    ? "No emails you already have match this — it would only apply to future mail. Double-check the wording?"
+                    : `This would affect ${m.rule.count} email${m.rule.count === 1 ? "" : "s"} you already have, plus future mail.`}
+                </div>
+                {#if m.rule.sample?.length}
+                  <ul class="act-sample">
+                    {#each m.rule.sample.slice(0, 4) as s}<li>{s || "(no subject)"}</li>{/each}
+                    {#if m.rule.count > 4}<li class="more">…and {m.rule.count - 4} more</li>{/if}
+                  </ul>
+                {/if}
+              {/if}
+              {#if m.rule.status === "pending"}
+                <div class="act-btns">
+                  <button class="act-go" onclick={() => runRule(m)}>{@html icons.done || ""} Create rule</button>
+                  <button class="act-no" onclick={() => cancelRule(m)}>Cancel</button>
+                </div>
+              {:else if m.rule.status === "running"}
+                <div class="act-status">Creating…</div>
+              {:else if m.rule.status === "done"}
+                <div class="act-status ok">{@html icons.done || "✓"} Rule created{m.rule.applied ? ` · applied to ${m.rule.applied} existing` : ""}</div>
+              {:else if m.rule.status === "cancelled"}
+                <div class="act-status">Cancelled</div>
+              {:else if m.rule.status === "error"}
+                <div class="act-status err">⚠ {m.rule.error}</div>
+              {/if}
+            </div>
+          {:else}
+            <div class="bubble">{m.content}</div>
+            {#if m.role === "assistant"}
+              <div class="turn-actions">
+                <button onclick={() => copy(m.content)}>{@html icons.copy || ""} Copy</button>
+                <button onclick={() => toCompose(m.content)}>{@html icons.compose || ""} New email</button>
+              </div>
+            {/if}
           {/if}
         </div>
       {/each}
@@ -245,6 +378,25 @@
   .turn.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
   .turn.assistant .bubble { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
   .bubble.thinking { color: var(--muted); font-style: italic; }
+  /* Proposed mailbox action (confirm before it runs). */
+  .bubble.action { background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); display: flex; flex-direction: column; gap: 8px; }
+  .act-head { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
+  .act-head :global(svg) { width: 14px; height: 14px; color: var(--accent); flex: none; }
+  .act-affect { font-size: 12.5px; color: var(--text); }
+  .act-sample { margin: 0; padding-left: 2px; list-style: none; display: flex; flex-direction: column; gap: 3px; }
+  .act-sample li { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act-sample li b { color: var(--text); font-weight: 600; }
+  .act-sample li.more { color: var(--faint); font-style: italic; }
+  .act-btns { display: flex; gap: 8px; margin-top: 2px; }
+  .act-go { display: inline-flex; align-items: center; gap: 5px; background: var(--accent); color: #fff; font-weight: 600; font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
+  .act-go :global(svg) { width: 13px; height: 13px; }
+  .act-go:hover { filter: brightness(1.08); }
+  .act-no { font-size: 12.5px; color: var(--muted); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
+  .act-no:hover { color: var(--text); border-color: var(--muted); }
+  .act-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+  .act-status :global(svg) { width: 13px; height: 13px; }
+  .act-status.ok { color: var(--done); }
+  .act-status.err { color: var(--danger); }
   .turn-actions { display: flex; gap: 6px; }
   .turn-actions button { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); padding: 2px 6px; border-radius: 6px; }
   .turn-actions button:hover { color: var(--accent); background: var(--surface-2); }

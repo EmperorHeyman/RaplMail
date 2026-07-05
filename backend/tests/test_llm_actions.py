@@ -9,7 +9,7 @@ from sqlmodel import Session
 
 from app.api import ai as ai_mod
 from app.core.db import get_engine
-from app.models import Account, Folder, Message, Setting
+from app.models import Account, Folder, FolderRole, Message, Setting
 
 
 def _s():
@@ -202,6 +202,106 @@ def test_split_chips_no_marker_and_no_false_positive():
     # The word "chips" in prose (no '#', not followed by ':'/'|') must not truncate.
     draft, chips = ai_mod._split_chips("I love fish and chips very much.")
     assert draft == "I love fish and chips very much." and chips == []
+
+
+# --- /ai/agent (answer OR propose a confirmed mailbox action) ---------------
+def test_parse_action_reads_op_and_filters():
+    p = ai_mod._parse_action("ACTION: mark_seen unread")
+    assert p == {"op": "mark_seen", "action": "seen", "filters": {"unread": True}}
+    p2 = ai_mod._parse_action("ACTION: archive from:noreply@x.com")
+    assert p2["action"] == "archive" and p2["filters"] == {"from": "noreply@x.com"}
+
+
+def test_parse_action_handles_quotes_and_fences():
+    p = ai_mod._parse_action('```\nACTION: delete unread subject:"big sale"\n```')
+    assert p["action"] == "delete"
+    assert p["filters"] == {"subject": "big sale", "unread": True}
+
+
+def test_parse_action_none_for_prose_and_unknown_ops():
+    # A normal answer that merely mentions the word must not become an action.
+    assert ai_mod._parse_action("Here's a summary.\nNo ACTION: needed here.") is None
+    assert ai_mod._parse_action("ACTION: teleport all mail") is None   # unknown op
+    assert ai_mod._parse_action("Just a plain reply.") is None
+
+
+def _seed_inbox_unread(subject, n):
+    """Seed n unread messages in an inbox-ROLE folder (agent scopes to inbox)."""
+    global _seed_n
+    _seed_n += 1
+    ids = []
+    with _s() as s:
+        acct = Account(email=f"agent{_seed_n}@example.com"); s.add(acct); s.commit(); s.refresh(acct)
+        folder = Folder(account_id=acct.id, name="INBOX", path="INBOX", role=FolderRole.inbox)
+        s.add(folder); s.commit(); s.refresh(folder)
+        for i in range(n):
+            m = Message(account_id=acct.id, folder_id=folder.id, uid=100 + i,
+                        message_id=f"<agent-{_seed_n}-{i}>", from_addr="v@x.com",
+                        subject=subject, snippet="body", is_seen=False)
+            s.add(m); s.commit(); s.refresh(m); ids.append(m.id)
+    return ids
+
+
+def test_agent_proposes_resolved_action(client, monkeypatch):
+    _set_provider("ollama")
+    # A distinctive subject so resolution matches exactly the rows we seed
+    # (the DB is shared across tests, so filter to our own mail).
+    ids = _seed_inbox_unread("zzagentmark", 3)
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: "ACTION: mark_seen subject:zzagentmark")
+    r = client.post("/ai/agent", json={"instruction": "mark those as read"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "action"
+    assert body["action"] == "seen"
+    assert body["count"] == 3
+    assert set(ids).issubset(set(body["ids"]))
+    assert len(body["sample"]) == 3
+
+
+def test_agent_answers_normally_without_action(client, monkeypatch):
+    _set_provider("ollama")
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: "You press E to mark a message done.")
+    r = client.post("/ai/agent", json={"instruction": "how do I mark something done?"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "answer"
+    assert "E to mark" in body["answer"]
+
+
+def test_agent_empty_instruction_400(client):
+    _set_provider("ollama")
+    assert client.post("/ai/agent", json={"instruction": "  "}).status_code == 400
+
+
+# --- /ai/agent: propose a filtering RULE ------------------------------------
+def test_parse_rule_contains():
+    p = ai_mod._parse_rule('RULE: {"field":"subject","op":"contains","value":"[ZERV] Daily Report","action":"mark_done","arg":"","name":"ZERV"}')
+    assert p["match_field"] == "subject" and p["match_op"] == "contains"
+    assert p["match_value"] == "[ZERV] Daily Report" and p["action"] == "mark_done"
+
+
+def test_parse_rule_regex_validated():
+    ok = ai_mod._parse_rule('RULE: {"field":"subject","op":"regex","value":"\\\\[ZERV\\\\]","action":"mark_done"}')
+    assert ok and ok["match_op"] == "regex" and ok["match_value"] == r"\[ZERV\]"
+    # An un-compilable pattern is rejected rather than saved as a dead rule.
+    assert ai_mod._parse_rule('RULE: {"field":"subject","op":"regex","value":"[unclosed","action":"mark_done"}') is None
+
+
+def test_parse_rule_rejects_bad_vocab_and_prose():
+    assert ai_mod._parse_rule('RULE: {"field":"nope","op":"contains","value":"x","action":"mark_done"}') is None
+    assert ai_mod._parse_rule('RULE: {"field":"subject","op":"contains","value":"x","action":"teleport"}') is None
+    assert ai_mod._parse_rule("Sure, here's how rules work in RaplMail...") is None
+
+
+def test_agent_proposes_rule(client, monkeypatch):
+    _set_provider("ollama")
+    monkeypatch.setattr(ai_mod, "_call_chat",
+                        lambda *a, **k: 'RULE: {"field":"subject","op":"contains","value":"ZERV","action":"mark_done","arg":"","name":"z"}')
+    r = client.post("/ai/agent", json={"instruction": "always mark the zerv report done"})
+    assert r.status_code == 200
+    b = r.json()
+    assert b["kind"] == "rule"
+    assert b["rule"]["match_field"] == "subject" and b["rule"]["action"] == "mark_done"
 
 
 # --- draft reply: language instruction + clean chips ------------------------

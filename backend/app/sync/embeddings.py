@@ -59,6 +59,14 @@ def _embed_config(session: Session) -> dict:
     base = str(data.get("embedBaseUrl") or "").strip().rstrip("/")
     if provider == "ollama" and not base:
         base = OLLAMA_DEFAULT_URL
+    if provider == "ollama":
+        # Route local embeddings through RaplMail's hidden serve (if up) so the
+        # embed-model runner never flashes a console window either. See ai._effective_base.
+        try:
+            from app.api.ai import _effective_base
+            base = _effective_base(base)
+        except Exception:  # noqa: BLE001
+            pass
     model = str(data.get("embedModel") or "").strip() or (
         OLLAMA_DEFAULT_EMBED_MODEL if provider == "ollama" else OPENAI_DEFAULT_EMBED_MODEL)
     return {
@@ -88,15 +96,26 @@ def _embed_batch(cfg: dict, texts: list[str]) -> list[list[float]]:
     if not base:
         raise RuntimeError("No embeddings endpoint configured.")
     if provider == "ollama":
-        # Ollama's /api/embeddings takes a single prompt and returns one vector.
-        # It's the universally-supported endpoint (older builds lack /api/embed),
-        # so we call it once per text. Local + on the loopback, so this is cheap.
-        # keep_alive="30s": let the background indexer's model fall out of VRAM
-        # shortly after a batch instead of pinning the GPU on Ollama's 5-min default.
+        # keep_alive "5m": keep the embed model resident during a sweep instead of
+        # letting it fall out of VRAM every 30s (a reload per batch made indexing
+        # crawl — especially a heavy model like bge-m3).
+        ka = "5m"
+        # FAST path: /api/embed embeds the WHOLE batch in ONE request (far less
+        # round-trip overhead and lets Ollama batch on the GPU). Falls back to the
+        # per-text /api/embeddings for older Ollama builds that lack /api/embed.
+        try:
+            payload = _http_json(f"{base}/api/embed",
+                                 {"model": model, "input": texts, "keep_alive": ka},
+                                 {}, timeout=300)
+            embs = payload.get("embeddings")
+            if embs:
+                return [[float(x) for x in v] for v in embs]
+        except Exception:  # noqa: BLE001 — old Ollama / endpoint missing → fall back
+            pass
         out: list[list[float]] = []
         for txt in texts:
             payload = _http_json(f"{base}/api/embeddings",
-                                 {"model": model, "prompt": txt, "keep_alive": "30s"}, {})
+                                 {"model": model, "prompt": txt, "keep_alive": ka}, {}, timeout=120)
             vec = payload.get("embedding") or []
             out.append([float(x) for x in vec])
         return out

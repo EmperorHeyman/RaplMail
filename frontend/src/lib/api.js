@@ -209,6 +209,9 @@ export const ai = {
   ollamaInstallStatus: () => api.get("/ai/ollama/install-status"),
   ollamaUnload: () => api.post("/ai/ollama/unload", {}),
   ollamaWarm: () => api.post("/ai/ollama/warm", {}),
+  ollamaManaged: (enabled) => api.post(`/ai/ollama/managed?enabled=${enabled ? "true" : "false"}`, {}),
+  ollamaStart: (base = "") => api.post(`/ai/ollama/start${base ? `?base=${encodeURIComponent(base)}` : ""}`, {}),
+  ollamaRestart: (base = "") => api.post(`/ai/ollama/restart${base ? `?base=${encodeURIComponent(base)}` : ""}`, {}),
   ollamaSearch: (q) => api.get(`/ai/ollama/search?q=${encodeURIComponent(q)}`),   // live library search
   // Semantic search index (local embeddings).
   embedStatus: () => api.get("/ai/embed/status"),
@@ -219,6 +222,9 @@ export const ai = {
   rewrite: (body) => api.post("/ai/rewrite", body),
   ask: (body) => api.post("/ai/ask", body),
   search: (q) => api.post("/ai/search", { q }),   // natural language → keyword query
+  // Assistant "with hands": answers questions about the app/mail AND proposes a
+  // resolved mailbox action ({kind:"action", ids, count, …}) for the UI to confirm.
+  agent: (body) => api.post("/ai/agent", body),
 };
 
 export const calendar = {
@@ -282,6 +288,7 @@ export const messages = {
   setSeen: (id, value) => api.post(`/messages/${id}/seen`, { value }),
   snooze: (id, until, presence = false) => api.post(`/messages/${id}/snooze`, { until, presence }),
   bulk: (ids, action, until = null) => api.post("/messages/bulk", { ids, action, until }),
+  move: (ids, folderId) => api.post("/messages/move", { ids, folder_id: folderId }),   // drag → folder
   mute: (id) => api.post(`/messages/${id}/mute`),
   muteThread: (id) => api.post(`/messages/${id}/mute-thread`),
   pin: (id, value) => api.post(`/messages/${id}/pin`, { value }),
@@ -320,6 +327,7 @@ export const rules = {
   update: (id, body) => api.put(`/rules/${id}`, body),
   remove: (id) => api.del(`/rules/${id}`),
   preview: (body) => api.post("/rules/preview", body),
+  apply: (body) => api.post("/rules/apply", body),   // run a rule against existing mail
 };
 
 export const signatures = {

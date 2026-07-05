@@ -23,7 +23,7 @@
 
 <section class="sched">
   <header><h2>{@html icons.clock} Scheduled</h2><button class="btn ghost" onclick={load}>Refresh</button></header>
-  <div class="body">
+  <div class="body stagger-in">
     {#if loading}
       <p class="muted">Loading…</p>
     {:else if list.length === 0}

@@ -63,7 +63,15 @@
       }
     }
     busy = true;
-    try { await api.create(draft); notify("Rule saved"); close(); }
+    try {
+      await api.create(draft);
+      // Rules otherwise only run on new mail — apply to what's already here too,
+      // so the rule visibly does something right away.
+      let applied = 0;
+      try { applied = (await api.apply(draft)).applied || 0; } catch {}
+      notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
+      close();
+    }
     catch (e) { notify(e.message, "error"); }
     finally { busy = false; }
   }
@@ -135,8 +143,8 @@
     backdrop-filter: blur(2px);
     display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh;
     animation: fade-in var(--t) var(--ease); }
-  .modal { width: min(560px, 94vw); background: var(--surface); border: 1px solid var(--hairline);
-    border-radius: calc(var(--radius) + 3px); box-shadow: var(--shadow-lg); padding: 18px 20px; display: flex; flex-direction: column; gap: 12px;
+  .modal { width: min(720px, 96vw); background: var(--surface); border: 1px solid var(--hairline);
+    border-radius: calc(var(--radius) + 3px); box-shadow: var(--shadow-lg); padding: 22px 26px; display: flex; flex-direction: column; gap: 14px;
     animation: pop-in var(--t) var(--ease); }
   header { display: flex; align-items: center; }
   header h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 8px; }

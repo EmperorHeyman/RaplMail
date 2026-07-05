@@ -375,6 +375,13 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   // wrappers so a click can't leak tracking params. "Show original" keeps links.
   if (!original && s.stripTrackingParams !== false) body = cleanLinks(body);
 
+  // Reading-width cap (Appearance → Reading width): center the body at a
+  // comfortable column on wide screens so long lines don't stretch edge-to-edge.
+  // 0 = full width. `margin: 16px auto` centers; the max-width is a soft cap so
+  // fixed-width branded tables (usually <=600px) still sit centered.
+  const maxW = Number(app?.settings?.emailMaxWidth ?? 0);
+  const bodyBox = maxW > 0 ? `margin:16px auto;max-width:${maxW}px;` : "margin:16px;";
+
   let pageCss;
   if (dark) {
     const bg = currentBg();
@@ -387,13 +394,13 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
     body = force ? recolorForDark(body, bg, text) : darkenPlainBody(body, text);
     pageCss =
       `html{background:${bg};}` +
-      `body{font:14px/1.6 system-ui,sans-serif;color:${text};background:${bg};margin:16px;}` +
+      `body{font:14px/1.6 system-ui,sans-serif;color:${text};background:${bg};${bodyBox}}` +
       `a{color:${link};} img{max-width:100%;height:auto;}` +
       `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}`;
   } else {
     pageCss =
       `html{background:#fff;}` +
-      `body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;margin:16px;}` +
+      `body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;${bodyBox}}` +
       `a{color:#1a56db;} img{max-width:100%;height:auto;}` +
       `blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}`;
   }

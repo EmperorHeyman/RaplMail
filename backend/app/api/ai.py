@@ -9,11 +9,14 @@ has configured a key. Uses stdlib urllib — no SDK dependency.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import re
 import shutil
 import ssl
 import subprocess
 import threading
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -27,6 +30,7 @@ from app.core.db import get_session
 from app.models import Folder, FolderRole, Message, Setting
 
 router = APIRouter(prefix="/ai", tags=["ai"], dependencies=[Depends(verify_token)])
+log = logging.getLogger("raplmail.ai")
 
 # BYOK, any provider. Default model per provider (used when the user leaves the
 # model field blank). "openai-compatible" covers Groq / OpenRouter / Together /
@@ -55,6 +59,10 @@ def _ai_config(session: Session) -> dict:
     base = str(data.get("aiBaseUrl") or "").strip().rstrip("/")
     if provider == "ollama" and not base:
         base = _OLLAMA_URL   # keyless local default
+    if provider == "ollama":
+        # Route local Ollama chat through our hidden serve if one is up, so the
+        # model-runner console windows never flash (see _effective_base).
+        base = _effective_base(base)
     return {
         "provider": provider,
         "key": str(data.get("aiApiKey") or "").strip(),
@@ -544,6 +552,230 @@ def ai_search(body: AiSearchIn, session: Session = Depends(get_session)) -> dict
 
 
 # ---------------------------------------------------------------------------
+# Agent: answer questions about RaplMail AND run mailbox actions on request
+# ---------------------------------------------------------------------------
+# A short guide the assistant can quote when the user asks how to use the app —
+# so "how do I mark something done?" gets a real answer, not a shrug.
+_APP_GUIDE = (
+    "RaplMail is a fast, local-first desktop email client (this very app). It runs "
+    "entirely on the user's machine; mail and the AI key never leave it.\n"
+    "How to use it:\n"
+    "- Triage (Spark-style): press E to mark a message DONE — it leaves the inbox view "
+    "but stays on the server. The 'Show done' switch at the top of the list brings it back.\n"
+    "- Keyboard: Up/Down move through the list and open the mail, Enter opens, R reply, "
+    "F forward, A archive, U toggle read/unread, Delete deletes, / focuses search, "
+    "Ctrl+K command palette, Ctrl+N compose.\n"
+    "- Smart Inbox groups newsletters / social / updates / promotions into tidy cards; "
+    "the 'See all' button shows one flat list. Snooze hides mail until later; Pin keeps "
+    "it on top; VIP senders float up; the Screener holds first-time senders.\n"
+    "- Rules (Settings -> Rules) auto-file, archive, delete, mark-done or block by "
+    "sender / domain / subject. Signatures support a drag-in inline image.\n"
+    "- This AI assistant: add emails as context, ask questions, draft replies, summarize, "
+    "and run the mailbox actions below.\n"
+)
+
+# The mailbox actions the assistant may PROPOSE. Each maps to POST /messages/bulk;
+# the frontend confirms with the user before anything actually runs.
+_AGENT_OPS = {
+    "mark_seen": "seen", "mark_read": "seen",
+    "mark_unseen": "unseen", "mark_unread": "unseen",
+    "mark_done": "done",
+    "mark_undone": "undone",
+    "flag": "flag", "star": "flag",
+    "unflag": "unflag",
+    "archive": "archive",
+    "delete": "delete",
+}
+
+_AGENT_CAP = 2000   # never resolve more than this many messages for one action
+
+_AGENT_SYSTEM = (
+    "You are the assistant built into RaplMail, a local email client. You do three things:\n"
+    "1) ANSWER - questions about the user's emails (given as context below) or about how "
+    "to USE RaplMail (use the guide below).\n"
+    "2) ACT - when the user asks you to CHANGE or ORGANIZE their mail right now, propose ONE action.\n"
+    "3) MAKE A RULE - when the user wants mail handled AUTOMATICALLY / from now on / every time, propose ONE rule.\n\n"
+    "When - and only when - the user asks you to DO something to their mailbox now, reply with "
+    "a SINGLE line and nothing else, in exactly this form:\n"
+    "ACTION: <op> <filters>\n"
+    "Ops: mark_seen, mark_unseen, mark_done, mark_undone, flag, unflag, archive, delete.\n"
+    "Filters (space-separated, all optional, they narrow the selection together): "
+    "unread, read, flagged, from:TEXT, subject:TEXT. With no filter the action targets "
+    "every message currently in the inbox.\n"
+    "Examples:\n"
+    "  'mark every unread email as read'        -> ACTION: mark_seen unread\n"
+    "  'archive everything from noreply@x.com'  -> ACTION: archive from:noreply@x.com\n"
+    "  'mark all as done'                       -> ACTION: mark_done\n\n"
+    "When the user wants an AUTOMATIC rule, reply with a SINGLE line and nothing else, exactly:\n"
+    'RULE: {"field": F, "op": O, "value": V, "action": A, "arg": ARG, "name": N}\n'
+    "  field: from | from_domain | to | subject | body | category\n"
+    "  op:    contains | equals | ends_with | regex\n"
+    "  action: mark_done | mark_read | archive | delete | move | block | mute_notifications\n"
+    "  value: the text (for regex, a Python re pattern, matched case-insensitively with re.search)\n"
+    "  arg:   destination folder path (only for the move action; otherwise \"\")\n"
+    "  name:  a short human name for the rule\n"
+    "It must be valid JSON on that one line (escape backslashes in regex). When a subject "
+    "just has a fixed part plus a changing part (dates, numbers), prefer op 'contains' on the "
+    "fixed part - it is simpler and robust; use regex only when genuinely needed.\n"
+    "Examples:\n"
+    "  'automatically mark the ZERV daily report as done'\n"
+    "    -> RULE: {\"field\":\"subject\",\"op\":\"contains\",\"value\":\"[ZERV] Daily Report\",\"action\":\"mark_done\",\"arg\":\"\",\"name\":\"ZERV daily report\"}\n"
+    "  'always archive newsletters from mailchimp'\n"
+    "    -> RULE: {\"field\":\"from\",\"op\":\"contains\",\"value\":\"mailchimp\",\"action\":\"archive\",\"arg\":\"\",\"name\":\"Mailchimp newsletters\"}\n\n"
+    "Never invent an action or rule the user didn't ask for. For questions, summaries, drafts "
+    "or small talk, just answer normally - do NOT emit an ACTION or RULE line."
+    + _LANG_RULE
+    + "\n=== RAPLMAIL GUIDE ===\n" + _APP_GUIDE + "=== END GUIDE ==="
+)
+
+# Valid rule vocabulary (mirrors the RuleField/RuleOp/RuleAction enums).
+_RULE_FIELDS = {"from", "from_domain", "to", "subject", "body", "category"}
+_RULE_OPS = {"contains", "equals", "ends_with", "regex"}
+_RULE_ACTIONS = {"mark_done", "mark_read", "archive", "delete", "move", "block",
+                 "mute_notifications", "mark_unread"}
+
+
+def _parse_rule(raw: str) -> dict | None:
+    """If the model proposed a filtering RULE, parse + validate it into a RuleIn-
+    shaped dict; else None. Only fires when the FIRST non-empty line starts RULE:."""
+    if not raw:
+        return None
+    cleaned = raw.replace("```", "")
+    first = next((ln for ln in cleaned.splitlines() if ln.strip()), "")
+    if not re.match(r"\s*RULE\s*:", first, re.IGNORECASE):
+        return None
+    obj = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if not obj:
+        return None
+    try:
+        d = json.loads(obj.group(0))
+    except Exception:  # noqa: BLE001
+        return None
+    field = str(d.get("field", "")).strip().lower()
+    op = str(d.get("op", "")).strip().lower()
+    action = str(d.get("action", "")).strip().lower()
+    value = str(d.get("value", "") or "")
+    if action == "mark_unread":
+        action = "mark_read"   # not a rule action; fold to the closest valid one
+    if field not in _RULE_FIELDS or op not in _RULE_OPS or action not in _RULE_ACTIONS or not value:
+        return None
+    if op == "regex":   # reject a pattern that won't compile
+        try:
+            re.compile(value)
+        except re.error:
+            return None
+    return {"match_field": field, "match_op": op, "match_value": value,
+            "action": action, "action_arg": str(d.get("arg", "") or ""),
+            "name": str(d.get("name", "") or "").strip()}
+
+
+def _parse_filters(arg: str) -> dict:
+    """Parse the filter tail of an ACTION line into a dict of selectors."""
+    f: dict = {}
+    arg = arg or ""
+    for m in re.finditer(r'(from|subject|to)\s*:\s*(?:"([^"]*)"|(\S+))', arg, re.IGNORECASE):
+        val = (m.group(2) if m.group(2) is not None else (m.group(3) or "")).strip()
+        if val:
+            f[m.group(1).lower()] = val
+    rest = re.sub(r'(from|subject|to)\s*:\s*(?:"[^"]*"|\S+)', " ", arg, flags=re.IGNORECASE)
+    for tok in rest.lower().split():
+        if tok in ("unread", "unseen"):
+            f["unread"] = True
+        elif tok in ("read", "seen"):
+            f["seen"] = True
+        elif tok in ("flagged", "starred", "star"):
+            f["flagged"] = True
+    return f
+
+
+def _parse_action(raw: str) -> dict | None:
+    """If the model's reply is an ACTION directive, parse it; else None. Only the
+    FIRST non-empty line is considered, so the word 'ACTION:' buried in a normal
+    answer can't silently trigger a mailbox change."""
+    if not raw:
+        return None
+    cleaned = raw.replace("```", "")
+    first = next((ln for ln in cleaned.splitlines() if ln.strip()), "")
+    m = re.match(r"\s*ACTION\s*:\s*([a-z_]+)\s*(.*)$", first, re.IGNORECASE)
+    if not m:
+        return None
+    op = m.group(1).lower()
+    if op not in _AGENT_OPS:
+        return None
+    return {"op": op, "action": _AGENT_OPS[op], "filters": _parse_filters(m.group(2))}
+
+
+def _resolve_action_targets(session: Session, plan: dict) -> tuple[list[int], list[dict]]:
+    """Resolve which inbox messages an ACTION applies to. Scoped to inbox-role
+    folders (never Sent/Trash) and to still-visible mail. Returns (ids, sample)."""
+    f = plan["filters"]
+    stmt = select(Message).where(Message.pending_action == "")
+    inbox_ids = [fld.id for fld in session.exec(
+        select(Folder).where(Folder.role == FolderRole.inbox))]
+    if inbox_ids:
+        stmt = stmt.where(Message.folder_id.in_(inbox_ids))
+    if f.get("unread"):
+        stmt = stmt.where(Message.is_seen == False)   # noqa: E712
+    if f.get("seen"):
+        stmt = stmt.where(Message.is_seen == True)     # noqa: E712
+    if f.get("flagged"):
+        stmt = stmt.where(Message.is_flagged == True)  # noqa: E712
+    if f.get("from"):
+        pat = f"%{f['from']}%"
+        stmt = stmt.where(Message.from_addr.ilike(pat) | Message.from_name.ilike(pat))
+    if f.get("subject"):
+        stmt = stmt.where(Message.subject.ilike(f"%{f['subject']}%"))
+    # Don't re-touch already-done mail unless the op is specifically un-doning it.
+    if plan["op"] != "mark_undone":
+        stmt = stmt.where(Message.is_done == False)    # noqa: E712
+    msgs = list(session.exec(stmt.order_by(Message.date.desc())))
+    ids = [m.id for m in msgs]
+    sample = [{"from": (m.from_name or m.from_addr or "?"), "subject": (m.subject or "")}
+              for m in msgs[:5]]
+    return ids, sample
+
+
+class AgentIn(BaseModel):
+    instruction: str
+    message_ids: list[int] = []
+    history: list[dict] = []
+
+
+@router.post("/agent")
+def agent(body: AgentIn, session: Session = Depends(get_session)) -> dict:
+    """The assistant with hands: answers questions about the mailbox and about
+    RaplMail itself, and - when asked to change mail - returns a resolved ACTION
+    (op + matching message ids + a small sample) for the UI to confirm before it
+    runs. Nothing is mutated here; execution goes through /messages/bulk once the
+    user confirms."""
+    cfg = _require_key(session)
+    instruction = (body.instruction or "").strip()
+    if not instruction:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Ask me something.")
+    transcript = _context_text(session, body.message_ids, "")
+    system = _AGENT_SYSTEM
+    if transcript:
+        system += ("\n\n=== EMAILS IN CONTEXT ===\n" + transcript[:40000]
+                   + "\n=== END EMAILS ===")
+    turns = [{"role": t.get("role", "user"), "content": str(t.get("content", ""))}
+             for t in (body.history or [])
+             if t.get("role") in ("user", "assistant") and t.get("content")][-12:]
+    turns.append({"role": "user", "content": instruction})
+    raw = _call_chat(cfg, system, turns, max_tokens=1500)
+    rule = _parse_rule(raw)
+    if rule:
+        return {"kind": "rule", "rule": rule, "model": cfg["model"]}
+    plan = _parse_action(raw)
+    if plan:
+        ids, sample = _resolve_action_targets(session, plan)
+        return {"kind": "action", "op": plan["op"], "action": plan["action"],
+                "filters": plan["filters"], "count": len(ids),
+                "ids": ids[:_AGENT_CAP], "capped": len(ids) > _AGENT_CAP,
+                "sample": sample, "model": cfg["model"]}
+    return {"kind": "answer", "answer": raw, "model": cfg["model"]}
+
+
+# ---------------------------------------------------------------------------
 # Ollama: first-class local model server (detect / list / pull / install)
 # ---------------------------------------------------------------------------
 def _ollama_base(session: Session, override: str = "") -> str:
@@ -551,11 +783,11 @@ def _ollama_base(session: Session, override: str = "") -> str:
     user is editing), else the configured AI base when the provider is Ollama,
     else the loopback default."""
     if override.strip():
-        return override.strip().rstrip("/")
-    cfg = _ai_config(session)
+        return override.strip().rstrip("/")   # an explicit URL is checked as-is
+    cfg = _ai_config(session)   # base_url already routed to our hidden serve if up
     if cfg["provider"] == "ollama" and cfg["base_url"]:
         return cfg["base_url"]
-    return _OLLAMA_URL
+    return _effective_base("")
 
 
 @router.get("/ollama/status")
@@ -582,6 +814,429 @@ def ollama_status(base: str = "", session: Session = Depends(get_session)) -> di
             pass
     return {"installed": installed or running, "running": running,
             "base_url": b, "models": models, "version": version}
+
+
+def _ollama_is_up(base: str) -> bool:
+    """True if the Ollama HTTP API answers at `base` right now."""
+    try:
+        req = urllib.request.Request(f"{base}/api/tags", method="GET")
+        urllib.request.urlopen(req, timeout=3).close()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _no_window_kwargs() -> dict:
+    """Popen/run kwargs that suppress ALL console windows on Windows. CREATE_NO_WINDOW
+    (not DETACHED_PROCESS): a detached process has no console, so each console-mode
+    child Ollama spawns (the model runners) would pop its OWN black window. With
+    CREATE_NO_WINDOW the process gets a hidden console its children inherit, so
+    nothing flashes. No-op on other platforms."""
+    if os.name != "nt":
+        return {}
+    si = subprocess.STARTUPINFO()
+    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    si.wShowWindow = 0  # SW_HIDE
+    return {"creationflags": 0x08000000, "startupinfo": si}  # CREATE_NO_WINDOW
+
+
+def _ollama_app_path() -> str | None:
+    """Path to the Ollama desktop app ('ollama app.exe'), which runs the server as
+    a proper windowless background service. `ollama serve` from the CLI, by
+    contrast, spawns model-runner subprocesses that pop up black console windows
+    on Windows — so we prefer the app when it's installed."""
+    if os.name != "nt":
+        return None
+    exe = shutil.which("ollama")
+    candidates = []
+    if exe:
+        candidates.append(os.path.join(os.path.dirname(exe), "ollama app.exe"))
+    for base in (os.environ.get("LOCALAPPDATA", ""), os.environ.get("ProgramFiles", ""),
+                 os.environ.get("ProgramW6432", ""), os.environ.get("ProgramFiles(x86)", "")):
+        if base:
+            candidates.append(os.path.join(base, "Programs", "Ollama", "ollama app.exe"))
+            candidates.append(os.path.join(base, "Ollama", "ollama app.exe"))
+    # Last resort: the install path recorded in the uninstall registry key.
+    try:
+        import winreg
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            try:
+                with winreg.OpenKey(root, r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Ollama") as k:
+                    loc = winreg.QueryValueEx(k, "InstallLocation")[0]
+                    if loc:
+                        candidates.append(os.path.join(loc, "ollama app.exe"))
+            except OSError:
+                pass
+    except Exception:  # noqa: BLE001
+        pass
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    return None
+
+
+def _spawn_ollama_serve() -> bool:
+    """Start the Ollama server with no visible console windows. Prefer the desktop
+    app (windowless service); fall back to a hidden `ollama serve`."""
+    app = _ollama_app_path()
+    if app:
+        try:
+            subprocess.Popen([app], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, **_no_window_kwargs())
+            return True
+        except Exception:  # noqa: BLE001
+            pass
+    exe = shutil.which("ollama")
+    if not exe:
+        return False
+    try:
+        subprocess.Popen([exe, "serve"], stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         **_no_window_kwargs())
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def start_ollama(base: str, wait: float = 8.0) -> bool:
+    """Ensure the Ollama server is up. If it isn't, start it and poll until it
+    answers (up to `wait` seconds). Returns True if the API is reachable."""
+    if _ollama_is_up(base):
+        return True
+    if not _spawn_ollama_serve():
+        return False
+    deadline = time.time() + wait
+    while time.time() < deadline:
+        if _ollama_is_up(base):
+            return True
+        time.sleep(0.4)
+    return _ollama_is_up(base)
+
+
+def _stop_ollama() -> None:
+    """Kill the running Ollama processes (used by restart). Includes the model
+    runner (llama-server.exe): killing `ollama.exe` alone ORPHANS the runner it
+    spawned — it keeps holding VRAM — so we kill it too."""
+    if os.name == "nt":
+        for name in ("ollama app.exe", "ollama.exe", "llama-server.exe"):
+            try:
+                subprocess.run(["taskkill", "/F", "/IM", name],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                               timeout=10, **_no_window_kwargs())
+            except Exception:  # noqa: BLE001
+                pass
+    else:
+        try:
+            subprocess.run(["pkill", "-f", "ollama"], timeout=10)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Managed hidden Ollama server — kills the model-runner console-window flashes
+# ---------------------------------------------------------------------------
+# On Windows, Ollama's model runner (llama-server.exe) briefly FLASHES a console
+# window every time a model loads into / unloads from VRAM — but only when the
+# `ollama serve` that spawned it was itself launched with a visible console, which
+# the Ollama desktop tray app (auto-started at login) does. A serve WE launch with
+# CREATE_NO_WINDOW spawns the runner into a hidden console, so nothing flashes.
+# So for a LOCAL Ollama we run our own hidden serve on a private port and route all
+# of RaplMail's traffic to it, leaving the user's tray Ollama untouched — it just
+# goes idle, and idle = no runner = no flash. Toggle via the "ollamaManaged"
+# setting (default on; no-op off-Windows / for a remote Ollama).
+_MANAGED_PORT = 11500          # preferred private port; falls back to a free one
+_managed: dict = {"pid": None, "base": None}   # our hidden serve, once adopted
+
+
+def _is_local_base(base: str) -> bool:
+    """A base URL that points at THIS machine (so a local hidden serve applies).
+    A remote Ollama we never manage or reroute."""
+    b = (base or "").strip().lower()
+    return (not b) or "localhost" in b or "127.0.0.1" in b or "[::1]" in b or "//0.0.0.0" in b
+
+
+def _effective_base(configured: str) -> str:
+    """Where RaplMail should actually send local Ollama traffic: our hidden serve
+    if it's been adopted and the configured base is local; else the configured base."""
+    mb = _managed.get("base")
+    if mb and _is_local_base(configured):
+        return mb
+    return (configured or _OLLAMA_URL).rstrip("/")
+
+
+def _free_loopback_port() -> int:
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+    finally:
+        s.close()
+
+
+def _kill_pid_tree(pid: int | None) -> None:
+    """Kill a PID and its children — our serve plus the llama-server runner it
+    spawned (which would otherwise orphan). Hidden, best-effort."""
+    if not pid:
+        return
+    if os.name == "nt":
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                           timeout=10, **_no_window_kwargs())
+        except Exception:  # noqa: BLE001
+            pass
+    else:
+        try:
+            os.kill(pid, 15)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _running_ollama_pids() -> list[int]:
+    """PIDs of running ollama.exe processes (Windows), via tasklist."""
+    if os.name != "nt":
+        return []
+    try:
+        out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq ollama.exe", "/FO", "CSV", "/NH"],
+                             capture_output=True, text=True, timeout=10, **_no_window_kwargs()).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    pids = []
+    for line in out.splitlines():
+        cells = [c.strip().strip('"') for c in line.split('","')]
+        if len(cells) >= 2 and cells[1].strip('"').isdigit():
+            pids.append(int(cells[1].strip('"')))
+    return pids
+
+
+def _process_env(pid: int) -> dict:
+    """Read another process's environment block via the PEB (Windows x64).
+    Best-effort: returns {} on any failure (permissions, wrong arch, layout)."""
+    if os.name != "nt":
+        return {}
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        ntdll = ctypes.WinDLL("ntdll")
+        k32.OpenProcess.restype = wintypes.HANDLE
+        k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k32.ReadProcessMemory.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_void_p,
+                                          ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+        h = k32.OpenProcess(0x0400 | 0x0010, False, pid)  # QUERY_INFORMATION | VM_READ
+        if not h:
+            return {}
+        try:
+            class PBI(ctypes.Structure):
+                _fields_ = [("Reserved1", ctypes.c_void_p), ("PebBaseAddress", ctypes.c_void_p),
+                            ("Reserved2", ctypes.c_void_p * 2), ("UniqueProcessId", ctypes.c_void_p),
+                            ("Reserved3", ctypes.c_void_p)]
+            pbi = PBI(); rl = ctypes.c_ulong(0)
+            if ntdll.NtQueryInformationProcess(h, 0, ctypes.byref(pbi), ctypes.sizeof(pbi), ctypes.byref(rl)) != 0:
+                return {}
+            def rd(addr, size):
+                buf = ctypes.create_string_buffer(size); n = ctypes.c_size_t(0)
+                if k32.ReadProcessMemory(h, ctypes.c_void_p(addr), buf, size, ctypes.byref(n)) and n.value:
+                    return buf.raw[:n.value]
+                return None
+            peb = pbi.PebBaseAddress
+            pp_raw = rd(peb + 0x20, 8) if peb else None            # PEB->ProcessParameters
+            if not pp_raw:
+                return {}
+            env_raw = rd(int.from_bytes(pp_raw, "little") + 0x80, 8)  # ->Environment
+            if not env_raw:
+                return {}
+            env_addr = int.from_bytes(env_raw, "little")
+            block = None
+            for size in (65536, 32768, 16384, 8192, 4096):
+                block = rd(env_addr, size)
+                if block:
+                    break
+            if not block:
+                return {}
+            out = {}
+            for entry in block.decode("utf-16-le", "ignore").split("\x00"):
+                if entry == "":
+                    break                       # double-null terminates the block
+                if entry[0] == "=":
+                    continue                    # skip "=C:=..." drive pseudo-vars
+                k, sep, v = entry.partition("=")
+                if sep and k:
+                    out[k] = v
+            return out
+        finally:
+            k32.CloseHandle(h)
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _running_ollama_env() -> dict:
+    """The explicitly-set OLLAMA_* env of the already-running Ollama serve, so our
+    hidden serve behaves identically — same models directory (OLLAMA_MODELS), GPU
+    backend (OLLAMA_VULKAN), context length, etc. Excludes OLLAMA_HOST (we set the
+    port). {} if it can't be read (then we just inherit our own environment)."""
+    for pid in _running_ollama_pids():
+        env = _process_env(pid)
+        keys = [k for k in env if k.startswith("OLLAMA_") and k != "OLLAMA_HOST"]
+        if keys:
+            return {k: env[k] for k in keys}
+    return {}
+
+
+def _spawn_hidden_serve(port: int, extra_env: dict | None = None) -> int | None:
+    """Launch `ollama serve` on a private loopback port with a HIDDEN console.
+    `extra_env` replicates the running serve's OLLAMA_* config (see
+    _running_ollama_env). Returns the child PID, or None if it couldn't start."""
+    exe = shutil.which("ollama")
+    if not exe:
+        return None
+    env = dict(os.environ)
+    if extra_env:
+        env.update(extra_env)
+    env["OLLAMA_HOST"] = f"127.0.0.1:{port}"
+    try:
+        p = subprocess.Popen([exe, "serve"], env=env, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             **_no_window_kwargs())
+        return p.pid
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _ollama_models(base: str) -> set[str] | None:
+    """Model names the serve at `base` can see, or None if it isn't reachable."""
+    try:
+        req = urllib.request.Request(f"{base}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return {m.get("name") for m in (data.get("models") or []) if m.get("name")}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def start_managed_ollama(configured_base: str = "") -> bool:
+    """Ensure RaplMail's own hidden Ollama serve is up and SAFE to use, and point
+    `_managed["base"]` at it so traffic reroutes there. Idempotent. Windows-only.
+
+    Safety net: only adopt the hidden serve if it can see the same models the
+    user's configured serve has — otherwise a custom OLLAMA_MODELS the tray app
+    knows about (but we didn't inherit) would make models silently disappear. In
+    that case we leave the configured serve in charge (flashes, but correct)."""
+    if os.name != "nt" or not shutil.which("ollama"):
+        return False
+    if _managed.get("base") and _ollama_is_up(_managed["base"]):
+        return True
+    base, pid = None, None
+    reuse = f"http://127.0.0.1:{_MANAGED_PORT}"
+    if _ollama_is_up(reuse):
+        base = reuse   # a hidden serve left from a previous RaplMail run — reuse it
+    else:
+        # Replicate the running serve's OLLAMA_* config (models dir, GPU backend…)
+        # so our hidden serve sees the SAME models — even a custom OLLAMA_MODELS the
+        # tray app injected from its own settings (not our environment).
+        serve_env = _running_ollama_env()
+        for port in (_MANAGED_PORT, _free_loopback_port()):
+            pid = _spawn_hidden_serve(port, serve_env)
+            if not pid:
+                continue
+            cand = f"http://127.0.0.1:{port}"
+            deadline = time.time() + 12
+            while time.time() < deadline:
+                if _ollama_is_up(cand):
+                    base = cand
+                    break
+                time.sleep(0.3)
+            if base:
+                break
+            _kill_pid_tree(pid); pid = None
+    if not base:
+        return False
+    cfg_base = (configured_base or "").rstrip("/")
+    if _is_local_base(configured_base) and cfg_base and cfg_base != base:
+        theirs, ours = _ollama_models(cfg_base), _ollama_models(base)
+        if theirs is not None and ours is not None and not theirs.issubset(ours):
+            log.info("hidden Ollama serve %s is missing models the configured serve "
+                     "has (%s) — not rerouting; using %s instead.",
+                     base, sorted(theirs - ours), cfg_base)
+            _kill_pid_tree(pid)   # don't leave the just-spawned serve orphaned
+            return False          # fall back to the configured serve (correctness first)
+    _managed.update({"pid": pid, "base": base})
+    log.info("managed hidden Ollama serve active at %s (pid %s)", base, pid)
+    return True
+
+
+def shutdown_managed_ollama() -> None:
+    """Stop the hidden serve we started (and its runner child). Called on backend
+    shutdown and when the user turns managed mode off."""
+    _kill_pid_tree(_managed.get("pid"))
+    _managed.update({"pid": None, "base": None})
+
+
+@router.post("/ollama/start")
+def ollama_start(base: str = "", session: Session = Depends(get_session)) -> dict:
+    """Start the local Ollama server if it isn't already running."""
+    b = _ollama_base(session, base)
+    return {"running": start_ollama(b), "base_url": b}
+
+
+def _raw_ollama_base(session: Session) -> str:
+    """The Ollama base as CONFIGURED (before any managed rerouting)."""
+    row = session.get(Setting, 1)
+    data = dict(row.data) if row and row.data else {}
+    return str(data.get("aiBaseUrl") or "").strip().rstrip("/")
+
+
+@router.post("/ollama/restart")
+def ollama_restart(base: str = "", session: Session = Depends(get_session)) -> dict:
+    """Stop then start the Ollama server (recover a stuck server). When RaplMail
+    manages a hidden serve, this restarts THAT (not the user's tray Ollama)."""
+    raw = base.strip().rstrip("/") or _raw_ollama_base(session)
+    if _managed.get("base") or (os.name == "nt" and _is_local_base(raw) and shutil.which("ollama")):
+        shutdown_managed_ollama()
+        time.sleep(1.0)
+        ok = start_managed_ollama(raw)
+        return {"running": ok or _ollama_is_up(_effective_base(raw)), "base_url": _effective_base(raw)}
+    b = _ollama_base(session, base)
+    _stop_ollama()
+    time.sleep(1.2)   # let the port free up before we bind again
+    return {"running": start_ollama(b), "base_url": b}
+
+
+@router.post("/ollama/managed")
+def ollama_managed(enabled: bool = True, session: Session = Depends(get_session)) -> dict:
+    """Turn RaplMail's hidden managed serve on/off at runtime (mirrors the
+    ollamaManaged setting). On → start it; off → stop it and fall back to the
+    configured/tray serve (which flashes, but is what the user asked for)."""
+    if enabled:
+        ok = start_managed_ollama(_raw_ollama_base(session))
+        return {"managed": bool(_managed.get("base")), "base": _managed.get("base"), "ok": ok}
+    shutdown_managed_ollama()
+    return {"managed": False, "base": None, "ok": True}
+
+
+def autostart_ollama_if_configured() -> None:
+    """On app launch (background thread, never delays startup): for a LOCAL Ollama
+    with managed mode on (default), bring up RaplMail's own hidden serve so the
+    model-runner console windows never flash. Otherwise honor the legacy "Start
+    Ollama with RaplMail" opt-in. Safe no-op if the provider isn't Ollama."""
+    try:
+        from app.core.db import get_engine
+        with Session(get_engine()) as session:
+            row = session.get(Setting, 1)
+            data = dict(row.data) if row and row.data else {}
+        if str(data.get("aiProvider") or "").strip().lower() != "ollama":
+            return
+        base = str(data.get("aiBaseUrl") or "").strip().rstrip("/")
+        if data.get("ollamaManaged", True) and os.name == "nt" and _is_local_base(base):
+            if start_managed_ollama(base):
+                return   # hidden serve adopted — done
+            # couldn't take over (spawn failed / models mismatch): fall through so
+            # AI still works via the configured/tray serve.
+        if data.get("ollamaAutostart"):
+            start_ollama(base or _OLLAMA_URL)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _parse_library_names(html: str) -> list[str]:
@@ -694,7 +1349,7 @@ def _winget_worker(action: str) -> None:
         proc = subprocess.run(  # noqa: S603,S607 — fixed, non-user args
             ["winget", verb, "--id", "Ollama.Ollama", "-e", "--silent",
              "--accept-source-agreements", "--accept-package-agreements"],
-            capture_output=True, text=True, timeout=900)
+            capture_output=True, text=True, timeout=900, **_no_window_kwargs())
         out = (proc.stdout or "") + (proc.stderr or "")
         # `winget upgrade` returns non-zero (0x8A15002B) when nothing needs
         # upgrading — treat "no applicable upgrade / newest version" as success.
@@ -762,9 +1417,10 @@ def ollama_unload(session: Session = Depends(get_session)) -> dict:
                       for m in (json.loads(resp.read().decode("utf-8")).get("models") or [])]
     except Exception:  # noqa: BLE001
         loaded = []
-    if not loaded:                       # nothing reported → try the configured model
-        cfg = _ai_config(session)
-        loaded = [cfg["model"]] if cfg["model"] else []
+    # ONLY unload what /api/ps says is actually loaded. The old fallback pinged the
+    # configured model when nothing was loaded — but a generate request LOADS the
+    # model (spawning a runner process, i.e. a console window flash) just to unload
+    # it again. If nothing's loaded there's nothing to free.
     unloaded = []
     for m in [x for x in loaded if x]:
         try:
@@ -786,6 +1442,15 @@ def ollama_warm(session: Session = Depends(get_session)) -> dict:
     cfg = _ai_config(session)
     if cfg["provider"] != "ollama" or not cfg["model"]:
         return {"warmed": False}
+    # If we manage a hidden serve but it isn't up yet (startup race), DON'T warm via
+    # the configured/tray serve — that would flash a runner window AND pin the model
+    # in the tray's VRAM (keep_alive=-1). Skip; our serve comes up momentarily.
+    row = session.get(Setting, 1)
+    data = dict(row.data) if row and row.data else {}
+    raw = str(data.get("aiBaseUrl") or "").strip().rstrip("/")
+    if (data.get("ollamaManaged", True) and os.name == "nt"
+            and _is_local_base(raw) and not _managed.get("base")):
+        return {"warmed": False, "pending": True}
     b = _ollama_base(session, "")
     try:
         # /api/generate with a model + no prompt just loads it; keep_alive=-1 (a

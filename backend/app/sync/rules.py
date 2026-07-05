@@ -23,21 +23,29 @@ class MessageFields:
     subject: str
     body: str = ""
     category: str = ""
+    from_name: str = ""
 
     @property
     def from_domain(self) -> str:
         return self.from_addr.rsplit("@", 1)[-1].lower() if "@" in self.from_addr else ""
 
+    @property
+    def sender(self) -> str:
+        # People think of "from" as the whole sender, so match the display name
+        # AND the address: a rule "from contains ZERV Reporter" (a display name)
+        # should hit even though the name isn't in the email address.
+        return f"{self.from_name} {self.from_addr}".strip()
+
     @classmethod
     def from_message(cls, m: Message) -> "MessageFields":
         return cls(from_addr=m.from_addr or "", to_addrs=list(m.to_addrs or []),
                    subject=m.subject or "", body=m.snippet or "",
-                   category=m.category or "")
+                   category=m.category or "", from_name=m.from_name or "")
 
 
 def _field_value(rule: Rule, f: MessageFields) -> str | list[str]:
     return {
-        RuleField.from_addr: f.from_addr,
+        RuleField.from_addr: f.sender,
         RuleField.from_domain: f.from_domain,
         RuleField.to_addr: f.to_addrs,
         RuleField.subject: f.subject,

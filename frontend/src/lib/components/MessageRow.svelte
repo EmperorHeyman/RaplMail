@@ -106,9 +106,11 @@
     if (dx > THRESHOLD) { suppressClick = true; ondone(); }
     dx = 0;
   }
-  function onRowClick() {
+  function onRowClick(e) {
     if (suppressClick) { suppressClick = false; return; }
-    if (dx === 0) onopen();
+    // Pass the event through so the list can turn Ctrl/Cmd/Shift-click into a
+    // multi-selection instead of opening the mail.
+    if (dx === 0) onopen(e);
   }
 
   // Prefetch on hover only after a short DWELL. Wheel-scrolling sweeps rows
@@ -153,7 +155,7 @@
       title={t("list.select")} onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
-        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" loading="lazy" decoding="async" onerror={onAvatarError} />
+        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" draggable="false" loading="lazy" decoding="async" onerror={onAvatarError} />
         {:else}{initial}{/if}
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>

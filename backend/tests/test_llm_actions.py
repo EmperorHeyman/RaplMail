@@ -273,6 +273,48 @@ def test_agent_empty_instruction_400(client):
     assert client.post("/ai/agent", json={"instruction": "  "}).status_code == 400
 
 
+# --- /ai/agent: a weak model leaking ANSWER/ACT/RULE labels into a plain answer
+# The exact "vomit" a small local model produced for "shrň mi nové maily": prose
+# prefixed with ANSWER: plus tacked-on ACT:/RULE:/MAKE A RULE: lines. None of that
+# scaffolding may reach the user; the answer is just the prose.
+_VOMIT = (
+    "ANSWER: Tento email obsahuje styly pro webovou stranku, kterymi se nastavuji "
+    "vzhled pisma OpenAI Sans.\n\n"
+    "ACT: archivovat email\n"
+    'RULE: {"field":"subject","op":"contains","value":"[OpenAI Sans]","action":"archive","arg":""}\n\n'
+    "MAKE A RULE: Kdyz budete chapat vetsinu svych e-mailu s pismem OpenAI, mohlo by "
+    "to pomoci automaticke archivovani.\n"
+    'RULE: {"field":"subject","op":"contains","value":"[OpenAI]","action":"archive","arg":""}'
+)
+
+
+def test_clean_answer_strips_leaked_protocol():
+    out = ai_mod._clean_answer(_VOMIT)
+    assert out.startswith("Tento email obsahuje styly")   # ANSWER: prefix removed
+    for junk in ("ANSWER:", "ACT:", "RULE:", "MAKE A RULE:", "{", "archive"):
+        assert junk not in out
+
+
+def test_clean_answer_leaves_normal_prose_untouched():
+    plain = "You press E to mark a message done.\nUse the slider to see done mail."
+    assert ai_mod._clean_answer(plain) == plain
+    # A word like "act" or "rules" in prose (not a line-leading directive) survives.
+    prose = "These rules act on new mail. Ruleset is in Settings."
+    assert ai_mod._clean_answer(prose) == prose
+
+
+def test_agent_answer_is_sanitized_end_to_end(client, monkeypatch):
+    _set_provider("ollama")
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: _VOMIT)
+    r = client.post("/ai/agent", json={"instruction": "shrn mi nove maily"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["kind"] == "answer"                       # a summary is NOT an action
+    assert body["answer"].startswith("Tento email obsahuje styly")
+    for junk in ("ANSWER:", "ACT:", "RULE:", "MAKE A RULE:"):
+        assert junk not in body["answer"]
+
+
 # --- /ai/agent: propose a filtering RULE ------------------------------------
 def test_parse_rule_contains():
     p = ai_mod._parse_rule('RULE: {"field":"subject","op":"contains","value":"[ZERV] Daily Report","action":"mark_done","arg":"","name":"ZERV"}')
@@ -321,3 +363,77 @@ def test_draft_reply_language_and_clean_chips(client, monkeypatch):
     assert body["draft"].endswith("S pozdravem")
     assert body["chips"] == ["Rozumím", "Ozvu se"]
     assert "SAME LANGUAGE" in fake.system      # reply-in-thread-language instruction present
+
+
+# --- mistral-friendly output unwrapping (rewrite/translate) -----------------
+# Small models ignore "output ONLY the text" and wrap it in fences / quotes / a
+# "Sure, here's..." preamble. _unwrap_output strips those so the composer gets
+# clean text.
+def test_unwrap_output_strips_fences_quotes_preamble():
+    assert ai_mod._unwrap_output("```\nHello there\n```") == "Hello there"
+    assert ai_mod._unwrap_output("```text\nHello there\n```") == "Hello there"
+    assert ai_mod._unwrap_output('"Hello there"') == "Hello there"
+    assert ai_mod._unwrap_output("Sure, here's the rewritten text:\nHello there") == "Hello there"
+    assert ai_mod._unwrap_output("Here is the translation:\nAhoj") == "Ahoj"
+
+
+def test_unwrap_output_preserves_clean_text_and_inner_quotes():
+    assert ai_mod._unwrap_output("Hello there") == "Hello there"
+    assert ai_mod._unwrap_output('He said "hi" to me') == 'He said "hi" to me'
+    assert ai_mod._unwrap_output("") == ""
+
+
+def test_rewrite_unwraps_model_wrapping(client, monkeypatch):
+    _set_provider("ollama")
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: "```\nDear Jana, thank you.\n```")
+    r = client.post("/ai/rewrite", json={"text": "dear jana thx", "action": "improve"})
+    assert r.status_code == 200
+    assert r.json()["result"] == "Dear Jana, thank you."
+
+
+# --- /ai/summarize ----------------------------------------------------------
+def test_summarize_builds_prompt_and_returns(client, capture):
+    _set_provider("ollama")
+    mid = _seed_message(subject="Quarterly numbers", body="Revenue up 12 percent this quarter.")
+    r = client.post("/ai/summarize", json={"message_id": mid})
+    assert r.status_code == 200
+    assert r.json()["summary"] == "MODEL_OUTPUT"
+    blob = capture["system"] + " " + capture["turns"][-1]["content"]
+    assert "Quarterly numbers" in blob
+
+
+def test_summarize_nothing_to_summarize_404(client, capture):
+    _set_provider("ollama")
+    assert client.post("/ai/summarize", json={"message_id": 999999}).status_code == 404
+
+
+# --- /ai/digest -------------------------------------------------------------
+def test_digest_returns_briefing(client, capture):
+    _set_provider("ollama")
+    _seed_inbox_unread("zzdigest topic", 3)
+    r = client.post("/ai/digest", json={})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["count"] >= 3
+    assert body["digest"] == "MODEL_OUTPUT"
+
+
+# --- /ai/triage -------------------------------------------------------------
+def test_triage_parses_scores_json(client, monkeypatch):
+    _set_provider("ollama")
+    ids = _seed_inbox_unread("zztriage", 2)
+    payload = f'[{{"id": {ids[0]}, "score": 90, "reason": "personal"}}]'
+    # A leading preamble before the JSON must not defeat parsing.
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: "Here are the scores:\n" + payload)
+    r = client.post("/ai/triage", json={"limit": 40})
+    assert r.status_code == 200
+    assert any(s["id"] == ids[0] and s["score"] == 90 for s in r.json()["scores"])
+
+
+def test_triage_bad_json_is_empty(client, monkeypatch):
+    _set_provider("ollama")
+    _seed_inbox_unread("zztriagebad", 1)
+    monkeypatch.setattr(ai_mod, "_call_chat", lambda *a, **k: "no json here")
+    r = client.post("/ai/triage", json={"limit": 40})
+    assert r.status_code == 200
+    assert r.json()["scores"] == []

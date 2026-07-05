@@ -3,7 +3,7 @@
   import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -380,7 +380,14 @@
   // --- right-click context menu ---
   let ctx = $state(null); // { x, y, msg }
   let ctxSearch = $state("");
-  function openCtx(e, msg) { e.preventDefault(); ctxSearch = ""; ctx = { x: e.clientX, y: e.clientY, msg }; }
+  function openCtx(e, msg) {
+    e.preventDefault();
+    ctxSearch = "";
+    // Right-clicking a row that's part of a multi-selection acts on the WHOLE
+    // selection (group menu); otherwise it's the usual single-message menu.
+    const group = selectedIds.length > 1 && selectedIds.includes(msg.id);
+    ctx = { x: e.clientX, y: e.clientY, msg, group };
+  }
   function closeCtx() { ctx = null; }
   function ctxDo(fn) { const m = ctx?.msg; closeCtx(); if (m) fn(m); }
   function toggleSeen(m) { setMessageSeen(m, !m.is_seen); }
@@ -420,9 +427,32 @@
     // When searching, drop section separators and match label + keywords.
     return acts.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
   }
+  // Group right-click menu: the selection-bar actions plus move-to-folder, applied
+  // to the whole current selection.
+  function moveSelectionTo(f) { const ids = [...selectedIds]; clearSelection(); moveMessages(ids, f); }
+  function ctxGroupActions(msg) {
+    const targets = app.folders.filter((f) => f.account_id === msg.account_id && f.id !== msg.folder_id);
+    const acts = [
+      { label: t("list.markDone"), icon: icons.done, kw: "complete e", run: () => bulk("done") },
+      { label: t("list.markRead"), kw: "seen", run: () => bulk("seen") },
+      { label: t("list.flag"), icon: icons.flag, kw: "star", run: () => bulk("flag") },
+      { sep: t("list.snooze") },
+      ...snoozePresets().filter((p) => p.iso).map((p) => ({ label: p.label, icon: icons.snooze, kw: "snooze remind later", run: () => bulk("snooze", p.iso) })),
+      ...(targets.length ? [{ sep: t("list.moveToFolder") },
+        ...targets.map((f) => ({ label: f.name, icon: icons.folder, kw: "move folder " + f.name, run: () => moveSelectionTo(f) }))] : []),
+      { sep: t("list.more") },
+      { label: t("list.archive"), icon: icons.archive, run: () => bulk("archive") },
+      { label: t("list.delete"), icon: icons.trash, danger: true, run: () => bulk("delete") },
+      { label: t("list.clearSelection"), icon: icons.close, run: () => clearSelection() },
+    ];
+    const q = ctxSearch.trim().toLowerCase();
+    if (!q) return acts;
+    return acts.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
+  }
+  const currentCtxActions = () => (ctx?.group ? ctxGroupActions(ctx.msg) : ctxActions(ctx.msg));
   function runCtx(a) { if (a?.run) ctxDo(a.run); }
   function ctxEnter() {
-    const first = ctxActions(ctx.msg).find((a) => !a.sep);
+    const first = currentCtxActions().find((a) => !a.sep);
     if (first) runCtx(first);
   }
 
@@ -576,8 +606,16 @@
     });
   }
 
-  async function open(message, index) {
-    // In selection mode, a row click adds/removes from the selection instead of opening.
+  async function open(message, index, e) {
+    // Ctrl/Cmd-click or Shift-click builds a multi-selection instead of opening
+    // the mail — the standard way to start selecting without hunting for the
+    // avatar checkbox. Shift extends a range; Ctrl/Cmd toggles a single row.
+    if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
+      toggleSelect(message, index, e);
+      if (index >= 0) focusIndex = index;
+      return;
+    }
+    // Already in selection mode: a plain click adds/removes from the selection.
     if (selectedIds.length > 0) { toggleSelect(message, index); return; }
     // index < 0 = a message nested inside an expanded bundle/group; it has no
     // slot in `items`, so don't move keyboard focus to the group card (that's
@@ -720,17 +758,18 @@
 
 {#if ctx}
   <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
+    {#if ctx.group}<div class="ctx-title">{t("list.selectionActions", { n: selectedIds.length })}</div>{/if}
     <input class="ctx-search" placeholder={t("list.searchActions")} bind:value={ctxSearch} autofocus
       onkeydown={(e) => { if (e.key === "Enter") ctxEnter(); else if (e.key === "Escape") closeCtx(); }} />
     <div class="ctx-list">
-      {#each ctxActions(ctx.msg) as a}
+      {#each currentCtxActions() as a}
         {#if a.sep}
           <div class="ctx-head">{a.sep}</div>
         {:else}
           <button class:danger={a.danger} onclick={() => runCtx(a)}>{#if a.icon}{@html a.icon} {/if}{a.label}</button>
         {/if}
       {/each}
-      {#if ctxActions(ctx.msg).length === 0}<div class="ctx-empty">{t("list.noMatchingAction")}</div>{/if}
+      {#if currentCtxActions().length === 0}<div class="ctx-empty">{t("list.noMatchingAction")}</div>{/if}
     </div>
   </div>
 {/if}
@@ -824,7 +863,7 @@
               selecting={selectedIds.length > 0}
               screener={app.selectedKind === "screener"}
               onselect={(e) => toggleSelect(item.msg, i, e)}
-              onopen={() => open(item.msg, i)}
+              onopen={(e) => open(item.msg, i, e)}
               ondone={() => markDone(item.msg, !item.msg.is_done)}
               onarchive={() => archiveOne(item.msg)}
               ondelete={() => deleteOne(item.msg)}
@@ -977,6 +1016,7 @@
   .ctxmenu { position: fixed; z-index: 300; width: 248px; max-height: min(72vh, 560px); background: var(--surface-2);
     border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 6px;
     display: flex; flex-direction: column; min-height: 0; animation: pop-in var(--t) var(--ease); }
+  .ctx-title { font-size: 12px; font-weight: 700; color: var(--accent); padding: 4px 6px 7px; }
   .ctx-search { width: 100%; box-sizing: border-box; margin-bottom: 5px; padding: 7px 10px; font-size: 13px;
     background: var(--surface); border: 1px solid var(--hairline); border-radius: 7px; color: var(--text); }
   .ctx-search:focus { border-color: var(--accent); outline: none; box-shadow: none; }

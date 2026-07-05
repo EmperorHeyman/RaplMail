@@ -155,24 +155,26 @@
   const TIER_LABEL = {
     low: "⚡ Runs on most machines (small / CPU-friendly)",
     mid: "⚖ Mid-range GPU (~8 GB VRAM)",
-    high: "🚀 High-end GPU",
+    high: "🚀 High-end GPU (12 GB+ VRAM)",
   };
   const CHAT_MODELS = [
     { name: "llama3.2:3b", size: "2 GB", tier: "low", note: "Fast, great default" },
     { name: "qwen2.5:3b", size: "1.9 GB", tier: "low", note: "Small, strong multilingual" },
     { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: "Great multilingual — good for Czech" },
-    { name: "gemma3:12b", size: "8 GB", tier: "mid", note: "Google Gemma 3" },
+    { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: "Fastest, but basic quality" },
     { name: "llama3.1:8b", size: "4.9 GB", tier: "mid", note: "Well-rounded" },
-    { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: "Fast and capable" },
-    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent multilingual" },
-    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality (Gemma 3)" },
+    { name: "mistral-nemo:12b", size: "7 GB", tier: "mid", note: "Fast + coherent, great Czech — big step up from mistral 7b" },
+    { name: "gemma3:12b", size: "8 GB", tier: "mid", note: "Google Gemma 3 (slower to load)" },
+    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent all-round — fits a 16 GB GPU" },
+    { name: "phi4:14b", size: "9 GB", tier: "high", note: "Strong reasoning (Microsoft Phi-4)" },
+    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality — needs 24 GB+ VRAM (spills / slow on 16 GB)" },
     { name: "llama3.3:70b", size: "43 GB", tier: "high", note: "Best — needs lots of VRAM" },
   ];
   // Defaults the one-click quick-setup buttons pull for each GPU tier.
   const QUICK_SETUP = [
     { tier: "low", model: "llama3.2:3b", label: "⚡ Fast", sub: "Any PC · 2 GB" },
-    { tier: "mid", model: "qwen2.5:7b", label: "⚖ Balanced", sub: "Good GPU · 4.7 GB · multilingual" },
-    { tier: "high", model: "gemma3:27b", label: "🚀 Best", sub: "Strong GPU · 17 GB" },
+    { tier: "mid", model: "mistral-nemo:12b", label: "⚖ Balanced", sub: "Good GPU · 7 GB · fast + coherent" },
+    { tier: "high", model: "qwen2.5:14b", label: "🚀 Best", sub: "16 GB GPU · 9 GB · fits, no spill" },
   ];
   const EMBED_MODELS = [
     { name: "nomic-embed-text", size: "274 MB", tier: "low", note: "Default. Fast, good quality" },

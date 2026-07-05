@@ -11,6 +11,55 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.5.8] — 2026-07-05
+
+### Fixed
+- **Drag a message onto a folder to move it now works.** The sender's favicon was
+  draggable by default and hijacked the drag (so the folder showed a no-drop
+  cursor). The favicon is no longer draggable, the drag always starts from the
+  row, and folder drop targets accept a same-account move reliably. Dragging over
+  a folder in a different account now shows a clear "can't drop here" highlight
+  instead of a bare slashed circle (a move can't cross accounts).
+
+### Added
+- **Multi-select with Ctrl/Cmd-click and Shift-click.** Ctrl/Cmd-click toggles a
+  row into the selection; Shift-click selects a range. No need to find the avatar
+  checkbox first. The selection bar (mark done/read, flag, snooze, archive,
+  delete) works as before.
+- **Group right-click menu.** Right-clicking one of several selected messages
+  opens a menu that acts on the whole selection: mark done/read, flag, snooze,
+  move to a folder, archive, delete, or clear the selection.
+
+### Changed
+- **Better local-model recommendations.** The one-click "Best" setup used to pull
+  `gemma3:27b` (17 GB), which overflows a 16 GB GPU and runs slowly. It now pulls
+  `qwen2.5:14b` (9 GB) — excellent all-round quality that fits without spilling.
+  "Balanced" now pulls `mistral-nemo:12b` (fast and far more coherent than
+  `mistral:7b`, and strong in Czech). The catalog notes now flag which models
+  need more VRAM.
+- **AI commands are sturdier with small models.** Rewrite/translate output is
+  now stripped of the code fences, surrounding quotes and "Sure, here's..."
+  preambles that models like `mistral:7b` add despite being asked for text only.
+  Added automated tests covering every built-in AI command (summarize, draft,
+  digest, triage, rewrite, ask, search, agent).
+
+## [0.5.7] — 2026-07-05
+
+### Fixed
+- **AI assistant no longer dumps raw protocol text.** Asking a plain question
+  (e.g. "summarize my new mail") could make a smaller local model spit out its
+  internal scaffolding: an `ANSWER:` prefix plus tacked-on `ACT:`, `RULE: {...}`
+  and `MAKE A RULE:` lines. The assistant now strips any of that leaked
+  scaffolding before showing an answer, so a question always comes back as clean
+  prose and never as a half-parsed command.
+
+### Changed
+- **Stricter assistant instructions.** The model is now told to pick exactly one
+  mode per reply (a plain answer, one action, or one rule), to never mix them, and
+  to never print the `ANSWER:` / `ACT:` / `RULE:` / `MAKE A RULE:` labels in an
+  answer. Summaries, questions and drafts are always plain answers and never
+  trigger an unrequested action or rule.
+
 ## [0.5.6] — 2026-07-05
 
 ### Fixed

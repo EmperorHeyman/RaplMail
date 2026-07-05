@@ -319,6 +319,35 @@ def _split_chips(raw: str) -> tuple[str, list[str]]:
     return draft, chips
 
 
+# Small models (mistral 7b especially) ignore "output ONLY the text" and wrap the
+# result in a ```code fence```, surrounding quotes, and/or a "Sure, here's the
+# rewritten text:" preamble. Strip those wrappers so the composer gets clean text.
+_PREAMBLE_RE = re.compile(
+    r"^\s*(?:sure|certainly|of course|okay|here(?:'s| is| are)|here you go|"
+    r"the (?:rewritten|revised|translated|corrected) [a-z ]+|translation|result|"
+    r"zde je|zde m[aá]te|jist[eě]|samoz[rř]ejm[eě]|p[rř]eklad|v[yý]sledek)"
+    r"[^\n:]{0,60}:\s*\n+", re.IGNORECASE)
+_QUOTE_PAIRS = (('"', '"'), ("'", "'"), ("“", "”"), ("„", "“"), ("«", "»"))
+
+
+def _unwrap_output(text: str) -> str:
+    """Strip the wrappers small models add around an 'output only X' reply: a
+    fenced code block, a single leading preamble line, and matched surrounding
+    quotes. Conservative — only removes obvious, whole-output wrappers."""
+    if not text:
+        return text
+    s = text.strip()
+    fence = re.match(r"^```[^\n]*\n(.*)\n```$", s, re.DOTALL)
+    if fence:
+        s = fence.group(1).strip()
+    s = _PREAMBLE_RE.sub("", s, count=1).strip()
+    for a, b in _QUOTE_PAIRS:
+        if len(s) >= 2 and s[0] == a and s[-1] == b and b not in s[1:-1]:
+            s = s[1:-1].strip()
+            break
+    return s or text.strip()
+
+
 class DraftIn(BaseModel):
     message_id: int | None = None
     thread_id: str | None = None
@@ -480,7 +509,7 @@ def rewrite(body: RewriteIn, session: Session = Depends(get_session)) -> dict:
         "Do not invent facts, names, links, dates or numbers that aren't in the input."
     )
     result = _call_provider(cfg, system, text, max_tokens=2000)
-    return {"result": result.strip(), "model": cfg["model"]}
+    return {"result": _unwrap_output(result), "model": cfg["model"]}
 
 
 # ---------------------------------------------------------------------------
@@ -590,11 +619,14 @@ _AGENT_OPS = {
 _AGENT_CAP = 2000   # never resolve more than this many messages for one action
 
 _AGENT_SYSTEM = (
-    "You are the assistant built into RaplMail, a local email client. You do three things:\n"
-    "1) ANSWER - questions about the user's emails (given as context below) or about how "
-    "to USE RaplMail (use the guide below).\n"
-    "2) ACT - when the user asks you to CHANGE or ORGANIZE their mail right now, propose ONE action.\n"
-    "3) MAKE A RULE - when the user wants mail handled AUTOMATICALLY / from now on / every time, propose ONE rule.\n\n"
+    "You are the assistant built into RaplMail, a local email client. You can do three "
+    "things, and you pick EXACTLY ONE per reply:\n"
+    "1) Answer a question - about the user's emails (given as context below) or about how "
+    "to use RaplMail (use the guide below). This is the default.\n"
+    "2) Do an action - when the user asks you to CHANGE or ORGANIZE their mail right now, "
+    "propose ONE action using the ACTION format below.\n"
+    "3) Set up a rule - when the user wants mail handled AUTOMATICALLY / from now on / every "
+    "time, propose ONE rule using the RULE format below.\n\n"
     "When - and only when - the user asks you to DO something to their mailbox now, reply with "
     "a SINGLE line and nothing else, in exactly this form:\n"
     "ACTION: <op> <filters>\n"
@@ -622,8 +654,12 @@ _AGENT_SYSTEM = (
     "    -> RULE: {\"field\":\"subject\",\"op\":\"contains\",\"value\":\"[ZERV] Daily Report\",\"action\":\"mark_done\",\"arg\":\"\",\"name\":\"ZERV daily report\"}\n"
     "  'always archive newsletters from mailchimp'\n"
     "    -> RULE: {\"field\":\"from\",\"op\":\"contains\",\"value\":\"mailchimp\",\"action\":\"archive\",\"arg\":\"\",\"name\":\"Mailchimp newsletters\"}\n\n"
-    "Never invent an action or rule the user didn't ask for. For questions, summaries, drafts "
-    "or small talk, just answer normally - do NOT emit an ACTION or RULE line."
+    "Never invent an action or rule the user didn't ask for. Questions, summaries, drafts "
+    "and small talk are ALWAYS a plain answer: reply with just the answer text, with NO "
+    "'ANSWER:' prefix, and never write the words 'ACT:', 'ACTION:', 'RULE:' or 'MAKE A RULE:' "
+    "unless it is a real single-line ACTION:/RULE: directive exactly as specified above. "
+    "Pick ONE mode only: either a plain answer, OR one ACTION: line, OR one RULE: line - "
+    "never more than one, and never mix a plain answer with an ACTION or RULE."
     + _LANG_RULE
     + "\n=== RAPLMAIL GUIDE ===\n" + _APP_GUIDE + "=== END GUIDE ==="
 )
@@ -705,6 +741,30 @@ def _parse_action(raw: str) -> dict | None:
     return {"op": op, "action": _AGENT_OPS[op], "filters": _parse_filters(m.group(2))}
 
 
+# A weak local model sometimes parrots the ANSWER/ACT/RULE labels from the prompt
+# into a plain answer, and even tacks on rules nobody asked for. Real ACTION/RULE
+# directives are parsed from the FIRST line (above); any other reply is an answer,
+# so scrub this leaked scaffolding before we show it verbatim.
+_ANSWER_LABEL_RE = re.compile(r"^\s*(?:ANSWER|RESPONSE|ODPOV[EĚ]D[ě]?)\s*:\s*",
+                              re.IGNORECASE)
+_DIRECTIVE_LINE_RE = re.compile(
+    r"[ \t]*(?:ACTION|ACT|AKCE|RULE|PRAVIDLO|MAKE\s+A\s+RULE|MAKE\s+RULE|"
+    r"UD[EĚ]LEJ\s+PRAVIDLO|VYTVO[RŘ]\s+PRAVIDLO)\b[ \t]*:", re.IGNORECASE)
+
+
+def _clean_answer(raw: str) -> str:
+    """Return the model's prose answer with leaked protocol scaffolding removed. A
+    normal request ('summarize my mail') must never surface 'ACT:', 'RULE: {...}'
+    or 'MAKE A RULE:' lines, nor an 'ANSWER:' prefix, even when a small model echoes
+    the prompt's labels. We only clean text that will be shown as-is."""
+    if not raw:
+        return raw
+    kept = [ln for ln in raw.splitlines() if not _DIRECTIVE_LINE_RE.match(ln)]
+    text = _ANSWER_LABEL_RE.sub("", "\n".join(kept).strip(), count=1)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip()
+    return text or raw.strip()
+
+
 def _resolve_action_targets(session: Session, plan: dict) -> tuple[list[int], list[dict]]:
     """Resolve which inbox messages an ACTION applies to. Scoped to inbox-role
     folders (never Sent/Trash) and to still-visible mail. Returns (ids, sample)."""
@@ -772,7 +832,7 @@ def agent(body: AgentIn, session: Session = Depends(get_session)) -> dict:
                 "filters": plan["filters"], "count": len(ids),
                 "ids": ids[:_AGENT_CAP], "capped": len(ids) > _AGENT_CAP,
                 "sample": sample, "model": cfg["model"]}
-    return {"kind": "answer", "answer": raw, "model": cfg["model"]}
+    return {"kind": "answer", "answer": _clean_answer(raw), "model": cfg["model"]}
 
 
 # ---------------------------------------------------------------------------

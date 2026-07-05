@@ -21,10 +21,15 @@
   // Folder that a dragged message is hovering over (drag-a-message-to-move). Only
   // same-account folders are valid targets (an IMAP move stays within one account).
   let dropTarget = $state(null);
-  const canDropMsg = (f) => app.dragMessageIds.length > 0 && app.dragAccountId === f.account_id && !manage;
+  let dropBad = $state(null);   // folder a drag is over but can't land on (wrong account)
+  // A message move stays within one account (IMAP). Compare ids as strings so a
+  // number/string mismatch never silently blocks the drop, and allow it when the
+  // source account is unknown (the backend re-validates and skips cross-account).
+  const sameAcct = (f) => app.dragAccountId == null || String(app.dragAccountId) === String(f.account_id);
+  const canDropMsg = (f) => app.dragMessageIds.length > 0 && !manage && sameAcct(f);
   function onFolderDrop(e, f) {
     e.preventDefault();
-    dropTarget = null;
+    dropTarget = null; dropBad = null;
     if (!canDropMsg(f)) return;
     moveMessages(app.dragMessageIds, f);
     app.dragMessageIds = []; app.dragAccountId = null;
@@ -289,13 +294,19 @@
           <div class="folder-row" animate:flip={{ duration: 150 }}
             class:dim={isHidden(f)} class:dragtarget={manage && dragId != null && dragId !== f.id}
             class:dropok={dropTarget === f.id}
+            class:dropbad={dropBad === f.id}
             class:gone={!manage && isHidden(f)}
             draggable={manage}
             ondragstart={() => (dragId = f.id)}
             ondragend={() => (dragId = null)}
-            ondragover={(e) => { if (manage) { e.preventDefault(); } else if (canDropMsg(f)) { e.preventDefault(); dropTarget = f.id; } }}
+            ondragover={(e) => {
+              if (manage) { e.preventDefault(); return; }
+              if (app.dragMessageIds.length === 0) return;   // not a message drag
+              if (canDropMsg(f)) { e.preventDefault(); dropTarget = f.id; dropBad = null; }
+              else { dropBad = f.id; }                       // wrong account: show why
+            }}
             ondragenter={() => { if (manage) reorderLive(g, f.id); }}
-            ondragleave={() => { if (dropTarget === f.id) dropTarget = null; }}
+            ondragleave={() => { if (dropTarget === f.id) dropTarget = null; if (dropBad === f.id) dropBad = null; }}
             ondrop={(e) => onFolderDrop(e, f)}>
             {#if manage && !collapsed}<span class="grip" title={t("nav.dragToReorder")}>⠿</span>{/if}
             <button class="nav-it" title={collapsed ? `${f.name} — ${g.account.email}` : f.name}
@@ -490,6 +501,9 @@
   /* A message is being dragged onto this folder — highlight it as a drop target. */
   .folder-row.dropok { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
   .folder-row.dropok :global(.nav-it) { color: var(--accent); }
+  /* Hovering a folder in another account — a move can't cross accounts. */
+  .folder-row.dropbad { background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
+  .folder-row.dropbad :global(.nav-it) { color: var(--danger); cursor: no-drop; }
   .grip { cursor: grab; color: var(--faint); padding: 0 2px; }
   .eye, .del { padding: 4px 7px; border-radius: 7px; color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
   .eye:hover, .del:hover { background: var(--hover); }

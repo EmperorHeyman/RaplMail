@@ -11,6 +11,40 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.5.10] — 2026-07-06
+
+### Fixed
+- **Inline images sent as `application/octet-stream` now render.** Some clients
+  (e.g. Foxmail/Coremail) send pasted inline images with a generic content type
+  instead of `image/*`. The reader now sniffs the actual image bytes (PNG/JPEG/
+  GIF/WEBP/BMP/ICO) rather than trusting the declared type, so those images embed
+  correctly and stay off the attachment strip (they had appeared as generic
+  "attachment-1/-2"). Fixes the case where 0.5.9 still showed empty image boxes.
+- **Self-heals mail blanked by 0.5.9.** 0.5.9 stripped unresolved `cid:` refs on
+  re-cache, which could leave an inline image with an empty `src`. Such a body is
+  now detected on open, re-fetched and re-embedded, then re-cached — no resync.
+
+## [0.5.9] — 2026-07-06
+
+### Fixed
+- **Inline images now render in the reader.** Pasted/embedded images (typically
+  from Outlook) carry a `Content-ID` but no filename, so the parser named them
+  after their `cid:` — which meant they slipped past the inline-image detection.
+  They now render inline as intended, and no longer clutter the attachment strip
+  as phantom "CBE34110@…"-style attachments. Matching is also more forgiving:
+  images are looked up by Content-ID, its local part, and filename, and both
+  quoted and unquoted `cid:` references are rewritten.
+- **Already-cached mail with broken inline images self-heals.** A message whose
+  body was cached before this fix (raw `cid:` refs, so broken images) is
+  re-fetched and re-embedded once on open, then re-cached — no full resync needed.
+
+### Changed
+- **Richer first-run onboarding.** The welcome wizard now introduces the app: a
+  feature-highlights step (triage-to-done, Smart Inbox, privacy/tracker blocking,
+  rules, drag-in signatures, snooze, local AI, keyboard-first) and a "make it
+  yours" step that tours the main settings areas — tap any to jump straight in.
+  The final step gets a prominent "Add an account" button.
+
 ## [0.5.8] — 2026-07-05
 
 ### Fixed

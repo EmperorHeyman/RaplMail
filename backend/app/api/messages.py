@@ -565,13 +565,26 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
     if msg.body_fetched:
         from app.core.atrest import decrypt_field
         html, text_body = decrypt_field(msg.body_html), decrypt_field(msg.body_text)
-        # Backfill (one raw fetch) for mail cached before attachments/auth existed.
-        if (msg.has_attachments and not msg.attachments) or not msg.auth_status:
+        # Backfill (one raw fetch) for mail cached before attachments/auth existed,
+        # OR when the cached body still carries unresolved `cid:` inline-image refs
+        # / blanked inline images (cached before or by a buggy embed) — re-fetch and
+        # re-embed so logos and pasted screenshots render without a full resync.
+        stale_inline = bool(html) and ("cid:" in html.lower()
+                                       or (msg.has_attachments and _has_blank_inline_img(html)))
+        if (msg.has_attachments and not msg.attachments) or not msg.auth_status or stale_inline:
             account = session.get(Account, msg.account_id)
             folder = session.get(Folder, msg.folder_id)
             try:
                 _h, _t, _u, _e, atts, a, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
-                if atts and not msg.attachments:
+                if stale_inline and _h:
+                    from app.core.atrest import encrypt_field
+                    # Re-cache the freshly cid-embedded body (never strip cid: refs —
+                    # a resolvable one must survive so a later open can embed it).
+                    html = _h
+                    msg.body_html = encrypt_field(_h)
+                # Refresh the attachment list too — an old list may have logged
+                # inline images as phantom attachments (now filtered out).
+                if atts:
                     msg.attachments = atts
                 msg.auth_status = a.get("status", "none")
                 auth = a
@@ -720,6 +733,56 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
                          pgp=pgp_info, smime=smime_info, first_time_sender=first_time)
 
 
+def _decode_att_payload(a: dict) -> "bytes | None":
+    """Decode a mailparser attachment's payload to raw bytes (base64 or text)."""
+    import base64
+    try:
+        payload = a.get("payload") or ""
+        cte = (a.get("content_transfer_encoding") or "").lower()
+        if cte == "base64":
+            return base64.b64decode(payload)
+        if isinstance(payload, str):
+            return payload.encode("utf-8", "ignore")
+        return bytes(payload)
+    except Exception:
+        return None
+
+
+def _sniff_image_mime(data: bytes) -> "str | None":
+    """Detect an image type from its magic bytes — needed because some clients
+    (e.g. Foxmail/Coremail) send inline images as application/octet-stream."""
+    if not data or len(data) < 4:
+        return None
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    if data[:2] == b"BM":
+        return "image/bmp"
+    if data[:4] == b"\x00\x00\x01\x00":
+        return "image/x-icon"
+    return None
+
+
+_IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_IMG_SRC_RE = re.compile(r"""src\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)""", re.IGNORECASE)
+
+
+def _has_blank_inline_img(html: str) -> bool:
+    """True if the body has an <img> with a missing/empty src — the fingerprint
+    of an inline image a buggy build blanked. Remote (http) images have a src, so
+    this only trips on genuinely empty ones worth re-fetching to heal."""
+    for tag in _IMG_TAG_RE.findall(html or ""):
+        m = _IMG_SRC_RE.search(tag)
+        if not m or not m.group(1).strip("\"'").strip():
+            return True
+    return False
+
+
 def _attachment_size(att: dict) -> int:
     payload = att.get("payload") or ""
     cte = (att.get("content_transfer_encoding") or "").lower()
@@ -738,16 +801,30 @@ def _attachment_meta(parsed) -> list[dict]:
     for i, a in enumerate(parsed.attachments or []):
         fname = (a.get("filename") or "").strip()
         ctype = a.get("mail_content_type") or "application/octet-stream"
-        cid = (a.get("content-id") or "").strip("<>")
-        inline = bool(cid) and ctype.startswith("image/")
-        if inline and not fname:
-            continue  # embedded body image — not a real attachment
+        cid_raw = (a.get("content-id") or "").strip()
+        cid = cid_raw.strip("<>")
+        # mailparser synthesizes filename = the Content-ID when a part carries no
+        # real filename (typical for pasted inline images). Treat that as "no
+        # filename" so such images are recognized as inline body art, not listed
+        # as downloadable attachments (the "CBE34110@…" phantom attachments bug).
+        if fname and cid_raw and (fname == cid_raw or fname == cid or fname.strip("<>") == cid):
+            fname = ""
+        # An inline body image has a Content-ID, no real filename, and image bytes.
+        # Don't trust the declared type: some clients label inline images as
+        # application/octet-stream, so sniff the magic bytes as well.
+        if cid and not fname:
+            is_image = ctype.startswith("image/")
+            if not is_image:
+                data = _decode_att_payload(a)
+                is_image = bool(data) and _sniff_image_mime(data) is not None
+            if is_image:
+                continue  # embedded body image — not a real attachment
         out.append({
             "index": i,
             "filename": fname or f"attachment-{i + 1}",
             "content_type": ctype,
             "size": _attachment_size(a),
-            "inline": inline,
+            "inline": bool(cid) and ctype.startswith("image/"),
         })
     return out
 
@@ -848,28 +925,37 @@ def _embed_inline_images(html: str, parsed) -> str:
     cid_map: dict[str, str] = {}
     for a in (parsed.attachments or []):
         cid = (a.get("content-id") or a.get("content_id") or "").strip().strip("<>").strip()
-        ctype = (a.get("mail_content_type") or "").lower()
-        if not cid or not ctype.startswith("image/"):
+        fname = (a.get("filename") or "").strip().strip("<>")
+        # Only parts that could be referenced by a cid: are worth decoding.
+        if not cid and not fname:
             continue
-        try:
-            payload = a.get("payload") or ""
-            cte = (a.get("content_transfer_encoding") or "").lower()
-            data = base64.b64decode(payload) if cte == "base64" else (
-                payload.encode("utf-8", "ignore") if isinstance(payload, str) else bytes(payload))
-        except Exception:
-            continue
+        data = _decode_att_payload(a)
         if not data or len(data) > 6_000_000:
             continue
-        cid_map[cid.lower()] = f"data:{ctype};base64,{base64.b64encode(data).decode('ascii')}"
+        # Trust the declared image type, else sniff the bytes — some clients send
+        # inline images as application/octet-stream with a Content-ID.
+        ctype = (a.get("mail_content_type") or "").lower()
+        mime = ctype if ctype.startswith("image/") else _sniff_image_mime(data)
+        if not mime:
+            continue
+        uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
+        # Key the image under every reference an HTML body might use: the full
+        # Content-ID, its local part (before "@"), and the filename — different
+        # clients reference inline images differently.
+        for key in (cid, cid.split("@")[0] if cid else "", fname):
+            if key:
+                cid_map[key.lower()] = uri
     if not cid_map:
         return html
 
     def repl(m: "re.Match") -> str:
         q, ref = m.group(1), m.group(2).strip().lower()
-        uri = cid_map.get(ref) or cid_map.get(ref.split("@")[0])
+        uri = cid_map.get(ref) or cid_map.get(ref.split("@")[0]) or cid_map.get(ref.strip("<>"))
         return f"src={q}{uri}{q}" if uri else m.group(0)
 
-    return re.sub(r"""src=(["'])\s*cid:([^"']+)\1""", repl, html, flags=re.IGNORECASE)
+    # Match src="cid:…" / src='cid:…' and bare src=cid:… (some clients omit quotes).
+    html = re.sub(r"""src=(["'])\s*cid:([^"']+)\1""", repl, html, flags=re.IGNORECASE)
+    return re.sub(r"""(?<![\w-])src=()cid:([^\s"'>]+)""", repl, html, flags=re.IGNORECASE)
 
 
 def _extract_attachment_text(parsed) -> str:

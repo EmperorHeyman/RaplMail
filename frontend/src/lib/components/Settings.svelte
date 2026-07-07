@@ -3,6 +3,7 @@
   import { app } from "../store.svelte.js";
   import SettingsAccounts from "./SettingsAccounts.svelte";
   import SettingsRules from "./SettingsRules.svelte";
+  import SettingsSecurity from "./SettingsSecurity.svelte";
   import SettingsSignature from "./SettingsSignature.svelte";
   import SettingsContacts from "./SettingsContacts.svelte";
   import SettingsGeneral from "./SettingsGeneral.svelte";
@@ -35,6 +36,7 @@
     { id: "workspaces", label: t("settingsNav.workspaces"), icon: icons.workspaces, kw: "workspace group accounts switch context" },
     { id: "contacts", label: t("settingsNav.contacts"), icon: icons.contacts, kw: "address book contacts people favorites rescan" },
     { id: "rules", label: t("settingsNav.rules"), icon: icons.rules, kw: "rules blocking filter domain move archive delete block sender" },
+    { id: "security", label: t("settingsNav.security"), icon: icons.shieldCheck || icons.shield || icons.rules, kw: "security phishing spoof spoofing impersonation brand lookalike domain blocker blocklist tld ru scam junk quarantine tracking pixel screener first-time sender startup password lock unlock privacy ai screening check suspicious dangerous" },
     { id: "aliases", label: t("settingsNav.aliases"), icon: icons.shield || icons.rules, kw: "alias aliases plus address subaddress sub-address tracking privacy leak who shared service generate tag mute" },
     { id: "pgp", label: t("settingsNav.pgp"), icon: icons.shieldCheck || icons.shield || icons.rules, kw: "pgp gpg openpgp encryption sign verify decrypt key public private secure" },
     { id: "smime", label: t("settingsNav.smime"), icon: icons.shield || icons.shieldCheck || icons.rules, kw: "smime s/mime x509 x.509 pkcs7 pkcs12 p12 pfx certificate enterprise encryption sign encrypt" },
@@ -153,6 +155,7 @@
     {:else if tab === "workspaces"}<SettingsWorkspaces />
     {:else if tab === "contacts"}<SettingsContacts />
     {:else if tab === "rules"}<SettingsRules />
+    {:else if tab === "security"}<SettingsSecurity />
     {:else if tab === "aliases"}<SettingsAliases />
     {:else if tab === "pgp"}<SettingsPgp />
     {:else if tab === "smime"}<SettingsSmime />

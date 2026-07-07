@@ -102,8 +102,10 @@ def test_backfill_pages_all_older_mail(client):
         assert count == total, f"expected every message cached, got {count}/{total}"
 
 
-def test_backfill_noop_on_empty_folder(client):
-    # Nothing stored yet → backfill does nothing (forward sync populates first).
+def test_backfill_marks_empty_folder_done(client):
+    # An empty folder (no mail at all) must be marked done, not left pending —
+    # otherwise it holds overall progress below 100% forever (the "stuck at 44/69"
+    # bug: empty Trash/Junk/Drafts folders never completing).
     acct_id, folder_id = _mk_account_folder("bf2@example.com")
     provider = _FakeProvider(range(1, 50))
     mgr = _mgr()
@@ -113,7 +115,7 @@ def test_backfill_noop_on_empty_folder(client):
         s.commit()
     assert n == 0
     with _s() as s:
-        assert s.get(Folder, folder_id).backfill_done is False   # not done — just waiting
+        assert s.get(Folder, folder_id).backfill_done is True   # empty → done, unblocks progress
 
 
 def test_uidvalidity_change_purges_and_resyncs(client):

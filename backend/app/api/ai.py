@@ -300,6 +300,78 @@ def _require_key(session: Session) -> dict:
     return cfg
 
 
+class ScreenIn(BaseModel):
+    message_id: int
+    force: bool = False   # re-run even if a verdict was already cached on the message
+
+
+_SCREEN_VERDICTS = ("safe", "suspicious", "dangerous")
+
+
+def _parse_screen(raw: str) -> tuple[str, str]:
+    """Pull a (verdict, reason) out of the model's reply. Robust to models that
+    ignore the exact format: falls back to keyword sniffing, defaulting to 'safe'
+    (conservative — we don't want a chatty model to flag normal mail)."""
+    text = raw or ""
+    vm = re.search(r"verdict\s*[:\-]?\s*(safe|suspicious|dangerous)", text, re.I)
+    verdict = vm.group(1).lower() if vm else ""
+    rm = re.search(r"reason\s*[:\-]\s*(.+)", text, re.I | re.S)
+    reason = (rm.group(1).strip() if rm else "").splitlines()[0].strip() if rm else ""
+    if not verdict:
+        low = text.lower()
+        if any(w in low for w in ("dangerous", "phishing", "scam", "malicious")):
+            verdict = "dangerous"
+        elif any(w in low for w in ("suspicious", "caution", "spoof", "spam")):
+            verdict = "suspicious"
+        else:
+            verdict = "safe"
+    if not reason:
+        reason = re.sub(r"\s+", " ", re.sub(r"verdict\s*[:\-]?\s*\w+", "", text, flags=re.I)).strip()[:240]
+    return verdict, reason[:240]
+
+
+@router.post("/screen")
+def screen_message(body: ScreenIn, session: Session = Depends(get_session)) -> dict:
+    """Ask the configured model whether a message looks like phishing / a scam /
+    spoofing. Returns {verdict: safe|suspicious|dangerous, reason, model, cached}.
+    The verdict is cached on the message so "automatic" screening never re-spends
+    tokens re-checking the same mail on each open (pass force=true to re-run)."""
+    m = session.get(Message, body.message_id)
+    if m is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    if not body.force and m.ai_verdict:
+        return {"verdict": m.ai_verdict, "reason": m.ai_reason, "model": cfg_model(session), "cached": True}
+    cfg = _require_key(session)
+    text = _message_text(session, m, fetch=True)
+    header = (f"From name: {m.from_name or '(none)'}\n"
+              f"From address: {m.from_addr or '(none)'}\n"
+              f"Subject: {m.subject or '(none)'}\n"
+              f"Sender authentication (SPF/DKIM/DMARC): {m.auth_status or 'unchecked'}\n")
+    system = (
+        "You are an email security analyst inside a mail client. Decide whether the "
+        "message is a phishing, scam, or spoofing attempt. Weigh: a sender display "
+        "name that doesn't match the address, lookalike or throwaway sender domains, "
+        "failed authentication, false urgency or threats, requests for credentials / "
+        "payments / gift cards, and links whose visible text differs from their "
+        "target. Reply with EXACTLY two lines: 'VERDICT: <safe|suspicious|dangerous>' "
+        "then 'REASON: <one short sentence>'. Be conservative — normal legitimate "
+        "mail is 'safe'." + _LANG_RULE
+    )
+    raw = _call_provider(cfg, system, header + "\n" + (text or "")[:8000], max_tokens=200)
+    verdict, reason = _parse_screen(raw)
+    m.ai_verdict, m.ai_reason = verdict, reason
+    session.add(m)
+    session.commit()
+    return {"verdict": verdict, "reason": reason, "model": cfg["model"], "cached": False}
+
+
+def cfg_model(session: Session) -> str:
+    try:
+        return _ai_config(session)["model"]
+    except Exception:
+        return ""
+
+
 # Small local models rarely emit the exact "###CHIPS###" marker we ask for —
 # they write "###CHIPS|", "## CHIPS:", "CHIPS: ", etc. Match those forms (marker
 # must have a '#' prefix OR a ':'/'|' right after, so a reply that merely contains
@@ -856,24 +928,33 @@ def ollama_status(base: str = "", session: Session = Depends(get_session)) -> di
     are pulled. Drives the one-click setup card in Settings."""
     b = _ollama_base(session, base)
     installed = shutil.which("ollama") is not None
-    running, models, version = False, [], ""
-    try:
-        req = urllib.request.Request(f"{b}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=4) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+    # Union the models visible on the serve we'd actually use (b — maybe our hidden
+    # managed serve) AND the user's raw configured/tray serve. Otherwise a model
+    # pulled to the real Ollama shows as "not installed" whenever the managed serve
+    # reads a different models directory — the "I pulled it but it says not pulled"
+    # bug. Model presence must not depend on which of the two local serves answers.
+    bases = [b]
+    if not base.strip():
+        raw = _raw_ollama_base(session) or _OLLAMA_URL
+        if raw and raw not in bases:
+            bases.append(raw)
+    models_set: set[str] = set()
+    running, version = False, ""
+    for bb in bases:
+        got = _ollama_models(bb)
+        if got is None:
+            continue
         running = True
-        models = [m.get("name") for m in (data.get("models") or []) if m.get("name")]
-    except Exception:  # noqa: BLE001 — not running / not installed
-        pass
-    if running:
-        try:
-            vreq = urllib.request.Request(f"{b}/api/version", method="GET")
-            with urllib.request.urlopen(vreq, timeout=4) as vr:
-                version = str(json.loads(vr.read().decode("utf-8")).get("version") or "")
-        except Exception:  # noqa: BLE001
-            pass
+        models_set |= got
+        if not version:
+            try:
+                vreq = urllib.request.Request(f"{bb}/api/version", method="GET")
+                with urllib.request.urlopen(vreq, timeout=4) as vr:
+                    version = str(json.loads(vr.read().decode("utf-8")).get("version") or "")
+            except Exception:  # noqa: BLE001
+                pass
     return {"installed": installed or running, "running": running,
-            "base_url": b, "models": models, "version": version}
+            "base_url": b, "models": sorted(m for m in models_set if m), "version": version}
 
 
 def _ollama_is_up(base: str) -> bool:
@@ -1213,14 +1294,23 @@ def start_managed_ollama(configured_base: str = "") -> bool:
     if not base:
         return False
     cfg_base = (configured_base or "").rstrip("/")
-    if _is_local_base(configured_base) and cfg_base and cfg_base != base:
-        theirs, ours = _ollama_models(cfg_base), _ollama_models(base)
-        if theirs is not None and ours is not None and not theirs.issubset(ours):
-            log.info("hidden Ollama serve %s is missing models the configured serve "
-                     "has (%s) — not rerouting; using %s instead.",
-                     base, sorted(theirs - ours), cfg_base)
+    # The serve the user actually pulls to: their configured local base, or the
+    # default tray port when they haven't set one.
+    real_base = cfg_base if (_is_local_base(configured_base) and cfg_base) else _OLLAMA_URL
+    if real_base and real_base != base:
+        theirs, ours = _ollama_models(real_base), _ollama_models(base)
+        verified = theirs is not None and ours is not None and theirs.issubset(ours)
+        if not verified:
+            # Either our hidden serve is missing models the real serve has, or the
+            # real serve was unreachable so we couldn't confirm the model
+            # directories match. Rerouting anyway is what made models "vanish"
+            # depending on boot order, so we DON'T — the real serve stays in charge
+            # (it may flash a console, but a model that disappears is far worse).
+            missing = sorted(theirs - ours) if (theirs and ours) else "unverified"
+            log.info("not adopting hidden Ollama serve %s (missing/%s vs real %s) — "
+                     "using %s instead.", base, missing, real_base, real_base)
             _kill_pid_tree(pid)   # don't leave the just-spawned serve orphaned
-            return False          # fall back to the configured serve (correctness first)
+            return False          # fall back to the real serve (correctness first)
     _managed.update({"pid": pid, "base": base})
     log.info("managed hidden Ollama serve active at %s (pid %s)", base, pid)
     return True
@@ -1385,6 +1475,14 @@ def ollama_pull(body: OllamaPullIn, session: Session = Depends(get_session)) -> 
     if not model:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "No model name given.")
     base = _ollama_base(session, body.base)
+    # Download into the user's REAL serve when it's reachable, so the model lands
+    # in the directory their Ollama actually reads (and survives restarts) rather
+    # than our hidden serve's possibly-different directory — which is what made
+    # freshly pulled models "disappear".
+    if not body.base.strip():
+        raw = _raw_ollama_base(session) or _OLLAMA_URL
+        if raw and raw != base and _ollama_is_up(raw):
+            base = raw
     threading.Thread(target=_pull_worker, args=(base, model), daemon=True,
                      name="ollama-pull").start()
     return {"started": True, "model": model}

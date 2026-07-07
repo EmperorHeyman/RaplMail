@@ -49,6 +49,8 @@ class MessageOut(BaseModel):
     brand_domain: str = ""
     auth_status: str = ""
     pinned: bool = False
+    suspicious: bool = False       # flagged by the anti-phishing heuristic screen
+    ai_verdict: str = ""           # cached AI screening verdict: ""|safe|suspicious|dangerous
 
 
 class MessageDetail(MessageOut):
@@ -62,6 +64,7 @@ class MessageDetail(MessageOut):
     pgp: dict | None = None       # {type, verified, signer} for PGP-signed/encrypted mail
     smime: dict | None = None     # {type, verified, signer, decrypted} for S/MIME mail
     first_time_sender: bool = False  # inbox mail from an unknown sender (inline screener prompt)
+    ai_reason: str = ""           # cached AI screening rationale (verdict is on MessageOut)
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -74,7 +77,7 @@ def _to_out(m: Message) -> MessageOut:
         snippet=m.snippet, date=m.date, is_seen=m.is_seen, is_flagged=m.is_flagged,
         is_done=m.is_done, has_attachments=m.has_attachments, category=m.category,
         thread_id=m.thread_id, brand_domain=m.brand_domain or "", auth_status=m.auth_status or "",
-        pinned=bool(m.pinned),
+        pinned=bool(m.pinned), suspicious=bool(m.suspicious), ai_verdict=m.ai_verdict or "",
     )
 
 
@@ -730,7 +733,8 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
     return MessageDetail(**base.model_dump(), html=html, text=text_body,
                          cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe,
                          attachments=list(msg.attachments or []), auth=auth, warnings=warnings,
-                         pgp=pgp_info, smime=smime_info, first_time_sender=first_time)
+                         pgp=pgp_info, smime=smime_info, first_time_sender=first_time,
+                         ai_reason=msg.ai_reason or "")
 
 
 def _decode_att_payload(a: dict) -> "bytes | None":

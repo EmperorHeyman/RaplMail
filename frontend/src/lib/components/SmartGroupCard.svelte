@@ -69,9 +69,13 @@
   .count { flex: none; color: var(--faint); font-weight: 600; font-size: 12px; }
   .who { color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .chev { display: inline-flex; flex: none; color: var(--faint); transition: transform var(--t-slow) var(--ease-spring), color var(--t-fast) var(--ease); }
+  .chev { display: inline-flex; flex: none; color: var(--faint); transition: transform var(--t-slow) var(--ease-spring), color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
   .sg:hover .chev { color: var(--muted); }
   .open .chev { transform: rotate(180deg); color: var(--accent); }
+  /* The Done-all button reveals in the chevron's spot on hover/focus — fade the
+     chevron out so the two don't visibly stack (the "something behind the button"
+     clutter). */
+  .sg:hover .chev, .sg.focused .chev { opacity: 0; }
 
   /* Revealed on hover / keyboard focus, like the row actions. */
   .doneall { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;

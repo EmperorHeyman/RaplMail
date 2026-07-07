@@ -310,6 +310,13 @@ class SyncManager:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._embed_tick_blocking)
 
+    # Embedding throughput: a bigger batch (one /api/embed request embeds the whole
+    # batch on the GPU at once) + back-to-back batches within a wall-clock budget,
+    # so a backlog fills fast and the GPU is actually kept busy instead of idling
+    # between tiny 48-message batches. Bounded so it yields the GPU each cycle.
+    EMBED_BATCH = 128
+    EMBED_SECONDS_PER_CYCLE = 20
+
     def _embed_tick_blocking(self) -> None:
         from app.models import Setting
         with Session(get_engine()) as session:
@@ -318,7 +325,10 @@ class SyncManager:
             if not data.get("semanticEnabled"):
                 return
             from app.sync import embeddings
-            embeddings.index_pending(session, limit=48)
+            deadline = time.monotonic() + self.EMBED_SECONDS_PER_CYCLE
+            while time.monotonic() < deadline:
+                if embeddings.index_pending(session, limit=self.EMBED_BATCH) == 0:
+                    break   # caught up (or backing off after a failure)
 
     async def sync_all(self) -> None:
         store = get_secret_store()
@@ -370,13 +380,23 @@ class SyncManager:
                 r.thread_key: {p for p in (r.participants or "").split(",") if p}
                 for r in session.exec(select(MutedThread))
             }
+            # Anti-phishing screening config (Settings → Security): a domain/TLD
+            # blocklist that quarantines on arrival + a heuristic spoof flag.
+            from app.models import Setting
+            from app.sync.screening import normalize_blocklist
+            _srow = session.get(Setting, 1)
+            _sdata = dict(_srow.data) if _srow and _srow.data else {}
+            screen = {
+                "blocked_domains": normalize_blocklist(_sdata.get("blockedDomains")),
+                "phishing_screen": _sdata.get("phishingScreen", True) is not False,
+            }
             provider = build_provider(account)
             try:
                 self._sync_folders(session, account, provider)
                 folders = list(session.exec(select(Folder).where(Folder.account_id == account_id)))
                 for folder in folders:
                     try:
-                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted)
+                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen)
                     except IntegrityError:
                         # FK failure mid-sync — typically the account (or folder)
                         # was deleted while this sync was in flight. Roll back so
@@ -474,7 +494,8 @@ class SyncManager:
 
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
-                     previews: list[dict] | None = None, muted: dict | None = None) -> int:
+                     previews: list[dict] | None = None, muted: dict | None = None,
+                     screen: dict | None = None) -> int:
         self._check_uidvalidity(session, folder, provider)
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
@@ -506,6 +527,11 @@ class SyncManager:
             # only in the inbox. Sent/drafts/trash/junk/archive are left alone.
             notify_ok = True
             if folder.role in (FolderRole.inbox, FolderRole.other) and not msg.is_done:
+                # Domain blocklist quarantines on arrival; the heuristic screen only
+                # flags. A quarantined mail is gone from the inbox — skip rules +
+                # notification for it.
+                if self._screen_message(session, account, folder, msg, provider, screen):
+                    continue
                 notify_ok = self._apply_rules(session, account, folder, msg, provider, rules)
             # Collect a preview for desktop notifications — ONLY for mail the user
             # will actually see arrive: a still-unread inbox message that survived
@@ -525,10 +551,11 @@ class SyncManager:
         return new_count
 
     # --- full-history backfill ----------------------------------------------
-    # Windows of older mail to page per account per sync cycle (each window is
-    # HEADERS_PER_FOLDER_LIMIT messages). Bounded so a huge mailbox fills in over
-    # a few cycles instead of blocking one sync for minutes.
-    BACKFILL_WINDOWS_PER_CYCLE = 3
+    # Wall-clock budget for paging older mail per account per sync cycle. Paging
+    # runs back-to-back windows (each HEADERS_PER_FOLDER_LIMIT messages) for this
+    # long, then yields so the forward sync stays responsive. Higher = history
+    # fills faster; lower = the live sync feels snappier during a big backfill.
+    BACKFILL_SECONDS_PER_CYCLE = 20
 
     def _check_uidvalidity(self, session: Session, folder: Folder, provider) -> None:
         """If the server's UIDVALIDITY for this folder changed, every stored UID is
@@ -582,7 +609,13 @@ class SyncManager:
                 select(func.min(Message.uid)).where(Message.folder_id == folder.id)
             ).one()
             if not lowest:
-                return 0   # empty folder — let the forward sync populate it first
+                # No mail in this folder at all. Forward sync already ran this cycle,
+                # so there's genuinely nothing older to page — mark it done so an
+                # empty folder (Trash/Junk/Drafts/an empty label…) can't hold overall
+                # progress below 100% forever.
+                folder.backfill_done = True
+                session.add(folder)
+                return 0
             cursor = lowest
         if cursor <= 1:
             folder.backfill_done = True
@@ -617,30 +650,34 @@ class SyncManager:
 
     def _backfill_account(self, session: Session, account: Account, provider,
                           muted: dict | None = None) -> int:
-        """Trickle older history for one account if the user enabled it. Bounded
-        per cycle; re-runs each sync until every folder is fully paged."""
+        """Page older history for one account if the user enabled it. Runs windows
+        back-to-back within a wall-clock budget, then yields; re-runs each sync
+        until every folder is fully paged. The per-folder cursor always descends,
+        so a window that fetches 0 NEW messages (already cached) still advances —
+        we only stop a folder when it marks itself done."""
         from app.api.settings import _get_blob
         if not _get_blob(session).get("backfillHistory"):
             return 0
-        folders = list(session.exec(
-            select(Folder).where(Folder.account_id == account.id,
-                                 Folder.backfill_done == False)  # noqa: E712
-        ))
+        deadline = time.monotonic() + self.BACKFILL_SECONDS_PER_CYCLE
         fetched = 0
-        for folder in folders:
-            windows = 0
-            while windows < self.BACKFILL_WINDOWS_PER_CYCLE and not folder.backfill_done:
-                try:
-                    n = self._backfill_folder(session, account, folder, provider, muted)
-                except Exception:
-                    log.exception("backfill window failed: account %s folder %s",
-                                  account.id, folder.path)
-                    break
+        errored: set[int] = set()   # folders that errored THIS cycle — retry next sweep
+        while time.monotonic() < deadline:
+            stmt = select(Folder).where(Folder.account_id == account.id,
+                                        Folder.backfill_done == False)  # noqa: E712
+            if errored:
+                stmt = stmt.where(Folder.id.not_in(errored))
+            folder = session.exec(stmt.order_by(Folder.id)).first()
+            if folder is None:
+                break   # every folder fully paged (or the rest errored this cycle)
+            try:
+                fetched += self._backfill_folder(session, account, folder, provider, muted)
                 session.commit()
-                windows += 1
-                fetched += n
-                if n == 0:
-                    break
+            except Exception:
+                # Don't let one bad folder wedge the whole backfill: skip it for
+                # this cycle (a transient error re-pages on the next sweep).
+                log.exception("backfill failed: account %s folder %s", account.id, folder.path)
+                session.rollback()
+                errored.add(folder.id)
         if fetched:
             log.info("backfilled %s older messages for account %s", fetched, account.id)
         return fetched
@@ -834,6 +871,35 @@ class SyncManager:
                     self._hub.broadcast("presence:back", {"count": count}), self._loop_ref)
             except Exception:
                 pass
+
+    def _screen_message(self, session: Session, account: Account, folder: Folder,
+                        msg: Message, provider, screen: dict | None) -> bool:
+        """Anti-phishing screening on a freshly-synced inbox/other message.
+
+        Returns True if the message was QUARANTINED (moved to Junk / deleted) by
+        the domain blocklist — the caller then skips rules + notification for it.
+        Otherwise returns False; if the heuristic screen is on and the headers look
+        spoofed, the message is left in place but flagged `suspicious` (a badge)."""
+        if not screen:
+            return False
+        from app.sync.screening import header_spoof_flags, matches_blocked_domain
+        blocked = screen.get("blocked_domains") or []
+        if blocked and matches_blocked_domain(msg.from_addr or "", blocked):
+            try:
+                self._persist_state(session, account, msg, blocked=True)
+                junk = self._role_folder(session, account, FolderRole.junk)
+                if junk:
+                    provider.move(folder.path, msg.uid, junk)
+                else:
+                    provider.delete(folder.path, msg.uid)
+                session.delete(msg)
+            except Exception:
+                log.exception("domain-block quarantine failed for uid %s", msg.uid)
+            return True
+        if screen.get("phishing_screen") and header_spoof_flags(msg.from_addr or "", msg.from_name or ""):
+            msg.suspicious = True
+            session.add(msg)
+        return False
 
     def _apply_rules(self, session: Session, account: Account, folder: Folder,
                      msg: Message, provider, rules: list[Rule]) -> bool:

@@ -1,6 +1,6 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray, setLanguage } from "../store.svelte.js";
-  import { vault, backendBase } from "../api.js";
+  import { app, saveSettings, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray, setLanguage } from "../store.svelte.js";
+  import { backendBase } from "../api.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
   import { playSound, SOUND_OPTIONS } from "../sound.js";
@@ -165,10 +165,6 @@
   ];
   const previewSenders = $derived(SAMPLE.slice(0, app.settings.smartPreviewCount || 4));
 
-  let autoPw = $state("");
-  let showAutoPw = $state(false);
-  let busy = $state(false);
-
   function setCompose(patch) { saveSettings(patch); }
 
   let bccRules = $state((app.settings.autoBcc || []).map((r) => ({ ...r })));
@@ -184,25 +180,6 @@
     if (e.currentTarget.checked) selectUnifiedInbox();
   }
 
-  async function enableAuto() {
-    if (!autoPw) { notify("Enter your master password to confirm", "error"); return; }
-    busy = true;
-    try {
-      await vault.setAutoUnlock(true, autoPw);
-      await refreshVault();
-      autoPw = ""; showAutoPw = false;
-      notify("RaplMail will no longer ask for your password on startup");
-    } catch (e) { notify(e.message, "error"); } finally { busy = false; }
-  }
-
-  async function disableAuto() {
-    busy = true;
-    try {
-      await vault.setAutoUnlock(false);
-      await refreshVault();
-      notify("Password will be required on startup again");
-    } catch (e) { notify(e.message, "error"); } finally { busy = false; }
-  }
 
 </script>
 
@@ -289,10 +266,6 @@
     <label class="check">
       <input type="checkbox" checked={app.settings.showPaperTrail !== false} onchange={(e) => setCompose({ showPaperTrail: e.currentTarget.checked })} />
       <div><b>Paper Trail</b><span>Show the “Paper Trail” item (receipts, orders, confirmations) in the sidebar. Turn off to hide it.</span></div>
-    </label>
-    <label class="check">
-      <input type="checkbox" checked={app.settings.screener} onchange={(e) => setCompose({ screener: e.currentTarget.checked })} />
-      <div><b>Screener (first-time senders)</b><span>Mail from people you've never corresponded with is held in a “Screener” instead of the inbox — approve or block each new sender once (Hey-style).</span></div>
     </label>
     <label class="inline">Follow-up nudge after
       <select value={app.settings.followupDays} onchange={(e) => setCompose({ followupDays: Number(e.currentTarget.value) })}>
@@ -533,39 +506,6 @@
     <p class="hint" style="margin-top:8px">Need an exact time? The compose “Later ⌄” menu has a date &amp; time picker.</p>
   </section>
 
-  <h2 class="group-head">Security &amp; privacy</h2>
-  <section class="card">
-    <h3>Privacy</h3>
-    <label class="check">
-      <input type="checkbox" checked={app.settings.blockTrackers} onchange={(e) => setCompose({ blockTrackers: e.currentTarget.checked })} />
-      <div><b>Block tracking pixels</b><span>Blocks invisible 1×1 pixels and known open-tracking images so senders can't tell when you read. Real images (logos, photos, content) still load normally — you can also “Load everything” per message.</span></div>
-    </label>
-  </section>
-
-  <section class="card">
-    <h3>Startup password</h3>
-    {#if app.vault.auto_unlock}
-      <p class="hint ok">{@html icons.done} RaplMail unlocks automatically on startup.</p>
-      <button class="btn" onclick={disableAuto} disabled={busy}>Require password again</button>
-    {:else}
-      <p class="hint">By default you enter your master password each time RaplMail starts.</p>
-      {#if !showAutoPw}
-        <button class="btn" onclick={() => (showAutoPw = true)}>Don't require password on startup</button>
-      {:else}
-        <div class="warn">
-          {@html icons.warning} This stores your master password on this device so anyone with access to your
-          computer can open your mail. Your account credentials are still encrypted, and this
-          same password will be used to encrypt exports later.
-        </div>
-        <div class="confirm">
-          <input type="password" placeholder="Confirm master password" bind:value={autoPw}
-            onkeydown={(e) => e.key === "Enter" && enableAuto()} />
-          <button class="btn primary" onclick={enableAuto} disabled={busy}>{busy ? "…" : "Enable"}</button>
-          <button class="btn ghost" onclick={() => { showAutoPw = false; autoPw = ""; }}>Cancel</button>
-        </div>
-      {/if}
-    {/if}
-  </section>
 </div>
 
 <style>

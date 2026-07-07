@@ -9,6 +9,7 @@ import settingsNav from "./parts/settingsNav.js";
 import goto from "./parts/goto.js";
 import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
+import security from "./parts/security.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -155,5 +156,5 @@ const base = {
 export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
-  ...goto.cs, ...search.cs, ...devicesync.cs,
+  ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs,
 };

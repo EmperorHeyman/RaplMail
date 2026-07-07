@@ -13,6 +13,7 @@ import settingsNav from "./parts/settingsNav.js";
 import goto from "./parts/goto.js";
 import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
+import security from "./parts/security.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -159,5 +160,5 @@ const base = {
 export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
-  ...goto.en, ...search.en, ...devicesync.en,
+  ...goto.en, ...search.en, ...devicesync.en, ...security.en,
 };

@@ -145,6 +145,14 @@ class Message(SQLModel, table=True):
     snooze_presence: bool = False  # snoozed "until I'm back" — resurfaced by the idle monitor
     pinned: bool = False         # pinned to the top of the list (durable via MessageState)
     pending_action: str = Field(default="", index=True)  # queued archive/delete — hidden until flushed
+    # Anti-phishing screening. `suspicious` is set at sync by the header spoof
+    # heuristics (brand impersonation, lookalike/mismatched domain) when the
+    # screen is enabled — surfaced as a warning badge, never auto-deleted.
+    # `ai_verdict`/`ai_reason` cache the last AI screening result so "automatic"
+    # mode doesn't re-spend tokens re-checking a mail every time it's opened.
+    suspicious: bool = False
+    ai_verdict: str = ""         # "" | safe | suspicious | dangerous
+    ai_reason: str = ""
 
 
 class MessageState(SQLModel, table=True):

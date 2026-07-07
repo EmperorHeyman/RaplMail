@@ -194,10 +194,18 @@ export const appSettings = {
   importFull: (blob, password) => api.post("/settings/import-full", { blob, password }),
 };
 
+// Security Lab: full forensic report for one message.
+export const security = {
+  analyze: (id) => api.get(`/security/analyze/${id}`),
+};
+
 export const ai = {
   status: () => api.get("/ai/status"),
   summarize: (body) => api.post("/ai/summarize", body),
   draft: (body) => api.post("/ai/draft", body),
+  // Anti-phishing: judge a message as safe/suspicious/dangerous (cached on the
+  // message; force re-runs). See Settings → Security.
+  screen: (message_id, force = false) => api.post("/ai/screen", { message_id, force }),
   digest: () => api.post("/ai/digest", {}),
   triage: (limit = 20) => api.post("/ai/triage", { limit }),
   // Ollama (local, keyless) — detect / pull models / one-click install.

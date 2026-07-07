@@ -1,5 +1,5 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, openAiAssistant } from "../store.svelte.js";
+  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, sendToLab } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
@@ -17,6 +17,7 @@
   let error = $state("");
   let menuAddr = $state(null); // address whose quick-menu is open
   let loadImages = $state(false); // user override to show blocked images
+  let ctxMenu = $state(null);  // reader right-click menu { x, y }
 
   $effect(() => {
     const id = app.selectedMessageId;
@@ -83,10 +84,10 @@
   // AI smart reply.
   let aiDraft = $state(null);    // { draft, chips }
   let drafting = $state(false);
-  // Freeform "ask about this email" (tl;dr and anything else).
-  let askQ = $state("");
-  let askA = $state("");
-  let asking = $state(false);
+  // AI phishing screening (Settings → Security: off | manual | auto).
+  const aiScreenMode = $derived(app.settings.aiScreen || "off");
+  let aiVerdict = $state(null);  // { verdict: safe|suspicious|dangerous, reason }
+  let aiScreening = $state(false);
   let usedAI = false;   // did we run a local-model call on this message? → free GPU on leave
   // On navigating to a different message/thread: reset the AI panels, and if we
   // used a local (Ollama) model here, unload it so the GPU frees when you move on.
@@ -94,28 +95,36 @@
     void app.selectedMessageId; void app.threadKey;
     if (usedAI && (app.settings.aiProvider || "") === "ollama") ai.ollamaUnload().catch(() => {});
     usedAI = false;
-    summary = ""; aiDraft = null; askA = ""; askQ = "";
+    summary = ""; aiDraft = null; aiVerdict = null; aiScreening = false;
   });
 
-  async function askAI(q) {
-    const question = (q ?? askQ).trim();
-    if (!question || !detail) return;
-    asking = true; askA = ""; usedAI = true; app.aiBusy = true;
+  // Seed the AI verdict from the cached value the detail carries, and — in
+  // "automatic" mode — screen a mail the first time it's opened (the backend
+  // caches the result, so re-opens don't re-spend tokens).
+  $effect(() => {
+    const d = detail;
+    if (!d) return;
+    if (d.ai_verdict) { aiVerdict = { verdict: d.ai_verdict, reason: d.ai_reason || "" }; return; }
+    if (aiOn && aiScreenMode === "auto" && !aiScreening) screenNow(false);
+  });
+  async function screenNow(force) {
+    if (!detail) return;
+    aiScreening = true; usedAI = true; app.aiBusy = true;
     try {
-      const r = await ai.ask({ instruction: question,
-        message_ids: [detail.id], thread_id: detail.thread_id || "" });
-      askA = r.answer || "(no answer)";
+      const r = await ai.screen(detail.id, !!force);
+      aiVerdict = { verdict: r.verdict, reason: r.reason || "" };
+      if (detail) { detail.ai_verdict = r.verdict; detail.ai_reason = r.reason || ""; }
     } catch (e) { notify(e.message, "error"); }
-    finally { asking = false; app.aiBusy = false; }
+    finally { aiScreening = false; app.aiBusy = false; }
   }
-  const ASK_CHIPS = $derived.by(() => [
-    { label: t("reader.askTldr"), q: t("reader.askTldrPrompt") },
-    { label: t("reader.askActions"), q: t("reader.askActionsPrompt") },
-    { label: t("reader.askKeyPoints"), q: t("reader.askKeyPointsPrompt") },
-  ]);
-  function askAssistant() {
-    openAiAssistant({ messageId: detail?.id, threadId: detail?.thread_id || "", threadKey: app.threadKey || "" });
-  }
+  const aiVerdictPill = $derived.by(() => {
+    if (!aiVerdict) return null;
+    const v = aiVerdict.verdict;
+    if (v === "dangerous") return { kind: "bad", icon: icons.shieldAlert, label: t("reader.aiDangerous") };
+    if (v === "suspicious") return { kind: "warn", icon: icons.shieldAlert, label: t("reader.aiSuspicious") };
+    return { kind: "ok", icon: icons.shieldCheck, label: t("reader.aiSafe") };
+  });
+
   async function catchMeUp() {
     if (!detail) return;
     summarizing = true; summary = ""; usedAI = true; app.aiBusy = true;
@@ -143,12 +152,11 @@
     aiDraft = null;
   }
 
-  let showTrackers = $state(false);
   let showOriginal = $state(false); // view the email with its own original styling
   let showAllTo = $state(false);    // expand a long recipient list
   let showQuoted = $state(false);   // reveal collapsed quoted reply history
   let secOpen = $state(null);       // which security pill is expanded (key) — one at a time
-  $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; secOpen = null; });
+  $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; secOpen = null; frameH = 360; ctxMenu = null; });
 
   // Trust / auth / encryption status as COMPACT PILLS instead of stacked
   // full-width bars — an S/MIME-signed + authenticated mail used to eat 2-3
@@ -190,6 +198,9 @@
     return out;
   });
   const secOpenPill = $derived(secPills.find((p) => p.key === secOpen) || null);
+  // Inbox mail from an unknown sender → an inline "accept the sender?" prompt,
+  // now folded into the same badge strip as the security pills.
+  const screenerActive = $derived(!!detail && (app.selectedKind === "screener" || detail.first_time_sender));
   const shownTo = $derived(detail ? (showAllTo ? detail.to_addrs : (detail.to_addrs || []).slice(0, 3)) : []);
   const processed = $derived(
     detail ? sanitizeTrackers(detail.html || "", app.settings.blockTrackers && !loadImages)
@@ -233,10 +244,42 @@
   // desktop shell — intercept clicks and open them in the real browser (mailto
   // opens a compose). Re-wired on every iframe load (each message reload).
   let frame;
+  // The reader scrolls as ONE document (header included) instead of pinning the
+  // header and scrolling only the body — so the iframe sizes itself to its
+  // content. Measured on load and on any later reflow (images finishing, theme
+  // re-adapt, quote toggles). Reset small on nav so a tall old mail doesn't leave
+  // a blank gap before the next one measures.
+  let frameH = $state(360);
+  let _ro = null;
+  function measureFrame() {
+    try {
+      const doc = frame?.contentDocument;
+      if (!doc) return;
+      const h = Math.max(doc.documentElement?.scrollHeight || 0, doc.body?.scrollHeight || 0);
+      if (h > 0) frameH = h + 6;
+    } catch {}
+  }
   function wireFrameLinks() {
     let doc;
     try { doc = frame?.contentDocument; } catch { doc = null; }
     if (!doc) return;
+    // Size to content now, and keep tracking: images/fonts land after load, and
+    // the window can resize (reflowing the body to a new width).
+    measureFrame();
+    setTimeout(measureFrame, 60);
+    setTimeout(measureFrame, 300);
+    try {
+      _ro?.disconnect();
+      _ro = new ResizeObserver(() => measureFrame());
+      if (doc.documentElement) _ro.observe(doc.documentElement);
+    } catch {}
+    // Right-click inside the sandboxed email → our reader menu. The event's
+    // coords are relative to the iframe, so offset by the frame's position.
+    doc.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const rect = frame?.getBoundingClientRect();
+      ctxMenu = { x: (rect?.left || 0) + e.clientX, y: (rect?.top || 0) + e.clientY };
+    }, true);
     doc.addEventListener("click", (e) => {
       const a = e.target?.closest?.("a[href]");
       if (!a) return;
@@ -470,6 +513,34 @@
   }
   function toggleMenu(e, addr) { e.stopPropagation(); menuAddr = menuAddr === addr ? null : addr; }
 
+  // Reader right-click menu — long overdue. Opens over the header and (via the
+  // forwarded iframe event) anywhere inside the email body.
+  function openReaderCtx(e) {
+    if (!detail) return;
+    e.preventDefault();
+    ctxMenu = { x: e.clientX, y: e.clientY };
+  }
+  async function copySubject() {
+    try { await navigator.clipboard.writeText(detail?.subject || ""); notify(t("reader.subjectCopied")); }
+    catch { notify(t("reader.couldntCopy"), "error"); }
+  }
+  const readerCtxActions = $derived.by(() => {
+    if (!detail) return [];
+    return [
+      { label: t("reader.reply"), icon: icons.reply, run: reply },
+      ...(replyAllCc().length ? [{ label: t("reader.replyAll"), icon: icons.replyAll, run: replyAll }] : []),
+      { label: t("reader.forward"), icon: icons.forward, run: forward },
+      { sep: true },
+      { label: t("reader.copyAddress"), icon: icons.copy, run: () => copyAddress(detail.from_addr) },
+      { label: t("reader.copySubject"), icon: icons.copy, run: copySubject },
+      { label: t("reader.showMailFromTo"), icon: icons.inbox, run: () => showFrom(detail.from_addr) },
+      { sep: true },
+      { label: t("list.sendToLab"), icon: icons.shieldCheck, run: () => sendToLab(detail) },
+      { label: t("reader.exportEml"), icon: icons.save || icons.download, run: exportEml },
+    ];
+  });
+  function runCtx(a) { ctxMenu = null; a.run(); }
+
   function unsubscribe() {
     const parts = [...(detail.unsubscribe || "").matchAll(/<([^>]+)>/g)].map((m) => m[1].trim());
     const http = parts.find((p) => p.startsWith("http"));
@@ -484,7 +555,8 @@
   }
 </script>
 
-<svelte:window onclick={() => { menuAddr = null; snoozeMenu = false; }} />
+<svelte:window onclick={() => { menuAddr = null; snoozeMenu = false; ctxMenu = null; }}
+  onkeydown={(e) => { if (e.key === "Escape") ctxMenu = null; }} />
 
 <section class="reader">
   {#if threadMode}
@@ -502,7 +574,7 @@
   {:else if detail}
     {#key app.selectedMessageId}
     <div class="msgfade" in:fade={{ duration: 120 }}>
-    <header style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
+    <header oncontextmenu={openReaderCtx} style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
       <div class="subject">{detail.subject || t("reader.noSubject")}</div>
       <div class="meta">
         <span class="addr-wrap">
@@ -571,26 +643,7 @@
         </div>
       </div>
     {/if}
-    {#if aiOn && (askA || asking)}
-      <div class="ai-summary">
-        <div class="ai-head">{@html icons.bolt} <b>{t("reader.aiAnswer")}</b>
-          <button class="ai-close" title={t("reader.dismiss")} onclick={() => { askA = ""; }}>{@html icons.close}</button>
-        </div>
-        {#if asking}<pre class="thinking">{t("reader.thinking")}</pre>{:else}<pre>{askA}</pre>{/if}
-      </div>
-    {/if}
-    {#if aiOn}
-      <div class="ask-row">
-        <span class="ask-ic">{@html icons.bolt}</span>
-        <input class="ask-input" bind:value={askQ} placeholder={t("reader.askPlaceholder")}
-          onkeydown={(e) => { if (e.key === "Enter") askAI(); }} />
-        <div class="ask-chips">
-          {#each ASK_CHIPS as c}<button class="ask-chip" onclick={() => askAI(c.q)} disabled={asking}>{c.label}</button>{/each}
-          <button class="ask-chip more" title={t("reader.askMoreContext")} onclick={askAssistant}>{@html icons.chat || icons.mail} {t("reader.askAssistant")}</button>
-        </div>
-      </div>
-    {/if}
-    {#if secPills.length}
+    {#if secPills.length || screenerActive || detail.unsubscribe || (processed.blocked > 0 && !loadImages) || aiVerdict || aiScreening || (aiOn && aiScreenMode === "manual")}
       <div class="sec-strip">
         {#each secPills as p (p.key)}
           <button class="sec-pill {p.kind}" class:open={secOpen === p.key} title={p.detail}
@@ -599,6 +652,40 @@
             {#if p.detail}<span class="sp-caret" class:up={secOpen === p.key}>▾</span>{/if}
           </button>
         {/each}
+        {#if screenerActive}
+          <button class="sec-pill warn" class:open={secOpen === "screener"}
+            onclick={() => (secOpen = secOpen === "screener" ? null : "screener")}>
+            {@html icons.screener}<span class="sp-label">{t("reader.newSenderBadge")}</span>
+            <span class="sp-caret" class:up={secOpen === "screener"}>▾</span>
+          </button>
+        {/if}
+        {#if detail.unsubscribe}
+          <button class="sec-pill neutral" class:open={secOpen === "unsub"}
+            onclick={() => (secOpen = secOpen === "unsub" ? null : "unsub")}>
+            {@html icons.mail}<span class="sp-label">{t("reader.mailingListBadge")}</span>
+            <span class="sp-caret" class:up={secOpen === "unsub"}>▾</span>
+          </button>
+        {/if}
+        {#if processed.blocked > 0 && !loadImages}
+          <button class="sec-pill neutral" class:open={secOpen === "trackers"}
+            onclick={() => (secOpen = secOpen === "trackers" ? null : "trackers")}>
+            {@html icons.shield}<span class="sp-label">{processed.blocked === 1 ? t("reader.blockedPixelOne") : t("reader.blockedPixelN", { n: processed.blocked })}</span>
+            <span class="sp-caret" class:up={secOpen === "trackers"}>▾</span>
+          </button>
+        {/if}
+        {#if aiScreening}
+          <span class="sec-pill neutral"><span class="ai-spin">{@html icons.bolt}</span><span class="sp-label">{t("reader.aiChecking")}</span></span>
+        {:else if aiVerdictPill}
+          <button class="sec-pill {aiVerdictPill.kind}" class:open={secOpen === "ai"}
+            onclick={() => (secOpen = secOpen === "ai" ? null : "ai")}>
+            {@html aiVerdictPill.icon}<span class="sp-label">{aiVerdictPill.label}</span>
+            <span class="sp-caret" class:up={secOpen === "ai"}>▾</span>
+          </button>
+        {:else if aiOn && aiScreenMode === "manual"}
+          <button class="sec-pill neutral" onclick={() => screenNow(false)}>
+            {@html icons.bolt}<span class="sp-label">{t("reader.aiCheck")}</span>
+          </button>
+        {/if}
       </div>
       {#if secOpenPill}
         <div class="sec-detail {secOpenPill.kind}">
@@ -610,33 +697,39 @@
           {/if}
         </div>
       {/if}
-    {/if}
-    {#if app.selectedKind === "screener" || detail.first_time_sender}
-      <div class="screener-bar">
-        {@html icons.screener} {t("reader.firstTimeSender", { addr: detail.from_addr })}
-        <button class="ok" onclick={() => approveSender(detail)}>{@html icons.done} {t("reader.approve")}</button>
-        <button class="no" onclick={() => blockSender(detail)}>{@html icons.close} {t("reader.block")}</button>
-      </div>
-    {/if}
-    {#if detail.unsubscribe}
-      <div class="unsub-bar">
-        {@html icons.mail} {t("reader.mailingList")}
-        <button onclick={unsubscribe}>{t("reader.unsubscribe")}</button>
-      </div>
-    {/if}
-    {#if processed.blocked > 0 && !loadImages}
-      <div class="tracker-wrap">
-        <div class="tracker-bar">
-          {@html icons.shield} {processed.blocked === 1 ? t("reader.blockedTrackerOne") : t("reader.blockedTrackerN", { n: processed.blocked })}
-          <button class="tlink" onclick={() => (showTrackers = !showTrackers)}>{showTrackers ? t("reader.hide") : t("reader.details")}</button>
-          <button class="tlink" onclick={() => (loadImages = true)}>{t("reader.loadEverything")}</button>
+      {#if secOpen === "screener"}
+        <div class="sec-detail warn">
+          <span class="sd-text">{t("reader.firstTimeSender", { addr: detail.from_addr })}</span>
+          <button class="sd-act" onclick={() => approveSender(detail)}>{@html icons.done} {t("reader.approve")}</button>
+          <button class="sd-act danger" onclick={() => blockSender(detail)}>{@html icons.close} {t("reader.block")}</button>
         </div>
-        {#if showTrackers}
-          <ul class="tracker-list">
-            {#each processed.urls as u}<li title={u}>{u}</li>{/each}
-          </ul>
-        {/if}
-      </div>
+      {/if}
+      {#if secOpen === "unsub"}
+        <div class="sec-detail neutral">
+          <span class="sd-text">{t("reader.mailingList")}</span>
+          <button class="sd-act" onclick={unsubscribe}>{t("reader.unsubscribe")}</button>
+        </div>
+      {/if}
+      {#if secOpen === "trackers"}
+        <div class="sec-detail neutral trackers">
+          <span class="sd-text">{processed.blocked === 1 ? t("reader.blockedTrackerOne") : t("reader.blockedTrackerN", { n: processed.blocked })}</span>
+          <button class="sd-act" onclick={() => (loadImages = true)}>{t("reader.loadEverything")}</button>
+          {#if processed.urls.length}
+            <ul class="tracker-list">
+              {#each processed.urls as u}<li title={u}>{u}</li>{/each}
+            </ul>
+          {/if}
+        </div>
+      {/if}
+      {#if secOpen === "ai" && aiVerdictPill}
+        <div class="sec-detail {aiVerdictPill.kind} aiverdict">
+          {#if aiVerdict.reason}<span class="sd-text">{aiVerdict.reason}</span>{/if}
+          <button class="sd-act" onclick={() => screenNow(true)} disabled={aiScreening}>
+            {@html icons.bolt} {t("reader.aiRecheck")}
+          </button>
+          <span class="ai-disclaimer">{t("reader.aiScreenDisclaimer")}</span>
+        </div>
+      {/if}
     {/if}
     {#if attachments.length}
       <div class="attachments">
@@ -689,8 +782,9 @@
         </span>
       </a>
     {/if}
-    <div class="body-card">
+    <div class="body-card" oncontextmenu={openReaderCtx}>
       <iframe title={t("reader.messageFrameTitle")} bind:this={frame} onload={wireFrameLinks}
+        style="height:{frameH}px"
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
     </div>
     {#if actionsBottom}{@render actionsBar()}{/if}
@@ -698,6 +792,16 @@
     {/key}
   {/if}
 </section>
+
+{#if ctxMenu}
+  <div class="reader-ctx" style="left:{ctxMenu.x}px; top:{ctxMenu.y}px"
+    onclick={(e) => e.stopPropagation()} oncontextmenu={(e) => e.preventDefault()}>
+    {#each readerCtxActions as a}
+      {#if a.sep}<div class="rc-sep"></div>
+      {:else}<button class="rc-item" onclick={() => runCtx(a)}>{@html a.icon} {a.label}</button>{/if}
+    {/each}
+  </div>
+{/if}
 
 {#snippet actionsBar()}
   <div class="actions" class:bottom={actionsBottom}>
@@ -731,10 +835,13 @@
 {/snippet}
 
 <style>
-  .reader { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  /* The reader is the scroll container: the header + badge strip scroll away with
+     the message body (they used to be pinned while only the iframe scrolled, which
+     ate half the pane on tall headers). The body iframe sizes itself to content. */
+  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; background: var(--bg); }
   /* Wraps the single message so it cross-fades in when you switch mails (keyed on
      the selected id) instead of hard-popping. */
-  .msgfade { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
+  .msgfade { display: flex; flex-direction: column; min-width: 0; }
   .placeholder { flex: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); animation: rise-in var(--t-slow) var(--ease); }
   .placeholder .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 22px;
     background: var(--accent-soft); color: var(--accent); font-size: 32px;
@@ -781,19 +888,6 @@
   .ai-chip:hover { border-color: var(--accent); color: var(--accent); }
   .ai-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
   .ai-note { font-size: 11px; color: var(--muted); }
-  .ai-summary pre.thinking { color: var(--muted); font-style: italic; }
-  .ask-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 2px 22px 8px; }
-  .ask-ic { color: var(--accent); display: inline-flex; flex: none; }
-  .ask-input { flex: 1 1 220px; min-width: 160px; background: var(--surface-2); border: 1px solid var(--border);
-    border-radius: 999px; padding: 7px 13px; color: var(--text); font-size: 13px; }
-  .ask-input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
-  .ask-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .ask-chip { display: inline-flex; align-items: center; gap: 5px; padding: 5px 11px; border-radius: 999px;
-    background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--muted); }
-  .ask-chip:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
-  .ask-chip:disabled { opacity: 0.5; }
-  .ask-chip.more { color: var(--accent); }
-  .ask-chip.more :global(svg) { width: 13px; height: 13px; }
   .actions .btn.on { color: var(--warning); border-color: var(--warning); }
   .actions .btn.del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
   .snz-wrap { position: relative; display: inline-block; }
@@ -808,9 +902,9 @@
   .snz-menu button:hover { background: var(--accent); color: #fff; }
   .snz-menu .when { color: var(--faint); font-size: 11px; }
   .snz-menu button:hover .when { color: #e7e9ff; }
-  .unsub-bar { display: flex; align-items: center; gap: 10px; padding: 8px 22px; background: var(--surface); border-bottom: 1px solid var(--border); color: var(--muted); font-size: 12px; }
-  .unsub-bar button { margin-left: auto; color: var(--accent); font-weight: 600; }
-  /* Security pills: trust / auth / PGP / S/MIME collapsed into one compact row. */
+  /* Security pills: trust / auth / PGP / S/MIME + screener / mailing-list /
+     trackers, all collapsed into one compact badge row. Click a badge to reveal
+     its detail + actions below. */
   .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 22px; border-bottom: 1px solid var(--hairline); }
   .sec-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
     padding: 3px 10px; border-radius: 999px; border: 1px solid; cursor: pointer; line-height: 1.4;
@@ -819,6 +913,7 @@
   .sec-pill.ok { color: var(--done); background: var(--done-soft); border-color: color-mix(in srgb, var(--done) 32%, transparent); }
   .sec-pill.bad { color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
   .sec-pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 13%, transparent); border-color: color-mix(in srgb, var(--warning) 32%, transparent); }
+  .sec-pill.neutral { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
   .sec-pill:hover { filter: brightness(1.06); }
   .sec-pill.open { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
   .sp-caret { font-size: 9px; opacity: 0.65; transition: transform var(--t-fast) var(--ease); }
@@ -828,14 +923,31 @@
   .sec-detail.ok { background: var(--done-soft); color: var(--done); }
   .sec-detail.bad { background: var(--danger-soft); color: var(--danger); }
   .sec-detail.warn { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
+  .sec-detail.neutral { background: var(--surface); color: var(--muted); }
+  .sec-detail.trackers { flex-wrap: wrap; }
   .sd-text { flex: 1; min-width: 0; }
-  .sd-act { margin-left: auto; flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  .sd-act { flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
     border: 1px solid currentColor; color: inherit; display: inline-flex; align-items: center; gap: 5px; }
+  .sd-act:first-of-type { margin-left: auto; }
+  .sd-act.danger { color: var(--danger); }
   .sd-act :global(svg) { width: 13px; height: 13px; }
   .sd-act:hover { background: var(--surface-2); }
-  .screener-bar { display: flex; align-items: center; gap: 10px; padding: 10px 22px; background: var(--accent-soft); border-bottom: 1px solid var(--hairline); font-size: 13px; }
-  .screener-bar .ok { margin-left: auto; color: var(--done); font-weight: 600; }
-  .screener-bar .no { color: var(--danger); font-weight: 600; }
+  .tracker-list { flex-basis: 100%; margin: 4px 0 0; padding: 0 0 0 18px; max-height: 120px; overflow-y: auto; }
+  .tracker-list li { color: var(--faint); font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; line-height: 1.6; }
+  .sec-detail.aiverdict { flex-wrap: wrap; }
+  .ai-disclaimer { flex-basis: 100%; font-size: 11px; opacity: 0.75; margin-top: 2px; }
+  .ai-spin { display: inline-flex; animation: ai-pulse 1s var(--ease) infinite; }
+  @keyframes ai-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+  /* Reader right-click menu. */
+  .reader-ctx { position: fixed; z-index: 60; min-width: 210px; max-width: 280px;
+    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    animation: pop-in var(--t) var(--ease); transform-origin: top left; }
+  .rc-item { display: flex; align-items: center; gap: 9px; text-align: left; padding: 8px 10px;
+    border-radius: 6px; color: var(--text); font-size: 13px; }
+  .rc-item:hover { background: var(--accent); color: #fff; }
+  .rc-item :global(svg) { width: 15px; height: 15px; flex: none; }
+  .rc-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
   .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
   .att-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-right: 4px; }
   .att { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 300px; overflow: hidden; }
@@ -869,17 +981,13 @@
   .vtoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
   .vtoggle:hover { color: var(--text); border-color: var(--accent); }
   .vtoggle.on { color: var(--accent); border-color: var(--accent); background: var(--surface-2); }
-  .tracker-wrap { border-bottom: 1px solid var(--border); background: var(--surface); }
-  .tracker-bar { display: flex; align-items: center; gap: 12px; padding: 8px 22px; color: var(--muted); font-size: 12px; }
-  .tracker-bar .tlink { color: var(--accent); font-weight: 600; }
-  .tracker-bar .tlink:first-of-type { margin-left: auto; }
-  .tracker-list { margin: 0; padding: 0 22px 10px 40px; max-height: 120px; overflow-y: auto; }
-  .tracker-list li { color: var(--faint); font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; line-height: 1.6; }
   /* The message body sits in its own framed card (border + shadow + rounded)
      instead of a bare full-bleed div, so it reads as "the email" — matching the
      header card and the conversation cards. */
-  .body-card { flex: 1; min-height: 0; display: flex; flex-direction: column; margin: 0 16px 14px;
+  .body-card { display: flex; flex-direction: column; margin: 0 16px 14px;
     border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
-  iframe { flex: 1; border: none; width: 100%; background: var(--bg); }
+  /* Height is set inline from the measured content height (see measureFrame) so
+     the whole message scrolls in the reader rather than inside the frame. */
+  iframe { display: block; border: none; width: 100%; background: var(--bg); }
 </style>

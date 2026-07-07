@@ -5,21 +5,11 @@
   // operators by prefix, and real contacts once you start a from:/to:/cc:.
   import { contacts as contactsApi } from "../api.js";
   import { icons } from "../icons.js";
+  import { OPERATORS, smartSplit, isOp, opParts, normalizeChips } from "../searchQuery.js";
 
-  let { value = "", oninput } = $props();
-
-  const OP_RE = /^(from|to|cc|subject|has|is):.+$|^\/.+\/$/i;
-  const OPERATORS = [
-    { token: "from:", hint: "From a sender", value: true },
-    { token: "to:", hint: "Sent to", value: true },
-    { token: "cc:", hint: "Cc'd to", value: true },
-    { token: "subject:", hint: "Subject contains", value: true },
-    { token: "has:attachment", hint: "Has an attachment" },
-    { token: "is:unread", hint: "Unread only" },
-    { token: "is:read", hint: "Read only" },
-    { token: "is:flagged", hint: "Flagged" },
-    { token: "is:done", hint: "Marked done" },
-  ];
+  // `onexpand`, when provided, means a richer palette owns the search UX: focusing
+  // the bar opens it instead of the inline whisper dropdown.
+  let { value = "", oninput, onexpand } = $props();
 
   let chips = $state([]);
   let text = $state("");
@@ -28,35 +18,6 @@
   let sugg = $state([]);
   let active = $state(0);
   let contactCache = [];
-
-  const smartSplit = (s) => (s.match(/\/[^/]+\/|"[^"]*"|\S+/g)) || [];
-  const isOp = (t) => OP_RE.test(t);
-
-  // Operators that can't sensibly coexist (would AND to an always-empty result).
-  const EXCLUSIVE = [["is:read", "is:unread"]];
-  // De-dupe identical chips (last wins) and drop earlier members of a mutually
-  // exclusive group, so `is:unread` + `is:read` can't silently zero out results.
-  function normalizeChips(list) {
-    const seen = new Set();
-    const out = [];
-    for (let i = list.length - 1; i >= 0; i--) {
-      const key = list[i].toLowerCase();
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.unshift(list[i]);
-    }
-    for (const group of EXCLUSIVE) {
-      const members = out.filter((c) => group.includes(c.toLowerCase()));
-      if (members.length > 1) {
-        const keep = members[members.length - 1];
-        for (let i = out.length - 1; i >= 0; i--) {
-          if (group.includes(out[i].toLowerCase()) && out[i] !== keep) out.splice(i, 1);
-        }
-      }
-    }
-    return out;
-  }
-  const opParts = (t) => { const i = t.indexOf(":"); return i < 0 ? [t, ""] : [t.slice(0, i + 1), t.slice(i + 1)]; };
 
   // Re-parse when the value changes from the outside (e.g. searchAddress()).
   let lastEmitted = "";
@@ -146,7 +107,10 @@
     else if (e.key === "Escape") { open = false; e.stopPropagation(); }
   }
 
-  function focus() { open = true; recompute(); }
+  function focus() {
+    if (onexpand) { inputEl?.blur(); onexpand(); return; }   // palette takes over
+    open = true; recompute();
+  }
 </script>
 
 <div class="sb" class:focused={open}>

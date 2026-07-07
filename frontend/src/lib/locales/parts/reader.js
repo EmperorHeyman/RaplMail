@@ -27,18 +27,6 @@ export default {
     "reader.dismiss": "Dismiss",
     "reader.editAndSend": "Edit & send →",
     "reader.reviewBeforeSending": "Review before sending — nothing is sent automatically.",
-    // Freeform ask-about-this-email.
-    "reader.aiAnswer": "AI answer",
-    "reader.thinking": "Thinking…",
-    "reader.askPlaceholder": "Ask about this email… (e.g. tl;dr)",
-    "reader.askTldr": "TL;DR",
-    "reader.askTldrPrompt": "Give me a quick tl;dr of this email.",
-    "reader.askActions": "Action items",
-    "reader.askActionsPrompt": "List any action items, requests, or deadlines for me.",
-    "reader.askKeyPoints": "Key points",
-    "reader.askKeyPointsPrompt": "Summarize the key points as short bullets.",
-    "reader.askMoreContext": "Open the assistant with more emails as context",
-    "reader.askAssistant": "Assistant",
 
     // Empty / loading states.
     "reader.selectMessage": "Select a message to read",
@@ -48,6 +36,8 @@ export default {
 
     // Address quick-menu.
     "reader.copyAddress": "Copy address",
+    "reader.copySubject": "Copy subject",
+    "reader.subjectCopied": "Subject copied",
     "reader.showMailFromTo": "Show mail from/to this address",
     "reader.newEmailTo": "New email to this address",
     "reader.markVip": "Mark as VIP",
@@ -84,12 +74,23 @@ export default {
     "reader.senderAuthenticated": "Sender authenticated",
     "reader.securityWarning": "Security warning",
 
-    // Screener bar.
+    // AI phishing screening (Settings → Security).
+    "reader.aiCheck": "Check with AI",
+    "reader.aiChecking": "Checking…",
+    "reader.aiSafe": "AI: looks safe",
+    "reader.aiSuspicious": "AI: suspicious",
+    "reader.aiDangerous": "AI: likely phishing",
+    "reader.aiRecheck": "Check again",
+    "reader.aiScreenDisclaimer": "AI can and will make mistakes — treat this as a hint, not proof.",
+
+    // Screener badge + expanded detail.
+    "reader.newSenderBadge": "New sender",
     "reader.firstTimeSender": "First-time sender — do you want mail from {addr}?",
     "reader.approve": "Approve",
     "reader.block": "Block",
 
-    // Unsubscribe bar.
+    // Mailing-list badge + expanded detail.
+    "reader.mailingListBadge": "Mailing list",
     "reader.mailingList": "This looks like a mailing list.",
     "reader.unsubscribe": "Unsubscribe",
 
@@ -174,18 +175,6 @@ export default {
     "reader.dismiss": "Zavřít",
     "reader.editAndSend": "Upravit a odeslat →",
     "reader.reviewBeforeSending": "Před odesláním zkontrolujte — nic se neodešle automaticky.",
-    // Volný dotaz k tomuto e-mailu.
-    "reader.aiAnswer": "Odpověď AI",
-    "reader.thinking": "Přemýšlím…",
-    "reader.askPlaceholder": "Zeptejte se na tento e-mail… (např. tl;dr)",
-    "reader.askTldr": "Shrnutí",
-    "reader.askTldrPrompt": "Dej mi rychlé shrnutí tohoto e-mailu.",
-    "reader.askActions": "Úkoly",
-    "reader.askActionsPrompt": "Vypiš mi úkoly, požadavky nebo termíny.",
-    "reader.askKeyPoints": "Hlavní body",
-    "reader.askKeyPointsPrompt": "Shrň hlavní body do krátkých odrážek.",
-    "reader.askMoreContext": "Otevřít asistenta s více e-maily jako kontextem",
-    "reader.askAssistant": "Asistent",
 
     // Prázdné stavy / načítání.
     "reader.selectMessage": "Vyberte zprávu ke čtení",
@@ -195,6 +184,8 @@ export default {
 
     // Rychlá nabídka adresy.
     "reader.copyAddress": "Kopírovat adresu",
+    "reader.copySubject": "Kopírovat předmět",
+    "reader.subjectCopied": "Předmět zkopírován",
     "reader.showMailFromTo": "Zobrazit poštu od/pro tuto adresu",
     "reader.newEmailTo": "Nový e-mail na tuto adresu",
     "reader.markVip": "Označit jako VIP",
@@ -231,12 +222,23 @@ export default {
     "reader.senderAuthenticated": "Odesílatel ověřen",
     "reader.securityWarning": "Bezpečnostní varování",
 
-    // Pruh prověřování prvních odesílatelů.
+    // Prověřování phishingu pomocí AI (Nastavení → Zabezpečení).
+    "reader.aiCheck": "Zkontrolovat pomocí AI",
+    "reader.aiChecking": "Kontroluji…",
+    "reader.aiSafe": "AI: vypadá bezpečně",
+    "reader.aiSuspicious": "AI: podezřelé",
+    "reader.aiDangerous": "AI: pravděpodobně phishing",
+    "reader.aiRecheck": "Zkontrolovat znovu",
+    "reader.aiScreenDisclaimer": "AI dělá a bude dělat chyby — berte to jako nápovědu, ne jako důkaz.",
+
+    // Odznak prověřování + rozbalený detail.
+    "reader.newSenderBadge": "Nový odesílatel",
     "reader.firstTimeSender": "Odesílatel poprvé — chcete přijímat poštu od {addr}?",
     "reader.approve": "Schválit",
     "reader.block": "Blokovat",
 
-    // Pruh odhlášení odběru.
+    // Odznak hromadné pošty + rozbalený detail.
+    "reader.mailingListBadge": "Hromadná pošta",
     "reader.mailingList": "Vypadá to jako hromadná pošta.",
     "reader.unsubscribe": "Odhlásit odběr",
 

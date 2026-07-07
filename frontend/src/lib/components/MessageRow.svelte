@@ -161,6 +161,8 @@
       <span class="box">{#if checked}{@html icons.done}{/if}</span>
       {#if isTrustedSender(message.from_addr)}
         <span class="shield ok" title={t("list.senderSafe")}>{@html icons.shieldCheck}</span>
+      {:else if message.ai_verdict === "dangerous" || message.suspicious}
+        <span class="shield bad" title={t("list.suspiciousSender")}>{@html icons.shieldAlert}</span>
       {:else if message.auth_status === "fail"}
         <span class="shield bad" title={t("list.authFail")}>{@html icons.shieldAlert}</span>
       {:else if message.auth_status === "pass"}

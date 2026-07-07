@@ -20,15 +20,21 @@ export const SETTINGS_INDEX = [
   { tab: "general", label: "Only notify when unfocused", kw: "focus background unfocused notify" },
   { tab: "general", label: "Quiet hours", kw: "quiet hours do not disturb night silence tiché hodiny" },
   { tab: "general", label: "Follow-up reminders", kw: "followup follow up nudge reply days vyřízení" },
-  { tab: "general", label: "Screener", kw: "screener first time sender hey approve filtr odesílatelů" },
   { tab: "general", label: "Auto-BCC", kw: "bcc auto blind copy domain skrytá kopie" },
   { tab: "general", label: "Start with Windows", kw: "startup launch login boot autostart tray spustit" },
   { tab: "general", label: "Minimize to tray", kw: "tray minimize close background lišta" },
   { tab: "general", label: "Check for updates", kw: "update updates version upgrade aktualizace" },
   { tab: "general", label: "Read receipts", kw: "read receipt tracking confirmation potvrzení" },
-  { tab: "general", label: "Block trackers", kw: "tracker pixel privacy block images spy sledování" },
   { tab: "general", label: "Language", kw: "language english czech cs locale jazyk" },
   { tab: "general", label: "Backup & export settings", kw: "export backup save settings import migrate záloha" },
+
+  // ── Security ─────────────────────────────────────────────────────────────────
+  { tab: "security", label: "Suspicious-sender screening", kw: "phishing spoof spoofing impersonation brand lookalike suspicious flag scam prověřování podvrh" },
+  { tab: "security", label: "Blocked domains", kw: "domain blocker blocklist tld ru block sender quarantine junk zablokované domény" },
+  { tab: "security", label: "AI screening", kw: "ai screening scam phishing check verdict manual automatic prověření ai" },
+  { tab: "security", label: "Block tracking pixels", kw: "tracker pixel privacy block images spy sledování" },
+  { tab: "security", label: "Screener", kw: "screener first time sender hey approve filtr odesílatelů" },
+  { tab: "security", label: "Startup password", kw: "startup password lock unlock master boot auto-unlock heslo" },
 
   // ── Appearance ───────────────────────────────────────────────────────────────
   { tab: "appearance", label: "Theme preset", kw: "theme preset dark light true black high contrast color motiv vzhled" },

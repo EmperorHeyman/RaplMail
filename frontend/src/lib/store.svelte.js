@@ -169,6 +169,7 @@ export const app = $state({
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
   ruleModal: null,               // { message } — open the quick "New rule" modal
+  lab: null,                     // { id, subject, from } — message sent to the Security Lab
   composing: null,
   mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
   aiInboxOpen: false,            // AI inbox digest + priority triage dialog
@@ -881,6 +882,17 @@ export function openRuleModal(message, field) {
 // Context-menu "Create rule…": open the modal instead of jumping to Settings.
 export function createRuleFromSender(message) {
   openRuleModal(message);
+}
+
+// Open the Security Lab (Settings → Security) with a full forensic report for
+// this message — reachable from the list/reader right-click menu. IT-admin /
+// power-user triage: headers, hop chain, DNS, links, attachment hashes + one-tap
+// deep links to VirusTotal / urlscan / MXToolbox / AbuseIPDB / whois.
+export function sendToLab(message) {
+  if (!message) return;
+  app.lab = { id: message.id, subject: message.subject || "", from: message.from_addr || "" };
+  app.settingsTab = "security";
+  app.view = "settings";
 }
 
 export async function setSenderCategory(message, category) {

@@ -25,6 +25,7 @@ import json
 import logging
 import math
 import ssl
+import time
 import urllib.request
 from array import array
 
@@ -33,6 +34,30 @@ from sqlmodel import Session, select
 from app.models import Message, MessageEmbedding, Setting
 
 log = logging.getLogger("raplmail.embeddings")
+
+# Live health of the embedding endpoint (process-local; reset on restart). Lets
+# the sync loop back off instead of spamming a 404 every cycle when the model
+# isn't installed, and lets the AI settings surface a clear, actionable reason.
+_health: dict = {"error": "", "fails": 0, "next_try": 0.0, "model_missing": False}
+
+
+def _note_embed_failure(exc: Exception) -> None:
+    msg = str(exc)
+    _health["fails"] += 1
+    _health["error"] = msg
+    # Ollama answers 404 when the model isn't pulled — that won't fix itself, so
+    # back off hard (10 min) rather than retry every sync tick. Transient network
+    # errors get a short, escalating backoff instead.
+    missing = "404" in msg
+    _health["model_missing"] = missing
+    delay = 600 if missing else min(60 * _health["fails"], 300)
+    _health["next_try"] = time.time() + delay
+    log.info("embedding batch failed (backing off %ss): %s", delay, msg)
+
+
+def _note_embed_success() -> None:
+    if _health["fails"] or _health["error"]:
+        _health.update({"error": "", "fails": 0, "next_try": 0.0, "model_missing": False})
 
 try:  # Fast path. Soft dependency — the pure-Python fallback keeps this working
     import numpy as _np  # (and tests green) in a numpy-less environment.
@@ -59,6 +84,7 @@ def _embed_config(session: Session) -> dict:
     base = str(data.get("embedBaseUrl") or "").strip().rstrip("/")
     if provider == "ollama" and not base:
         base = OLLAMA_DEFAULT_URL
+    base_raw = base   # the real/configured serve, before any managed rerouting
     if provider == "ollama":
         # Route local embeddings through RaplMail's hidden serve (if up) so the
         # embed-model runner never flashes a console window either. See ai._effective_base.
@@ -73,6 +99,7 @@ def _embed_config(session: Session) -> dict:
         "enabled": bool(data.get("semanticEnabled")),
         "provider": provider,
         "base_url": base,
+        "base_raw": base_raw,
         "model": model,
         "key": str(data.get("embedApiKey") or "").strip(),
     }
@@ -88,6 +115,31 @@ def _http_json(url: str, body: dict, headers: dict, timeout: int = 60) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+def _embed_ollama(base: str, model: str, texts: list[str]) -> list[list[float]]:
+    # keep_alive "5m": keep the embed model resident during a sweep instead of
+    # letting it fall out of VRAM every 30s (a reload per batch made indexing
+    # crawl — especially a heavy model like bge-m3).
+    ka = "5m"
+    # FAST path: /api/embed embeds the WHOLE batch in ONE request (far less
+    # round-trip overhead and lets Ollama batch on the GPU). Falls back to the
+    # per-text /api/embeddings for older Ollama builds that lack /api/embed.
+    try:
+        payload = _http_json(f"{base}/api/embed",
+                             {"model": model, "input": texts, "keep_alive": ka}, {}, timeout=300)
+        embs = payload.get("embeddings")
+        if embs:
+            return [[float(x) for x in v] for v in embs]
+    except Exception:  # noqa: BLE001 — old Ollama / endpoint missing → fall back
+        pass
+    out: list[list[float]] = []
+    for txt in texts:
+        payload = _http_json(f"{base}/api/embeddings",
+                             {"model": model, "prompt": txt, "keep_alive": ka}, {}, timeout=120)
+        vec = payload.get("embedding") or []
+        out.append([float(x) for x in vec])
+    return out
+
+
 def _embed_batch(cfg: dict, texts: list[str]) -> list[list[float]]:
     """Return one embedding per input text. Raises on transport/endpoint error."""
     if not texts:
@@ -96,29 +148,16 @@ def _embed_batch(cfg: dict, texts: list[str]) -> list[list[float]]:
     if not base:
         raise RuntimeError("No embeddings endpoint configured.")
     if provider == "ollama":
-        # keep_alive "5m": keep the embed model resident during a sweep instead of
-        # letting it fall out of VRAM every 30s (a reload per batch made indexing
-        # crawl — especially a heavy model like bge-m3).
-        ka = "5m"
-        # FAST path: /api/embed embeds the WHOLE batch in ONE request (far less
-        # round-trip overhead and lets Ollama batch on the GPU). Falls back to the
-        # per-text /api/embeddings for older Ollama builds that lack /api/embed.
         try:
-            payload = _http_json(f"{base}/api/embed",
-                                 {"model": model, "input": texts, "keep_alive": ka},
-                                 {}, timeout=300)
-            embs = payload.get("embeddings")
-            if embs:
-                return [[float(x) for x in v] for v in embs]
-        except Exception:  # noqa: BLE001 — old Ollama / endpoint missing → fall back
-            pass
-        out: list[list[float]] = []
-        for txt in texts:
-            payload = _http_json(f"{base}/api/embeddings",
-                                 {"model": model, "prompt": txt, "keep_alive": ka}, {}, timeout=120)
-            vec = payload.get("embedding") or []
-            out.append([float(x) for x in vec])
-        return out
+            return _embed_ollama(base, model, texts)
+        except Exception:
+            # Our hidden managed serve may not have the model (different models
+            # dir); the user's real serve — where they actually pulled it — does.
+            # Retry there before giving up.
+            raw = cfg.get("base_raw")
+            if raw and raw != base:
+                return _embed_ollama(raw, model, texts)
+            raise
     # openai-compatible: /v1/embeddings accepts a batch and returns data[].embedding.
     b = base if base.endswith("/v1") else base + "/v1"
     headers = {"authorization": f"Bearer {key}"} if key else {}
@@ -198,6 +237,8 @@ def index_pending(session: Session, cfg: dict | None = None, limit: int = 64) ->
     cfg = cfg or _embed_config(session)
     if not cfg["enabled"] or not cfg["base_url"]:
         return 0
+    if time.time() < _health["next_try"]:
+        return 0   # backing off after a recent failure (e.g. model not installed)
     model = cfg["model"]
     # Messages with no vector for the current model, newest first (the mail you're
     # most likely to search for is indexed first). A NOT IN subquery keeps this
@@ -214,8 +255,9 @@ def index_pending(session: Session, cfg: dict | None = None, limit: int = 64) ->
     try:
         vectors = _embed_batch(cfg, texts)
     except Exception as exc:  # noqa: BLE001
-        log.info("embedding batch failed (will retry): %s", exc)
+        _note_embed_failure(exc)
         return 0
+    _note_embed_success()
     from app.models import utcnow
     n = 0
     for m, vec in zip(todo, vectors):
@@ -241,6 +283,41 @@ def indexed_count(session: Session, model: str | None = None) -> int:
     return int(session.exec(stmt).one())
 
 
+def _tags_basenames(base: str) -> set[str] | None:
+    """Base names (before ':') of the models the serve at `base` has, or None if
+    it isn't reachable."""
+    try:
+        req = urllib.request.Request(f"{base}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        return {(m.get("name") or "").split(":")[0].lower() for m in (data.get("models") or [])}
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def model_installed(cfg: dict) -> bool | None:
+    """Whether the configured embedding model is available on EITHER the serve we
+    route to or the user's real/configured serve (they can read different model
+    dirs). True/False for Ollama; None when we can't tell (nothing reachable, or
+    an OpenAI-compatible server with no list API)."""
+    if cfg.get("provider") != "ollama":
+        return None
+    want = (cfg.get("model") or "").split(":")[0].lower()
+    if not want:
+        return None
+    seen_any = False
+    for base in (cfg.get("base_url"), cfg.get("base_raw")):
+        if not base:
+            continue
+        names = _tags_basenames(base)
+        if names is None:
+            continue
+        seen_any = True
+        if want in names:
+            return True
+    return False if seen_any else None
+
+
 def status(session: Session) -> dict:
     from sqlalchemy import func
     cfg = _embed_config(session)
@@ -254,6 +331,10 @@ def status(session: Session) -> dict:
         "indexed": indexed,
         "total": total,
         "backend": "numpy" if _np is not None else "python",
+        # Surfaced so the UI can explain a stalled index instead of silently 404ing.
+        "model_installed": model_installed(cfg),
+        "last_error": _health["error"],
+        "model_missing": _health["model_missing"],
     }
 
 

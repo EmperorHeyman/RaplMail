@@ -209,3 +209,39 @@ def test_semantic_endpoint_empty_when_disabled(client):
     r = client.get("/messages/semantic?q=alpha")
     assert r.status_code == 200
     assert r.json() == []
+
+
+def test_model_installed_unions_both_serves(monkeypatch):
+    # The bug the user hit: a model pulled to the real serve showed "not installed"
+    # because the managed serve reads a different models dir. model_installed must
+    # treat it as present if EITHER serve has it.
+    tags = {
+        "http://127.0.0.1:9999": {"other"},          # managed serve — missing it
+        "http://127.0.0.1:11434": {"bge-m3", "x"},   # real serve — has it
+    }
+    monkeypatch.setattr(embeddings, "_tags_basenames", lambda b: tags.get(b))
+    cfg = {"provider": "ollama", "model": "bge-m3",
+           "base_url": "http://127.0.0.1:9999", "base_raw": "http://127.0.0.1:11434"}
+    assert embeddings.model_installed(cfg) is True
+
+    assert embeddings.model_installed({**cfg, "model": "nope"}) is False  # on neither
+
+    monkeypatch.setattr(embeddings, "_tags_basenames", lambda b: None)     # nothing up
+    assert embeddings.model_installed(cfg) is None                         # can't tell, not "missing"
+
+
+def test_embed_batch_falls_back_to_real_serve(monkeypatch):
+    # If the routed (managed) serve 404s the model, embedding must retry the real
+    # serve where the model actually lives.
+    import urllib.error
+    calls = []
+    def fake_embed_ollama(base, model, texts):
+        calls.append(base)
+        if base == "http://127.0.0.1:9999":
+            raise urllib.error.HTTPError("http://x/api/embeddings", 404, "Not Found", {}, None)
+        return [[1.0, 0.0] for _ in texts]
+    monkeypatch.setattr(embeddings, "_embed_ollama", fake_embed_ollama)
+    cfg = {"provider": "ollama", "model": "bge-m3", "key": "",
+           "base_url": "http://127.0.0.1:9999", "base_raw": "http://127.0.0.1:11434"}
+    assert embeddings._embed_batch(cfg, ["hi"]) == [[1.0, 0.0]]
+    assert calls == ["http://127.0.0.1:9999", "http://127.0.0.1:11434"]  # managed then real

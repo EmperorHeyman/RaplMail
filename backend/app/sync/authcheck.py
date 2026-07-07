@@ -26,6 +26,45 @@ def _find(blob: str, name: str) -> str:
 _DOMAIN_IN_TEXT = re.compile(r"\b([a-z0-9][a-z0-9.-]*\.[a-z]{2,})\b", re.IGNORECASE)
 _HREF_A = re.compile(r'<a\b[^>]*\bhref=["\']https?://([^/"\'?#\s]+)[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
 
+# Commonly-impersonated brands → the registered domains they actually send from.
+# A display name that names one of these while the address is on some other domain
+# is the classic phishing tell ("LinkedIn <x@whatever.ru>"). Kept deliberately to
+# distinctive brand words (no ambiguous short tokens like "ups") and generous on
+# the legit-domain side so real transactional mail is never flagged.
+_BRAND_DOMAINS: dict[str, set[str]] = {
+    "paypal": {"paypal.com", "paypal.co.uk"},
+    "microsoft": {"microsoft.com", "outlook.com", "office.com", "office365.com",
+                  "live.com", "hotmail.com", "microsoftonline.com", "microsoftstore.com"},
+    "onedrive": {"microsoft.com", "onedrive.com"},
+    "apple": {"apple.com", "icloud.com", "me.com"},
+    "icloud": {"apple.com", "icloud.com"},
+    "google": {"google.com", "gmail.com", "googlemail.com", "youtube.com"},
+    "amazon": {"amazon.com", "amazon.co.uk", "amazon.de", "amazon.cz", "amazonses.com"},
+    "linkedin": {"linkedin.com"},
+    "netflix": {"netflix.com"},
+    "facebook": {"facebook.com", "facebookmail.com", "fb.com", "meta.com"},
+    "instagram": {"instagram.com", "mail.instagram.com"},
+    "whatsapp": {"whatsapp.com"},
+    "spotify": {"spotify.com", "spotifymail.com"},
+    "dropbox": {"dropbox.com", "dropboxmail.com"},
+    "docusign": {"docusign.com", "docusign.net"},
+    "coinbase": {"coinbase.com"},
+    "binance": {"binance.com"},
+    "dhl": {"dhl.com", "dhl.de"},
+    "fedex": {"fedex.com"},
+    "wetransfer": {"wetransfer.com", "wetransfer.zendesk.com"},
+    "seznam": {"seznam.cz", "email.cz"},
+    "alza": {"alza.cz", "alza.sk"},
+    "csob": {"csob.cz"},
+    "airbank": {"airbank.cz"},
+}
+
+# TLDs disproportionately used for throwaway/abusive senders. A brand-mismatch or
+# lookalike domain on one of these is a stronger tell; not flagged on its own to
+# avoid nagging on legitimate regional mail.
+_RISKY_TLDS = {"ru", "su", "cn", "tk", "top", "xyz", "gq", "ml", "cf", "ga", "click",
+               "work", "zip", "mov", "loan", "kim", "country", "download", "review"}
+
 
 def _reg_domain(host: str) -> str:
     host = (host or "").lower().split(":")[0].strip().rstrip(".")
@@ -33,15 +72,41 @@ def _reg_domain(host: str) -> str:
     return ".".join(parts[-2:]) if len(parts) >= 2 else host
 
 
+def _brand_impersonation(from_name: str, from_dom: str) -> str:
+    """The display name names a well-known brand, but the sender's registered
+    domain isn't one that brand sends from (e.g. "LinkedIn <x@whatever.ru>").
+    Returns a warning string, or "" when nothing looks off. Word-boundary matched
+    so a brand word inside another word ("Applebee's") doesn't trip it."""
+    if not from_name or not from_dom:
+        return ""
+    reg = _reg_domain(from_dom)
+    name_l = from_name.lower()
+    for brand, domains in _BRAND_DOMAINS.items():
+        if reg in domains:
+            return ""   # legit brand domain — never flag, whatever the name says
+        if re.search(rf"\b{re.escape(brand)}\b", name_l):
+            tld = reg.rsplit(".", 1)[-1]
+            extra = " (and a high-risk domain)" if tld in _RISKY_TLDS else ""
+            return (f"Display name looks like “{brand.title()}”, but the address is "
+                    f"@{from_dom}{extra} — possible impersonation.")
+    return ""
+
+
 def spoof_warnings(from_addr: str = "", from_name: str = "", html: str = "") -> list[str]:
     """Social-engineering checks DMARC can't catch: lookalike/IDN domains,
-    display-name domain mismatch, and link-text-vs-href mismatch."""
+    display-name domain mismatch, brand impersonation, and link-text-vs-href
+    mismatch."""
     out: list[str] = []
     from_dom = (from_addr or "").split("@")[-1].lower()
 
     # 1) Confusable / punycode sender domain (Cyrillic 'е', etc.).
     if from_dom and (from_dom.startswith("xn--") or any(ord(c) > 127 for c in from_dom)):
         out.append(f"Sender domain “{from_dom}” uses non-standard characters — possible lookalike.")
+
+    # 1b) Display name impersonates a known brand from the wrong domain.
+    brand_warn = _brand_impersonation(from_name or "", from_dom)
+    if brand_warn:
+        out.append(brand_warn)
 
     # 2) Display name claims a different domain/email than the actual address.
     #    Skip false positives where the "domain" in the name is really just the

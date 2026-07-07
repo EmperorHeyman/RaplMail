@@ -148,6 +148,14 @@
     try { await ai.embedReindex(); notify("Building semantic index in the background…"); await refreshEmbed(); pollEmbed(); }
     catch (e) { notify(e.message, "error"); }
   }
+  function pullEmbedModel() {
+    startPull(embedActive);   // downloads it; embedModel already points here
+    setTimeout(refreshEmbed, 1500);
+  }
+  function turnOffSemantic() {
+    saveSettings({ semanticEnabled: false });
+    notify("Semantic search turned off.");
+  }
 
   // --- Curated model catalog (there's no official Ollama "list all models" API,
   // so this is a hand-picked, up-to-date-with-releases list; installed state comes
@@ -466,6 +474,17 @@
         <p class="hint warn-note">⚠ A cloud embeddings endpoint will send every indexed message's subject &amp; snippet to that provider and may cost money. For true zero-cloud, use Ollama.</p>
       {/if}
 
+      {#if embed && embed.enabled && embed.model_installed === false}
+        <div class="embed-warn">
+          <b>⚠ Embedding model not installed</b>
+          <span>Semantic search is on, but <code>{embed.model}</code> isn't pulled in Ollama, so indexing can't run (the server returns 404). Pull it, or turn semantic search off.</span>
+          <div class="rowbtns">
+            <button class="btn primary sm" onclick={pullEmbedModel} disabled={pull?.active}>↓ Pull {embed.model}</button>
+            <button class="btn ghost sm" onclick={turnOffSemantic}>Turn off semantic search</button>
+          </div>
+        </div>
+      {/if}
+
       <div class="embed-status">
         {#if embed}
           <span class="dot" class:on={embed.reachable}></span>
@@ -502,6 +521,13 @@
   .fieldrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
   .fieldrow > span { width: 140px; flex: none; color: var(--muted); font-size: 13px; }
   .fieldrow input, .fieldrow select { flex: 1; }
+  .embed-warn { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--warning, #d29922) 55%, var(--border)); border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--warning, #d29922) 12%, transparent); }
+  .embed-warn b { font-size: 13.5px; }
+  .embed-warn span { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+  .embed-warn code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
+  .embed-warn .rowbtns { margin-top: 4px; }
   /* Ollama local-AI panel */
   .ollama { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 10px; }

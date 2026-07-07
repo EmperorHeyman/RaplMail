@@ -28,6 +28,7 @@ export default {
     "list.restoreKey": "Restore (e)",
     "list.select": "Select",
     "list.senderSafe": "You marked this sender safe",
+    "list.suspiciousSender": "Suspicious sender — possible phishing / impersonation",
     "list.authFail": "Failed sender authentication — possible spoof",
     "list.authPass": "Sender authenticated (SPF/DKIM/DMARC)",
     "list.vipSender": "VIP sender",
@@ -52,6 +53,7 @@ export default {
     "list.muteConversation": "Mute conversation",
     "list.blockSender": "Block sender",
     "list.createRule": "Create rule…",
+    "list.sendToLab": "Send to Security Lab",
 
     // Show-done toggle, mark-all-read & save search.
     "list.showDone": "Show done",
@@ -164,6 +166,7 @@ export default {
     "list.restoreKey": "Obnovit (e)",
     "list.select": "Vybrat",
     "list.senderSafe": "Tohoto odesílatele jste označili jako bezpečného",
+    "list.suspiciousSender": "Podezřelý odesílatel — možný phishing / napodobování",
     "list.authFail": "Ověření odesílatele selhalo — možné podvržení",
     "list.authPass": "Odesílatel ověřen (SPF/DKIM/DMARC)",
     "list.vipSender": "Odesílatel VIP",
@@ -188,6 +191,7 @@ export default {
     "list.muteConversation": "Ztlumit konverzaci",
     "list.blockSender": "Blokovat odesílatele",
     "list.createRule": "Vytvořit pravidlo…",
+    "list.sendToLab": "Odeslat do bezpečnostní laboratoře",
 
     // Přepínač hotových, označit vše přečtené a uložení hledání.
     "list.showDone": "Zobrazit hotové",

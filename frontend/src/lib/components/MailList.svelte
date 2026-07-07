@@ -1,16 +1,15 @@
 <script>
   import { untrack } from "svelte";
-  import { flip } from "svelte/animate";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import SearchBar from "./SearchBar.svelte";
-  import AdvancedSearch from "./AdvancedSearch.svelte";
+  import SearchPalette from "./SearchPalette.svelte";
   import { icons } from "../icons.js";
   import { keyCombo } from "../keys.js";
 
@@ -18,7 +17,22 @@
   let searchTimer;
   let expandedKeys = $state(new Set());
   let rowsEl;
-  let advSearchOpen = $state(false);
+  let paletteOpen = $state(false);
+
+  // While the list is actively scrolling, rows sliding under a stationary cursor
+  // would each fire :hover — which springs their action buttons in and animates
+  // the row background. A whole scroll gesture becomes a rolling wave of spring
+  // transitions + repaints (the "sluggish scroll" feel, and it happens at 30
+  // rows just as much as at 300). Suppress hover mid-scroll: a class flips
+  // pointer-events off on the rows while wheeling and back on ~140ms after it
+  // stops, so hover still works normally when you're not scrolling.
+  let scrolling = $state(false);
+  let _scrollIdle;
+  function onRowsScroll() {
+    if (!scrolling) scrolling = true;
+    clearTimeout(_scrollIdle);
+    _scrollIdle = setTimeout(() => { scrolling = false; }, 140);
+  }
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
@@ -78,8 +92,8 @@
   function bumpShown(key) { catShown = { ...catShown, [key]: shownFor(key) + CHUNK }; }
 
   // The MAIN list is windowed too: mount 30 rows, stream in more as you
-  // scroll. Rendering every message meant the flip animation measured hundreds
-  // of rows on each triage action — that was the "whole app lags" feel.
+  // scroll. Rendering every message kept hundreds of live rows around, which
+  // (combined with content-visibility) made every list mutation costly.
   const MAIN_CHUNK = 30;
   let mainShown = $state(30);
   function mainMore(node) {
@@ -421,6 +435,7 @@
       { label: t("list.muteConversation"), icon: icons.mute, kw: "thread", run: () => muteThread(m) },
       { label: t("list.blockSender"), icon: icons.junk, danger: true, run: () => blockSender(m) },
       { label: t("list.createRule"), icon: icons.bolt, run: () => createRuleFromSender(m) },
+      { label: t("list.sendToLab"), icon: icons.shieldCheck, kw: "security lab scan analyze forensics virustotal headers domain ip whois", run: () => sendToLab(m) },
     ];
     const q = ctxSearch.trim().toLowerCase();
     if (!q) return acts;
@@ -590,6 +605,11 @@
     // Typing in the bar is always a keyword search (clears any semantic mode).
     searchTimer = setTimeout(() => { app.search = v; app.semantic = false; refreshMessages(); }, 220);
   }
+  // Immediate apply (from the palette): keep the bar + main list in sync at once.
+  function applySearch(v) {
+    clearTimeout(searchTimer);
+    app.search = v; app.semantic = false; refreshMessages();
+  }
   function saveSearch() {
     const name = prompt(t("list.namePrompt"), app.search);
     if (name) saveCurrentSearch(name.trim());
@@ -750,11 +770,12 @@
 
 <svelte:window on:keydown={onKey} on:click={() => ctx && closeCtx()} />
 
-<AdvancedSearch open={advSearchOpen} initial={app.search}
+<SearchPalette open={paletteOpen} initial={app.search}
   smartAvailable={aiEnabled() || app.settings.semanticEnabled}
-  onclose={() => (advSearchOpen = false)}
-  onsearch={(q) => { onSearch(q); advSearchOpen = false; }}
-  onsemantic={(q) => { runSemanticSearch(q); advSearchOpen = false; }} />
+  onclose={() => (paletteOpen = false)}
+  onsearch={(q) => applySearch(q)}
+  onsemantic={(q) => runSemanticSearch(q)}
+  onopen={(m) => open(m, -1)} />
 
 {#if ctx}
   <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
@@ -792,8 +813,8 @@
       </div>
     </div>
     <div class="searchrow">
-      <SearchBar value={app.search} oninput={onSearch} />
-      <button class="adv" title={t("search.advancedTitle")} onclick={() => (advSearchOpen = true)}>{@html icons.sliders}</button>
+      <SearchBar value={app.search} oninput={onSearch} onexpand={() => (paletteOpen = true)} />
+      <button class="adv" title={t("search.advancedTitle")} onclick={() => (paletteOpen = true)}>{@html icons.sliders}</button>
       {#if aiEnabled()}
         <button class="adv aibtn" title={t("list.aiAssistant")}
           onclick={() => openAiAssistant({ messageId: app.selectedMessageId, threadKey: app.threadKey || "" })}>{@html icons.bolt}</button>
@@ -829,12 +850,15 @@
     </div>
   {/if}
 
-  <div class="rows" class:intro bind:this={rowsEl} tabindex="-1">
+  <div class="rows" class:intro class:scrolling bind:this={rowsEl} tabindex="-1" onscroll={onRowsScroll}>
     <!-- Keyed on the view scope: switching folder/category/search tears the old
-         rows down instantly instead of playing ~100 simultaneous out-flights
-         (and flip-measuring the survivors) — that mass animation was the "whole
-         app hitches on navigation" feel. Triage removals inside one view still
-         animate (they're the each-item's own out transition). -->
+         rows down instantly instead of playing ~100 simultaneous out-flights —
+         that mass animation was the "whole app hitches on navigation" feel.
+         Triage removals inside one view still animate (each row's own out:fly).
+         No animate:flip here on purpose: FLIP measures every kept row on each
+         list mutation, and getBoundingClientRect on a content-visibility:auto
+         row force-realizes it, so flip + .cv fought each other on every scroll
+         append and background sync. -->
     {#key viewKey}
     {#if app.loading && app.messages.length === 0}
       {#each Array(6) as _}
@@ -851,7 +875,7 @@
              draggable={item.kind === "msg"}
              ondragstart={item.kind === "msg" ? (e) => onRowDragStart(e, item.msg) : undefined}
              ondragend={item.kind === "msg" ? onRowDragEnd : undefined}
-             animate:flip={{ duration: 130 }} out:fly={{ x: 48, duration: 140 }}>
+             out:fly={{ x: 48, duration: 140 }}>
           {#if item.kind === "header"}
             <div class="datesep">{bucketLabel(item.label)}</div>
           {:else if item.kind === "msg"}
@@ -976,6 +1000,11 @@
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   .rows:focus { outline: none; }
+  /* Kill hover work while scrolling — see onRowsScroll. Rows can't fire :hover
+     with pointer-events off, so no button springs / background transitions play
+     as they stream past the cursor. Wheel/touch scrolling targets .rows itself,
+     so the scroll is unaffected; interaction returns the moment scrolling stops. */
+  .rows.scrolling > * { pointer-events: none; }
   /* Row-by-row entrance cascade, gated to the ~650ms after a view switch (the
      .intro class) so windowed appends and triage reorders never replay it.
      Reuses the global rise-in keyframe; `backwards` holds rows hidden until

@@ -11,6 +11,161 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.6.1] — 2026-07-08
+
+### Fixed
+- **Mail list scrolling is smooth again.** Rows sliding under the cursor while you
+  scrolled were each firing their hover state, spring-animating the row-action
+  buttons and transitioning the row background on every row that passed by — a
+  rolling wave of animations that made scrolling feel sluggish regardless of how
+  many mails were loaded. Hover is now suppressed while the list is actively
+  scrolling and restored the moment it stops.
+- Dropped the per-row FLIP animation from the list. FLIP measured every mounted
+  row on each list change, and measuring a `content-visibility` row forces the
+  browser to lay it out — so the two features fought each other on every scroll
+  and background sync. The triaged row still animates out; only the gap-close
+  slide is gone.
+
+## [0.6.0] — 2026-07-08
+
+### Added — Security
+- **New "Security" settings tab.** Gathers the privacy/screening controls in one
+  place: suspicious-sender screening, a domain blocker, AI screening, plus the
+  moved-in "Block tracking pixels", "Screener (first-time senders)", and "Startup
+  password" controls (relocated from General).
+- **Anti-phishing sender screening.** As mail arrives, RaplMail checks the sender
+  for impersonation: a display name that names a known brand from the wrong domain
+  (e.g. "LinkedIn" from an address on a random .ru domain), lookalike/non-standard
+  domains, and names that cite a different domain than the real address. Flagged
+  mail gets a red shield in the list and a warning in the reader — it is never
+  auto-deleted, so a false positive costs nothing.
+- **Domain / TLD blocker.** Block a whole domain (and its subdomains) or an entire
+  TLD like `ru`. Matching mail is quarantined to Junk the moment it arrives.
+- **AI screening (opt-in): off / manual / automatic.** Have the AI assistant judge
+  a message as safe / suspicious / dangerous from the sender, subject, auth result
+  and body. Manual adds a "Check with AI" button in the reader; automatic screens a
+  mail the first time you open it. The verdict is cached so it isn't re-checked (no
+  wasted tokens), and every surface carries the disclaimer that AI can make
+  mistakes.
+- **Security Lab — a forensic panel for one message** (for IT admins / power users).
+  Right-click a message (in the list or an open mail) → "Send to Security Lab" and
+  Security → Lab shows a full passive workup:
+  - **Sender domain age** (RDAP) — a domain registered days ago is flagged as a
+    strong phishing signal.
+  - **Originating IP intel** — reverse DNS (PTR), ASN / network / geo, and a live
+    **DNSBL/blocklist check** (Spamhaus, SpamCop, Barracuda, SORBS).
+  - **DMARC alignment** — the DKIM `d=`/selector and Return-Path domain, each shown
+    as aligned or not with the From domain (catches spoofs that still "pass").
+  - **Timeline / clock-skew** between the `Date:` header and the newest relay.
+  - **Attachment analysis** — SHA-256 + MD5 + SHA-1, magic-byte type vs the claimed
+    extension, dangerous-type / double-extension flags, and a peek inside archives.
+  - **Link analysis** — every URL + domain, punycode/homograph flags, and shortened
+    links (bit.ly, t.co, …) resolved to their true destination.
+  - Parsed **Received hop chain**, sender **DNS** (MX/A/SPF/DMARC), SPF/DKIM/DMARC
+    verdict, Reply-To/Return-Path mismatch, and the **raw headers**.
+  - **Report actions**: copy a defanged summary or the JSON for a ticket, block the
+    domain, or open a pre-filled report to `abuse@…`.
+  - One-tap deep links to VirusTotal, urlscan, MXToolbox (+ blacklist), AbuseIPDB,
+    whois, Google Safe Browsing, Talos, URLhaus, Hybrid Analysis and Shodan.
+  All passive — no active scanning of third-party hosts.
+- **Right-click menu inside an open email.** The reader now has a context menu
+  (Reply / Reply all / Forward, copy sender or subject, show mail from sender, Send
+  to Security Lab, Export .eml) that also works when you right-click inside the
+  message body itself.
+
+## [0.5.15] — 2026-07-07
+
+### Changed
+- **The reader header no longer stays pinned.** The subject/sender header and the
+  status badges used to be anchored while only the message body scrolled, so on a
+  tall header (authentication, mailing list, trackers, first-time sender) half the
+  pane was header and there was barely any room to read. The reader now scrolls as
+  one document — the header scrolls away and the message gets the whole pane. The
+  body sizes itself to its content instead of scrolling inside a fixed frame.
+- **All the stacked status rows are now compact badges in one strip.** First-time
+  sender, "looks like a mailing list", and "N tracking pixels blocked" were each a
+  full-width bar stacked under the header. They're now small badges alongside the
+  existing security pills; click a badge to reveal its detail and actions
+  (Approve/Block, Unsubscribe, tracker list / Load images). Much less clutter.
+
+### Removed
+- **The "Ask about this email" input row in the reader.** It duplicated the AI
+  assistant (already one click away from the mail list and the reader action bar),
+  so it was removed to declutter the header. Catch-me-up and AI reply stay.
+
+### Fixed
+- **Smart-group cards: the expand chevron no longer peeks out from behind the
+  "Done all" button.** On hover/focus the chevron now fades out as the Done-all
+  button reveals, so the two controls don't visibly stack.
+
+## [0.5.14] — 2026-07-07
+
+### Fixed
+- **Full-history sync no longer gets stuck (e.g. "44 of 69 folders" forever).**
+  Empty folders (Trash/Junk/Drafts/empty labels) were never marked complete, so
+  overall progress could never reach 100% and looked frozen even though there was
+  nothing left to fetch. Empty folders are now completed immediately. Also, one
+  folder that errors can no longer wedge the whole backfill — it's skipped for the
+  cycle and retried on the next sweep.
+
+### Changed
+- **Full-history sync is much faster.** Instead of a few small windows per cycle,
+  it now pages older mail back-to-back within a wall-clock budget (~20s per
+  account per cycle), so a large mailbox fills in far quicker while the live sync
+  stays responsive. It resumes automatically from each folder's cursor.
+- **Semantic indexing is much faster and actually uses the GPU.** Embedding now
+  runs larger batches (128 messages per request, embedded in one GPU pass) back-
+  to-back within a time budget each cycle, instead of one tiny 48-message batch
+  that left the GPU mostly idle. It runs automatically in the background while
+  semantic search is on, and keeps the model resident during a sweep.
+  - _Both full-history sync and semantic indexing are automatic once enabled_
+    (Settings → Accounts → "Sync full history"; Settings → AI assistant →
+    "Enable semantic search"), and both self-resume until complete.
+
+## [0.5.13] — 2026-07-07
+
+### Fixed
+- **Installed Ollama models no longer show as "not installed" (and stop
+  vanishing between restarts).** Root cause: RaplMail runs its own hidden Ollama
+  server to stop console windows flashing, and in some setups that server reads a
+  different models directory than the one your tray/CLI Ollama pulls into — so a
+  model you just pulled looked missing, and which directory "won" could change
+  from one boot to the next. Now:
+  - The model list is the **union** of what your real Ollama and the hidden
+    server can see, so a model shows installed if either has it.
+  - **Downloads go to your real Ollama**, so they land where it actually stores
+    models and survive restarts.
+  - RaplMail only reroutes inference to its hidden server when it can **prove**
+    that server has the same models as your real one — otherwise it uses your
+    real Ollama directly (it may flash a console, but a model that disappears is
+    far worse).
+  - **Embeddings fall back to your real Ollama** if the hidden server doesn't
+    have the embedding model, so semantic indexing works instead of 404ing.
+  - Escape hatch unchanged: Settings → AI assistant → turn off "Hide Ollama's
+    console windows" to always talk to your own Ollama directly.
+
+## [0.5.12] — 2026-07-07
+
+### Added
+- **Search palette.** Clicking into the search box (or pressing the search key /
+  the ⚙ button) now opens a full search overlay: a query builder with removable
+  operator chips, live smart suggestions (operators + your contacts), one-tap
+  quick filters (unread / read / flagged / done / has-attachment), your recent
+  searches, and an operator cheat-sheet down the left; and **live results on the
+  right** you can arrow through and open with Enter. Picking a result opens the
+  mail but leaves the query in the box and the list filtered, so it's a fast way
+  in rather than a separate place. Replaces the old advanced-search modal and
+  reads/writes the exact same query the bar and backend understand.
+
+### Fixed
+- **Semantic-search embedding failures are now legible.** If semantic search is
+  on but its embedding model isn't installed in Ollama, the embedder was getting
+  a 404 on every sync cycle and only logging it. RaplMail now detects the
+  missing model, shows a clear "embedding model not installed" notice in
+  Settings → AI assistant with a one-click **Pull** (or **Turn off semantic
+  search**), and backs the retries off (10 min) instead of logging a 404 every
+  cycle. The embed status also reports whether the model is actually installed.
+
 ## [0.5.11] — 2026-07-07
 
 ### Fixed

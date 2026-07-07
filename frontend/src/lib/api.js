@@ -267,6 +267,8 @@ export const accounts = {
   sync: (id) => api.post(`/accounts/${id}/sync`),
   reconnect: (id, password) => api.post(`/accounts/${id}/reconnect`, { password }),
   remove: (id) => api.del(`/accounts/${id}`),
+  backfillStatus: () => api.get("/accounts/backfill-history"),
+  setBackfill: (enabled) => api.post("/accounts/backfill-history", { enabled }),
 };
 
 export const folders = {

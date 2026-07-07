@@ -15,7 +15,26 @@
       health = m;
     } catch {}
   }
-  onMount(() => { refreshHealth(); healthTimer = setInterval(refreshHealth, 5000); });
+
+  // --- full-history backfill -----------------------------------------------
+  let backfill = $state(null);
+  let backfillBusy = $state(false);
+  async function refreshBackfill() {
+    try { backfill = await api.backfillStatus(); } catch {}
+  }
+  async function toggleBackfill() {
+    backfillBusy = true;
+    try {
+      backfill = await api.setBackfill(!backfill?.enabled);
+      notify(backfill.enabled
+        ? "Syncing your full mail history — older messages appear as it runs."
+        : "Full-history sync paused.");
+    } catch (e) { notify(e.message, "error"); }
+    finally { backfillBusy = false; }
+  }
+
+  function tick() { refreshHealth(); refreshBackfill(); }
+  onMount(() => { tick(); healthTimer = setInterval(tick, 5000); });
   onDestroy(() => clearInterval(healthTimer));
 
   const STATUS = {
@@ -271,6 +290,33 @@
     {/if}
   </div>
 
+  {#if app.accounts.length > 0}
+    <div class="backfill">
+      <div class="bf-head">
+        <div class="bf-copy">
+          <h3>Mail history</h3>
+          <p class="muted">
+            RaplMail loads your most recent mail first, so older messages aren't
+            searchable yet. Turn this on to pull in your entire back-catalogue —
+            it runs in the background and keeps going until every folder is done.
+          </p>
+        </div>
+        <button class="btn {backfill?.enabled ? '' : 'primary'}" onclick={toggleBackfill} disabled={backfillBusy}>
+          {backfill?.enabled ? "Pause" : "Sync full history"}
+        </button>
+      </div>
+      {#if backfill?.enabled}
+        <div class="bf-prog">
+          {#if backfill.complete}
+            <span class="bf-done">✓ All mail synced — {backfill.messages.toLocaleString()} messages cached.</span>
+          {:else}
+            <span>Working… {backfill.folders_done} of {backfill.folders_total} folders complete · {backfill.messages.toLocaleString()} messages cached so far.</span>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {/if}
+
   <div class="add">
     <h3>Add an account</h3>
 
@@ -424,4 +470,14 @@
   .muted { color: var(--muted); }
   .device ol { line-height: 2; }
   .code { font-size: 18px; font-weight: 700; letter-spacing: 0.1em; background: var(--surface-3); padding: 3px 10px; border-radius: 6px; }
+
+  .backfill { margin-top: 18px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--surface); }
+  .bf-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .bf-copy { min-width: 0; }
+  .bf-copy h3 { margin: 0 0 4px; font-size: 14px; font-weight: 650; }
+  .bf-copy p { margin: 0; font-size: 12.5px; line-height: 1.55; }
+  .bf-head .btn { flex: none; white-space: nowrap; }
+  .bf-prog { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 13px; color: var(--muted); }
+  .bf-done { color: var(--done, #3fb950); font-weight: 550; }
 </style>

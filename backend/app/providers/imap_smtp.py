@@ -135,14 +135,28 @@ class ImapSmtpProvider:
         self._imap().select_folder(folder_path, readonly=True)
         return list(self._imap().search(["ALL"]))
 
+    def folder_uidvalidity(self, folder_path: str) -> int | None:
+        """The mailbox's current UIDVALIDITY. If it changes, every stored UID for
+        the folder is stale and must be purged + re-synced."""
+        try:
+            resp = self._imap().select_folder(folder_path, readonly=True)
+            v = resp.get(b"UIDVALIDITY")
+            return int(v) if v is not None else None
+        except Exception:
+            return None
+
     def fetch_headers(self, folder_path: str, min_uid: int = 1,
-                      limit: int | None = None) -> list[HeaderInfo]:
+                      max_uid: int | None = None, limit: int | None = None) -> list[HeaderInfo]:
         client = self._imap()
         client.select_folder(folder_path, readonly=True)
-        uids = client.search(["UID", f"{min_uid}:*"])
-        # search with min_uid:* always returns at least the last message; filter.
-        uids = [u for u in uids if u >= min_uid]
+        hi = "*" if max_uid is None else str(max_uid)
+        uids = client.search(["UID", f"{min_uid}:{hi}"])
+        # search with min_uid:* always returns at least the last message; filter
+        # to the real range so a backfill window can't spill past its bounds.
+        uids = [u for u in uids if u >= min_uid and (max_uid is None or u <= max_uid)]
         if limit:
+            # Newest `limit` UIDs in the range — for backfill that's the window
+            # just below the current cursor, so paging walks steadily older.
             uids = sorted(uids)[-limit:]
         if not uids:
             return []

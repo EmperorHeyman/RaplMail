@@ -326,6 +326,50 @@ async def trigger_sync(account_id: int, request: Request,
     return {"queued": True}
 
 
+def _backfill_status(session: Session) -> dict:
+    from sqlalchemy import func
+
+    from app.api.settings import _get_blob
+    from app.models import Folder, Message
+    total = session.exec(select(func.count(Folder.id))).one()
+    done = session.exec(
+        select(func.count(Folder.id)).where(Folder.backfill_done == True)  # noqa: E712
+    ).one()
+    messages = session.exec(select(func.count(Message.id))).one()
+    return {
+        "enabled": bool(_get_blob(session).get("backfillHistory")),
+        "folders_total": total,
+        "folders_done": done,
+        "complete": total > 0 and done >= total,
+        "messages": messages,
+    }
+
+
+@router.get("/backfill-history")
+def backfill_status(session: Session = Depends(get_session)) -> dict:
+    """Progress of the full-history backfill: how many folders are fully paged
+    and how many messages are cached so far."""
+    return _backfill_status(session)
+
+
+class BackfillIn(BaseModel):
+    enabled: bool
+
+
+@router.post("/backfill-history")
+def set_backfill(body: BackfillIn, request: Request,
+                 session: Session = Depends(get_session)) -> dict:
+    """Turn full-history backfill on or off. When on, each sync pages older mail
+    into the local cache (and search) until every folder is fully synced."""
+    from app.api.settings import _get_blob, _set_blob
+    blob = _get_blob(session)
+    blob["backfillHistory"] = bool(body.enabled)
+    _set_blob(session, blob)
+    if body.enabled:
+        request.app.state.sync.request_sync()   # kick a cycle right away
+    return _backfill_status(session)
+
+
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_account(account_id: int, store: SecretStore = Depends(require_unlocked_store),
                    session: Session = Depends(get_session)) -> None:

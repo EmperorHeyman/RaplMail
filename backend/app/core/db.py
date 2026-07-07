@@ -93,6 +93,13 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
     "mutedthread": {
         "participants": "ALTER TABLE mutedthread ADD COLUMN participants TEXT DEFAULT ''",
     },
+    "folder": {
+        # Some very old DBs predate uidvalidity on the folder row; add it if missing
+        # so the UIDVALIDITY-reset guard can read/write it safely.
+        "uidvalidity": "ALTER TABLE folder ADD COLUMN uidvalidity INTEGER",
+        "backfill_min_uid": "ALTER TABLE folder ADD COLUMN backfill_min_uid INTEGER",
+        "backfill_done": "ALTER TABLE folder ADD COLUMN backfill_done BOOLEAN DEFAULT 0",
+    },
 }
 
 

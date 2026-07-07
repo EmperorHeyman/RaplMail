@@ -76,8 +76,15 @@ class MailProvider(Protocol):
 
     def list_folders(self) -> list[FolderInfo]: ...
 
-    def fetch_headers(self, folder_path: str, min_uid: int = 1, limit: int | None = None) -> list[HeaderInfo]:
-        """Return header info for messages with UID >= ``min_uid``."""
+    def folder_uidvalidity(self, folder_path: str) -> int | None:
+        """The folder's current UIDVALIDITY (None if unknown)."""
+        ...
+
+    def fetch_headers(self, folder_path: str, min_uid: int = 1,
+                      max_uid: int | None = None, limit: int | None = None) -> list[HeaderInfo]:
+        """Return header info for messages with UID in ``[min_uid, max_uid]``
+        (max_uid None = open-ended). With ``limit`` set, the newest ``limit`` of
+        that range — used by backfill to page steadily older."""
         ...
 
     def fetch_uids(self, folder_path: str) -> list[int]:

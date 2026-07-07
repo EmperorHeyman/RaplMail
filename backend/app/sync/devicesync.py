@@ -174,27 +174,55 @@ def _collect_states(session: Session, since: datetime | None, full: bool) -> lis
     return out
 
 
-def _build_payload(session: Session, device: str, since: datetime | None, full: bool) -> dict:
+def _build_state_payload(session: Session, device: str, since: datetime | None, full: bool) -> dict:
+    """Automatic payload: per-message triage state only. Config never rides the
+    automatic channel — it moves only on an explicit push/pull, so a device that
+    hasn't touched its settings can't clobber one that has."""
+    return {
+        "v": 1,
+        "kind": "state",
+        "device": device,
+        "ts": _now_iso(),
+        "states": _collect_states(session, since, full),
+    }
+
+
+def _config_changed_at(session: Session) -> str:
+    """Best-effort 'settings last changed' time, shown in the pull picker so you
+    can tell which device's config is actually the freshest."""
+    from app.models import Setting
+    row = session.get(Setting, 1)
+    dt = _naive(row.updated_at) if (row and getattr(row, "updated_at", None)) else None
+    return (dt or _EPOCH).isoformat()
+
+
+def _build_config_payload(session: Session, device: str, label: str, version: int) -> dict:
+    """Explicit config snapshot: the full export bundle plus a version + real
+    change-time, so the receiving device can order snapshots honestly and a
+    stale one never wins by mere publish time."""
     from app.api.settings import export_bundle
     bundle = export_bundle(session)
     bundle["settings"] = _strip_sync_keys(bundle.get("settings"))
     return {
         "v": 1,
+        "kind": "config",
         "device": device,
+        "device_label": label,
         "ts": _now_iso(),
+        "config_version": version,
+        "config_changed_at": _config_changed_at(session),
         "config": bundle,
-        "states": _collect_states(session, since, full),
     }
 
 
-def _wrap_message(token: str, account_email: str, device: str) -> bytes:
+def _wrap_message(token: str, account_email: str, device: str, subject: str | None = None) -> bytes:
     """A self-describing RFC822 message carrying the encrypted token. Marked seen
     so it never counts as unread; a plain-language body explains it if the user
     ever sees it in another mail client."""
     msg = EmailMessage()
     msg["From"] = account_email
     msg["To"] = account_email
-    msg["Subject"] = "RaplMail settings sync — safe to ignore"
+    msg["Subject"] = subject or "RaplMail settings sync — safe to ignore"
     msg["Date"] = formatdate(localtime=True)
     msg[SYNC_HEADER] = "1"
     msg[DEVICE_HEADER] = device
@@ -263,15 +291,12 @@ def apply_states(session: Session, states: list[dict]) -> datetime | None:
     return newest
 
 
-def _maybe_apply_config(session: Session, payload: dict) -> None:
-    """Apply a peer's config if its publish time is newer than the last we applied.
-    Sync-control keys are stripped so this device keeps its own sync settings."""
-    cfg = payload.get("config")
+def _apply_config_bundle(session: Session, cfg: dict) -> None:
+    """Apply a config snapshot onto this device (explicit pull only). Sync-control
+    keys are stripped so a peer's bundle can never change this device's own sync
+    setup (carrier account / passphrase / cursors). Does NOT commit rules/sigs —
+    the caller commits."""
     if not isinstance(cfg, dict):
-        return
-    cfg_ts = _parse_iso(payload.get("ts")) or _EPOCH
-    last = _parse_iso(_blob(session).get("syncLastCfgTs"))
-    if last is not None and cfg_ts <= last:
         return
     from app.api.settings import _apply_config, _get_blob, _set_blob
     incoming = dict(cfg)
@@ -283,25 +308,23 @@ def _maybe_apply_config(session: Session, payload: dict) -> None:
         _set_blob(session, merged)
         incoming = {k: v for k, v in incoming.items() if k != "settings"}
     _apply_config(session, incoming)   # rules / signatures / sender categories
-    _save(session, {"syncLastCfgTs": payload.get("ts")})
 
 
 # --- publish / scan -----------------------------------------------------------
 
 def publish(session: Session, account: Account, provider) -> None:
+    """Automatic publish: encrypt and append changed triage state only. Config is
+    never published automatically — use push_config for that."""
     passphrase = get_passphrase()
     if not passphrase:
         return
     blob = _blob(session)
     folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
     since = _parse_iso(blob.get("syncLastPushTs"))
-    full = since is None   # first publish → full snapshot so the peer catches up
-    payload = _build_payload(session, device_id(session), since, full)
-    # Nothing changed and not the first run → skip the round-trip.
-    if not full and not payload["states"]:
-        # Still refresh config occasionally? Keep it simple: skip when no state
-        # changed. Config changes bump state rarely, so publish on demand instead.
-        return
+    full = since is None   # first publish → all local state so a new peer catches up
+    payload = _build_state_payload(session, device_id(session), since, full)
+    if not payload["states"]:
+        return   # nothing changed — skip the round-trip
     fernet = derive_fernet(passphrase)
     token = fernet.encrypt(json.dumps(payload, default=str).encode("utf-8")).decode("ascii")
     provider.ensure_folder(folder)
@@ -310,6 +333,8 @@ def publish(session: Session, account: Account, provider) -> None:
 
 
 def scan(session: Session, provider) -> int:
+    """Automatic scan: apply incoming triage state. Config snapshots sitting in
+    the folder are ignored here — they only apply on an explicit pull_config."""
     passphrase = get_passphrase()
     if not passphrase:
         return 0
@@ -341,8 +366,10 @@ def scan(session: Session, provider) -> int:
             continue   # not ours / wrong passphrase / corrupt — skip
         if payload.get("device") == my_device:
             continue   # our own message
-        ts = apply_states(session, payload.get("states") or [])
-        _maybe_apply_config(session, payload)
+        states = payload.get("states") or []
+        if not states:
+            continue   # config snapshot or empty — not applied automatically
+        ts = apply_states(session, states)
         if ts is not None and (newest_applied is None or ts > newest_applied):
             newest_applied = ts
         applied += 1
@@ -354,6 +381,129 @@ def scan(session: Session, provider) -> int:
             updates["syncLastPushTs"] = newest_applied.isoformat()
     _save(session, updates)
     return applied
+
+
+# --- explicit settings push / pull (manual, user-driven) ----------------------
+
+def _default_label(session: Session) -> str:
+    """A human name for this device in the pull picker — the machine hostname if
+    we can read it, else the short device id."""
+    blob = _blob(session)
+    lbl = blob.get("syncDeviceLabel")
+    if lbl:
+        return lbl
+    try:
+        import socket
+        return socket.gethostname() or device_id(session)[:8]
+    except Exception:
+        return device_id(session)[:8]
+
+
+def push_config(session: Session, account: Account, provider) -> dict:
+    """Publish this device's settings/rules/signatures/sender-tags as a config
+    snapshot the other devices can choose to pull. Bumps a monotonic version."""
+    passphrase = get_passphrase()
+    if not passphrase:
+        raise RuntimeError("Set a sync passphrase first.")
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    version = int(blob.get("syncConfigVersion") or 0) + 1
+    payload = _build_config_payload(session, device_id(session), _default_label(session), version)
+    fernet = derive_fernet(passphrase)
+    token = fernet.encrypt(json.dumps(payload, default=str).encode("utf-8")).decode("ascii")
+    provider.ensure_folder(folder)
+    provider.append_to_folder(
+        folder,
+        _wrap_message(token, account.email, payload["device"],
+                      subject="RaplMail settings snapshot — safe to ignore"),
+        seen=True,
+    )
+    _save(session, {"syncConfigVersion": version, "syncLastConfigPushAt": payload["ts"]})
+    return {"version": version, "at": payload["ts"], "label": payload["device_label"]}
+
+
+# The sync folder is dominated by frequent state payloads; config pushes are
+# rare. Scan newest-first with a budget rather than the whole (possibly large)
+# folder so opening the picker stays snappy.
+_SNAPSHOT_SCAN_BUDGET = 400
+
+
+def list_config_snapshots(session: Session, provider) -> list[dict]:
+    """Every config snapshot in the folder (newest first, within a scan budget),
+    with device + timestamps + a content summary so the user can pick one."""
+    passphrase = get_passphrase()
+    if not passphrase:
+        return []
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    my_device = device_id(session)
+    fernet = derive_fernet(passphrase)
+    try:
+        provider.ensure_folder(folder)
+        uids = provider.list_uids(folder)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for scanned, uid in enumerate(sorted(uids, reverse=True)):   # newest first
+        if scanned >= _SNAPSHOT_SCAN_BUDGET:
+            break
+        try:
+            raw = provider.fetch_raw(folder, uid)
+            token = _extract_token(raw)
+            if not token:
+                continue
+            payload = json.loads(fernet.decrypt(token.encode("ascii")).decode("utf-8"))
+        except Exception:
+            continue
+        cfg = payload.get("config")
+        if not isinstance(cfg, dict):
+            continue   # state-only payload — not a settings snapshot
+        settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
+        out.append({
+            "uid": uid,
+            "device": payload.get("device", ""),
+            "device_label": payload.get("device_label") or (payload.get("device", "")[:8] or "unknown"),
+            "is_me": payload.get("device") == my_device,
+            "published_at": payload.get("ts", ""),
+            "config_changed_at": payload.get("config_changed_at", ""),
+            "version": payload.get("config_version", 0),
+            "summary": {
+                "settings": len(settings),
+                "rules": len(cfg.get("rules") or []),
+                "signatures": len(cfg.get("signatures") or []),
+                "sender_categories": len(cfg.get("sender_categories") or []),
+            },
+        })
+    out.sort(key=lambda x: (x.get("published_at") or ""), reverse=True)
+    return out
+
+
+def pull_config(session: Session, provider, uid: int) -> dict:
+    """Apply the config snapshot at `uid` onto this device (explicit user action)."""
+    passphrase = get_passphrase()
+    if not passphrase:
+        raise RuntimeError("Set a sync passphrase first.")
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    fernet = derive_fernet(passphrase)
+    provider.ensure_folder(folder)
+    raw = provider.fetch_raw(folder, uid)
+    token = _extract_token(raw)
+    if not token:
+        raise RuntimeError("That snapshot could not be read.")
+    payload = json.loads(fernet.decrypt(token.encode("ascii")).decode("utf-8"))
+    cfg = payload.get("config")
+    if not isinstance(cfg, dict):
+        raise RuntimeError("That message isn't a settings snapshot.")
+    _apply_config_bundle(session, cfg)
+    session.commit()
+    _save(session, {
+        "syncLastCfgTs": payload.get("ts"),
+        "syncConfigVersion": max(int(blob.get("syncConfigVersion") or 0),
+                                 int(payload.get("config_version") or 0)),
+    })
+    return {"applied": True, "version": payload.get("config_version", 0),
+            "label": payload.get("device_label") or payload.get("device", "")[:8]}
 
 
 def tick(session: Session, account: Account, provider) -> None:

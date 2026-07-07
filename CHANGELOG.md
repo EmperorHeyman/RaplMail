@@ -11,6 +11,35 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.5.11] — 2026-07-07
+
+### Fixed
+- **Device sync no longer clobbers your settings.** The config side used to be
+  last-writer-wins by *publish time*, so a second PC that turned sync on days
+  later would publish its stale/default settings stamped "now" and overwrite the
+  PC you'd actually configured. Settings, rules and signatures now move **only
+  when you explicitly push or pull them** — the automatic channel carries just
+  your statuses (done / snooze / pin), which are keyed by Message-ID and can't
+  clash. Settings → Device sync gains **Push my settings** and **Pull from a
+  device**, the latter with a snapshot picker (device, when it was pushed, when
+  its settings last changed, and a rules/signatures/tags summary) so you choose
+  exactly which setup to copy over. A device that never configured anything can
+  no longer overwrite one that did.
+
+### Added
+- **Sync your full mail history.** RaplMail only ever downloaded the newest ~500
+  messages per folder and never reached further back, so older mail (a
+  months/years-old message) couldn't be found because it was never pulled down.
+  Settings → Accounts now has a **Sync full history** toggle that pages your
+  entire back-catalogue into the local cache and search, oldest-ward, in the
+  background — with live progress (folders complete + messages cached) — until
+  every folder is done. It reuses the warm sync connection and never fires
+  notifications or runs rules on the old mail.
+- **UIDVALIDITY reset handling.** If a server resets a folder's UIDVALIDITY
+  (which invalidates every stored UID), RaplMail now detects it, purges the
+  folder's stale cache and re-syncs cleanly. Your local done/snooze/pin survive
+  because they're keyed by Message-ID, not UID.
+
 ## [0.5.10] — 2026-07-06
 
 ### Fixed

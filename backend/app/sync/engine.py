@@ -404,6 +404,13 @@ class SyncManager:
                 # swallows its own errors so it can't break the mail sync).
                 from app.sync import devicesync
                 devicesync.tick(session, account, provider)
+                # Full-history backfill: page older mail into the cache while the
+                # connection is warm, if the user turned it on. Reuses this
+                # provider; best-effort so it can't break the forward sync.
+                try:
+                    self._backfill_account(session, account, provider, muted)
+                except Exception:
+                    log.exception("history backfill failed for account %s", account_id)
             finally:
                 provider.close()
             session.commit()
@@ -468,6 +475,7 @@ class SyncManager:
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
                      previews: list[dict] | None = None, muted: dict | None = None) -> int:
+        self._check_uidvalidity(session, folder, provider)
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
         ).one()
@@ -515,6 +523,127 @@ class SyncManager:
                 })
         self._resync_flags(session, account, folder, provider)
         return new_count
+
+    # --- full-history backfill ----------------------------------------------
+    # Windows of older mail to page per account per sync cycle (each window is
+    # HEADERS_PER_FOLDER_LIMIT messages). Bounded so a huge mailbox fills in over
+    # a few cycles instead of blocking one sync for minutes.
+    BACKFILL_WINDOWS_PER_CYCLE = 3
+
+    def _check_uidvalidity(self, session: Session, folder: Folder, provider) -> None:
+        """If the server's UIDVALIDITY for this folder changed, every stored UID is
+        stale (it now maps to a different message). Purge the folder's cached
+        messages and reset the sync/backfill cursors so it re-syncs cleanly.
+        MessageState is keyed by Message-ID (not UID), so done/snooze/pin survive
+        and re-apply as the mail comes back."""
+        server_uv = provider.folder_uidvalidity(folder.path)
+        if server_uv is None:
+            return
+        if folder.uidvalidity is None:
+            folder.uidvalidity = server_uv        # first time we've seen it — record
+            session.add(folder)
+            return
+        if server_uv == folder.uidvalidity:
+            return
+        log.warning("UIDVALIDITY changed for %s (%s -> %s); purging + resyncing",
+                    folder.path, folder.uidvalidity, server_uv)
+        self._purge_folder_messages(session, folder)
+        folder.uidvalidity = server_uv
+        folder.backfill_min_uid = None
+        folder.backfill_done = False
+        session.add(folder)
+        session.flush()
+
+    def _purge_folder_messages(self, session: Session, folder: Folder) -> None:
+        """Delete a folder's cached messages (and their derived calendar events)
+        but keep the Folder row. FTS is contentless (keyed by rowid), so orphaned
+        index entries simply don't resolve — harmless, same as account deletion."""
+        from sqlalchemy import delete as sa_delete
+
+        from app.models import CalendarEvent
+        msg_ids = select(Message.id).where(Message.folder_id == folder.id)
+        session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id.in_(msg_ids)))
+        session.exec(sa_delete(Message).where(Message.folder_id == folder.id))
+        session.flush()
+
+    def _backfill_folder(self, session: Session, account: Account, folder: Folder,
+                         provider, muted: dict | None = None, limit: int | None = None) -> int:
+        """Page ONE window of older mail (below the current backfill cursor) into
+        the cache. Historical mail: no rules, no notifications — just upsert +
+        restore local state (+ honor muted threads). Returns the count fetched; 0
+        (and sets backfill_done) once the folder is fully paged."""
+        if folder.backfill_done:
+            return 0
+        limit = limit or HEADERS_PER_FOLDER_LIMIT
+        cursor = folder.backfill_min_uid
+        if cursor is None:
+            # Start just below the lowest UID the forward sync already grabbed.
+            lowest = session.exec(
+                select(func.min(Message.uid)).where(Message.folder_id == folder.id)
+            ).one()
+            if not lowest:
+                return 0   # empty folder — let the forward sync populate it first
+            cursor = lowest
+        if cursor <= 1:
+            folder.backfill_done = True
+            session.add(folder)
+            return 0
+        headers = provider.fetch_headers(folder.path, min_uid=1, max_uid=cursor - 1, limit=limit)
+        if not headers:
+            folder.backfill_done = True
+            folder.backfill_min_uid = 1
+            session.add(folder)
+            return 0
+        new_count = 0
+        min_seen = cursor
+        for h in headers:
+            if h.uid < min_seen:
+                min_seen = h.uid
+            msg = self._upsert_message(session, account, folder, h, {})
+            if msg is None:
+                continue
+            new_count += 1
+            self._restore_state(session, account, msg)
+            if muted and not msg.is_done and msg.thread_id in muted:
+                parts = muted[msg.thread_id]
+                if not parts or (msg.from_addr or "").strip().lower() in parts:
+                    msg.is_done = True
+                    self._mark_state_done(session, account, msg)
+        folder.backfill_min_uid = min_seen
+        if min_seen <= 1 or len(headers) < limit:
+            folder.backfill_done = True   # reached the bottom
+        session.add(folder)
+        return new_count
+
+    def _backfill_account(self, session: Session, account: Account, provider,
+                          muted: dict | None = None) -> int:
+        """Trickle older history for one account if the user enabled it. Bounded
+        per cycle; re-runs each sync until every folder is fully paged."""
+        from app.api.settings import _get_blob
+        if not _get_blob(session).get("backfillHistory"):
+            return 0
+        folders = list(session.exec(
+            select(Folder).where(Folder.account_id == account.id,
+                                 Folder.backfill_done == False)  # noqa: E712
+        ))
+        fetched = 0
+        for folder in folders:
+            windows = 0
+            while windows < self.BACKFILL_WINDOWS_PER_CYCLE and not folder.backfill_done:
+                try:
+                    n = self._backfill_folder(session, account, folder, provider, muted)
+                except Exception:
+                    log.exception("backfill window failed: account %s folder %s",
+                                  account.id, folder.path)
+                    break
+                session.commit()
+                windows += 1
+                fetched += n
+                if n == 0:
+                    break
+        if fetched:
+            log.info("backfilled %s older messages for account %s", fetched, account.id)
+        return fetched
 
     # How many recent messages per folder to re-check FLAGS on each sync, so
     # read/done state changed on another device propagates here too.

@@ -98,6 +98,12 @@ class Folder(SQLModel, table=True):
     uidvalidity: int | None = None
     unread_count: int = 0
     total_count: int = 0
+    # Full-history backfill: the sync engine first grabs only the newest window;
+    # backfill pages OLDER mail downward. `backfill_min_uid` is the lowest UID
+    # reached so far (next window fetches below it); `backfill_done` is set once
+    # the folder has been paged to the bottom.
+    backfill_min_uid: int | None = None
+    backfill_done: bool = False
 
 
 class Message(SQLModel, table=True):

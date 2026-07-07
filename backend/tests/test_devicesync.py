@@ -118,9 +118,10 @@ def test_full_roundtrip_serialize_encrypt_apply(client):
         s.commit()
 
     passphrase = "the shared sync secret"
-    # Device A builds + encrypts + wraps.
+    # Device A builds + encrypts + wraps (automatic channel = state only).
     with _s() as s:
-        payload = devicesync._build_payload(s, "devA", since=None, full=True)
+        payload = devicesync._build_state_payload(s, "devA", since=None, full=True)
+    assert payload["kind"] == "state" and "config" not in payload
     assert any(x["mid"] == mid and x["done"] for x in payload["states"])
     token = devicesync.derive_fernet(passphrase).encrypt(
         json.dumps(payload, default=str).encode("utf-8")).decode("ascii")
@@ -140,17 +141,19 @@ def test_full_roundtrip_serialize_encrypt_apply(client):
         assert s.exec(select(MessageState).where(MessageState.message_id == mid)).first().is_done is True
 
 
-def test_maybe_apply_config_preserves_local_sync_keys(client):
+def test_apply_config_bundle_preserves_local_sync_keys(client):
+    # An explicit pull applies a peer's config but must never change THIS device's
+    # own sync-control keys (carrier account / device id / cursors).
     from app.api.settings import _get_blob, _set_blob
     with _s() as s:
         before = _get_blob(s)
     try:
         with _s() as s:
             _set_blob(s, {"syncEnabled": True, "syncAccountId": 7, "syncDeviceId": "local-dev", "theme": "nord"})
-        payload = {"ts": datetime(2030, 1, 1).isoformat(),
-                   "config": {"settings": {"syncEnabled": False, "syncAccountId": 99, "theme": "dracula"}}}
+        cfg = {"settings": {"syncEnabled": False, "syncAccountId": 99, "theme": "dracula"}}
         with _s() as s:
-            devicesync._maybe_apply_config(s, payload)
+            devicesync._apply_config_bundle(s, cfg)
+            s.commit()
         with _s() as s:
             blob = _get_blob(s)
         assert blob["syncEnabled"] is True and blob["syncAccountId"] == 7   # local sync control preserved
@@ -159,3 +162,25 @@ def test_maybe_apply_config_preserves_local_sync_keys(client):
     finally:
         with _s() as s:
             _set_blob(s, before)   # restore so the shared test DB stays clean
+
+
+def test_build_config_payload_shape(client):
+    # The explicit config snapshot carries a version + real change-time + bundle,
+    # and strips sync-control keys from the settings it publishes.
+    from app.api.settings import _get_blob, _set_blob
+    with _s() as s:
+        before = _get_blob(s)
+    try:
+        with _s() as s:
+            _set_blob(s, {"syncEnabled": True, "syncAccountId": 3, "theme": "nord", "smartInbox": True})
+        with _s() as s:
+            payload = devicesync._build_config_payload(s, "devA", "Main-PC", 5)
+        assert payload["kind"] == "config" and payload["config_version"] == 5
+        assert payload["device_label"] == "Main-PC"
+        assert payload["config_changed_at"]
+        settings = payload["config"]["settings"]
+        assert settings.get("theme") == "nord" and settings.get("smartInbox") is True
+        assert "syncEnabled" not in settings and "syncAccountId" not in settings  # sync keys stripped
+    finally:
+        with _s() as s:
+            _set_blob(s, before)

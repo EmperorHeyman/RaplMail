@@ -49,28 +49,72 @@ def sync_config(body: SyncConfigIn, session: Session = Depends(get_session)) -> 
     return devicesync.status(session)
 
 
-def _run_now(account_id: int) -> dict:
+def _guard_ready(st: dict) -> None:
+    if not st["enabled"] or not st["account_id"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Device sync isn't set up yet.")
+    if not st["has_passphrase"]:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault and set a passphrase first.")
+
+
+def _with_provider(account_id: int, action: str, uid: int | None = None) -> dict:
+    """Build a provider for the carrier account and run one sync action against
+    it, always closing the provider afterwards."""
     from app.sync.engine import build_provider
     with Session(get_engine()) as s:
         account = s.get(Account, account_id)
         if account is None:
-            return devicesync.status(s)
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Account not found.")
         provider = build_provider(account)
         try:
-            devicesync.tick(s, account, provider)
+            if action == "tick":
+                devicesync.tick(s, account, provider)
+                return devicesync.status(s)
+            if action == "push":
+                return devicesync.push_config(s, account, provider)
+            if action == "snapshots":
+                return {"snapshots": devicesync.list_config_snapshots(s, provider)}
+            if action == "pull":
+                return devicesync.pull_config(s, provider, uid)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown sync action.")
+        except RuntimeError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
         finally:
             try:
                 provider.close()
             except Exception:
                 pass
-        return devicesync.status(s)
 
 
 @router.post("/now")
 async def sync_now(session: Session = Depends(get_session)) -> dict:
     st = devicesync.status(session)
-    if not st["enabled"] or not st["account_id"]:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Device sync isn't set up yet.")
-    if not st["has_passphrase"]:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault and set a passphrase first.")
-    return await run_in_threadpool(_run_now, st["account_id"])
+    _guard_ready(st)
+    return await run_in_threadpool(_with_provider, st["account_id"], "tick")
+
+
+@router.post("/push-config")
+async def push_config(session: Session = Depends(get_session)) -> dict:
+    """Publish this device's settings/rules/signatures as a config snapshot."""
+    st = devicesync.status(session)
+    _guard_ready(st)
+    return await run_in_threadpool(_with_provider, st["account_id"], "push")
+
+
+@router.get("/config-snapshots")
+async def config_snapshots(session: Session = Depends(get_session)) -> dict:
+    """List the config snapshots available to pull, newest first."""
+    st = devicesync.status(session)
+    _guard_ready(st)
+    return await run_in_threadpool(_with_provider, st["account_id"], "snapshots")
+
+
+class PullConfigIn(BaseModel):
+    uid: int
+
+
+@router.post("/pull-config")
+async def pull_config(body: PullConfigIn, session: Session = Depends(get_session)) -> dict:
+    """Apply a chosen config snapshot onto this device."""
+    st = devicesync.status(session)
+    _guard_ready(st)
+    return await run_in_threadpool(_with_provider, st["account_id"], "pull", body.uid)

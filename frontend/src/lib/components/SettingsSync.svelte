@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, notify } from "../store.svelte.js";
+  import { app, notify, initSettings } from "../store.svelte.js";
   import { api } from "../api.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
@@ -13,6 +13,10 @@
   let changingPass = $state(false);
   let saving = $state(false);
   let syncing = $state(false);
+  let pushing = $state(false);
+  let pulling = $state(false);
+  let snapshots = $state(null);   // null = picker closed; [] = open, none found
+  let applyingUid = $state(null);
 
   async function load() {
     loading = true;
@@ -60,6 +64,35 @@
     if (!iso) return t("dsync.never");
     try { return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
     catch { return iso; }
+  }
+
+  async function pushConfig() {
+    pushing = true;
+    try {
+      await api.post("/sync/push-config");
+      notify(t("dsync.pushed"));
+    } catch (e) { notify(e.message, "error"); }
+    finally { pushing = false; }
+  }
+
+  async function openPull() {
+    pulling = true;
+    try {
+      const res = await api.get("/sync/config-snapshots");
+      snapshots = res.snapshots || [];
+    } catch (e) { notify(e.message, "error"); snapshots = null; }
+    finally { pulling = false; }
+  }
+
+  async function applySnapshot(snap) {
+    applyingUid = snap.uid;
+    try {
+      const res = await api.post("/sync/pull-config", { uid: snap.uid });
+      await initSettings();   // rehydrate the live UI from the freshly-applied blob
+      notify(t("dsync.applied", { label: res.label || snap.device_label }));
+      snapshots = null;
+    } catch (e) { notify(e.message, "error"); }
+    finally { applyingUid = null; }
   }
 </script>
 
@@ -120,6 +153,61 @@
         {/if}
         <div class="st"><span>{t("dsync.stDevice")}</span><b class="mono">{(status.device_id || "").slice(0, 8) || "—"}</b></div>
       </div>
+
+      {#if status.has_passphrase}
+        <div class="card">
+          <div class="cfghead">
+            <b>{t("dsync.cfgTitle")}</b>
+            <span class="hint">{t("dsync.cfgIntro")}</span>
+          </div>
+          <div class="actions">
+            <button class="btn" onclick={pushConfig} disabled={pushing}>
+              {@html icons.upload || icons.sync} {pushing ? t("dsync.pushing") : t("dsync.pushBtn")}
+            </button>
+            <button class="btn" onclick={openPull} disabled={pulling}>
+              {@html icons.download || icons.sync} {pulling ? t("dsync.pullLoading") : t("dsync.pullBtn")}
+            </button>
+          </div>
+        </div>
+      {/if}
+    {/if}
+
+    {#if snapshots !== null}
+      <div class="modal-backdrop" onclick={() => (snapshots = null)} role="presentation">
+        <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+          <h2>{t("dsync.snapTitle")}</h2>
+          <p class="snaphint">{t("dsync.snapHint")}</p>
+          {#if snapshots.length === 0}
+            <div class="muted empty">{t("dsync.noSnapshots")}</div>
+          {:else}
+            <div class="snaps">
+              {#each snapshots as snap (snap.uid)}
+                <div class="snap">
+                  <div class="snapinfo">
+                    <div class="snaptop">
+                      <b>{snap.device_label}</b>
+                      {#if snap.is_me}<span class="tag">{t("dsync.snapThisDevice")}</span>{/if}
+                    </div>
+                    <div class="snapmeta">{t("dsync.snapPushed")}: {fmt(snap.published_at)}</div>
+                    {#if snap.config_changed_at}
+                      <div class="snapmeta">{t("dsync.snapChanged")}: {fmt(snap.config_changed_at)}</div>
+                    {/if}
+                    <div class="snapmeta">
+                      {t("dsync.snapSummary", { rules: snap.summary.rules, signatures: snap.summary.signatures, cats: snap.summary.sender_categories })}
+                    </div>
+                  </div>
+                  <button class="btn primary" onclick={() => applySnapshot(snap)} disabled={applyingUid != null}>
+                    {applyingUid === snap.uid ? t("dsync.applying") : t("dsync.snapApply")}
+                  </button>
+                </div>
+              {/each}
+            </div>
+          {/if}
+          <div class="modal-actions">
+            <button class="btn" onclick={() => (snapshots = null)}>{t("dsync.close")}</button>
+          </div>
+        </div>
+      </div>
     {/if}
 
     <div class="how">
@@ -169,4 +257,26 @@
   .how { padding: 0 2px; }
   .how h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); }
   .how ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }
+
+  .cfghead { display: flex; flex-direction: column; gap: 4px; }
+  .cfghead b { font-size: 14px; font-weight: 600; }
+
+  .modal-backdrop { position: fixed; inset: 0; z-index: 60; background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center; padding: 20px; }
+  .modal { width: 100%; max-width: 520px; max-height: 80vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+    padding: 20px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.35); }
+  .modal h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .snaphint { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.55; }
+  .empty { padding: 18px 4px; text-align: center; font-size: 13px; }
+  .snaps { display: flex; flex-direction: column; gap: 10px; }
+  .snap { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px;
+    border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+  .snapinfo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .snaptop { display: flex; align-items: center; gap: 8px; }
+  .snaptop b { font-size: 13.5px; font-weight: 600; }
+  .tag { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px;
+    background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  .snapmeta { color: var(--muted); font-size: 12px; }
+  .modal-actions { display: flex; justify-content: flex-end; padding-top: 4px; }
 </style>

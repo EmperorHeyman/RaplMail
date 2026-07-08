@@ -1,0 +1,15 @@
+[package]
+name = "raplsandbox"
+version = "0.1.0"
+edition = "2021"
+description = "RaplMail attachment sandbox analyzer, compiled to a raw wasm32 module"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+strip = true
+codegen-units = 1

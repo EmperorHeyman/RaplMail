@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -27,10 +27,18 @@
   import ShortcutsOverlay from "./lib/components/ShortcutsOverlay.svelte";
   import Toast from "./lib/components/Toast.svelte";
   import SendingIndicator from "./lib/components/SendingIndicator.svelte";
+  import ReminderWindow from "./lib/components/ReminderWindow.svelte";
+  import SandboxWindow from "./lib/components/SandboxWindow.svelte";
 
   // When opened as a separate compose window (openCompose with "window" mode),
   // render only the compose surface.
   const composeWindow = typeof location !== "undefined" && location.hash === "#compose";
+  // A standalone calendar-reminder pop-up window (see store.fireReminder).
+  const reminderWindow = typeof location !== "undefined" && location.hash === "#reminder";
+  // The isolated attachment sandbox window (see store.openSandbox). It runs with
+  // no capabilities and never touches app services or the backend.
+  const sandboxWindow = typeof location !== "undefined" && location.hash === "#sandbox";
+  const childWindow = composeWindow || reminderWindow || sandboxWindow;
 
   let bootError = $state("");
   let shortcutsOpen = $state(false);
@@ -94,11 +102,15 @@
 
   onMount(() => {
     applyTheme();
-    // A separate #compose window must NOT run the app services (events,
-    // calendar, pending-send recovery) — that duplicated notifications and
-    // could redeliver a send the main window was still counting down.
-    if (composeWindow) { initSettings(); return; }
+    // A separate #compose / #reminder / #sandbox window must NOT run the app
+    // services (events, calendar, pending-send recovery) — that duplicated
+    // notifications and could redeliver a send the main window was still
+    // counting down. The sandbox window has no backend access at all, so it
+    // doesn't even pull settings (i18n/theme are seeded from localStorage).
+    if (sandboxWindow) return;
+    if (childWindow) { initSettings(); return; }
     initSettings();  // pull persisted settings from the backend file
+    startSandboxBridge();  // act on "trust & open"/"save" requests from a sandbox
     boot();
     // Re-evaluate auto day/night theme periodically.
     const t = setInterval(() => { if (app.settings.themeMode === "auto") applyTheme(); }, 600000);
@@ -106,7 +118,7 @@
   });
 
   function onGlobalKey(e) {
-    if (composeWindow) return;
+    if (childWindow) return;
     if (app.confirm) return;   // a confirm dialog owns the keyboard
     // Escape backs out of the open message / conversation → back to the list.
     // Overlays (palette, compose, dialogs, focused inputs) keep their own Escape.
@@ -169,7 +181,7 @@
   // first so the default view honors Smart Inbox (avoids defaulting to All Inboxes).
   let _booted = false;
   $effect(() => {
-    if (app.vault.unlocked && !_booted && !composeWindow) {
+    if (app.vault.unlocked && !_booted && !childWindow) {
       _booted = true;
       (async () => { await initSettings(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();
@@ -181,6 +193,10 @@
 
 {#if composeWindow}
   <Compose standalone />
+{:else if reminderWindow}
+  <ReminderWindow />
+{:else if sandboxWindow}
+  <SandboxWindow />
 {:else if !app.vault.ready}
   <div class="boot">
     {#if bootError}
@@ -257,13 +273,13 @@
 {#if app.ruleModal}
   <RuleModal />
 {/if}
-{#if !composeWindow && app.vault.unlocked && !app.settings.onboarded}
+{#if !childWindow && app.vault.unlocked && !app.settings.onboarded}
   <Onboarding />
 {/if}
 <SendingIndicator />
 <svelte:window on:keydown={onGlobalKey} />
 <svelte:document on:click={onDocClick} />
-{#if !composeWindow}
+{#if !childWindow}
   <CommandPalette />
   <GoToPalette open={goToOpen} onclose={() => (goToOpen = false)} />
   <ShortcutsOverlay open={shortcutsOpen} onclose={() => (shortcutsOpen = false)} />

@@ -1,0 +1,1 @@
+C:\Users\Emperor\Desktop\python\RaplMail\frontend\wasm\raplsandbox\target\wasm32-unknown-unknown\release\raplsandbox.wasm: C:\Users\Emperor\Desktop\python\RaplMail\frontend\wasm\raplsandbox\src\lib.rs

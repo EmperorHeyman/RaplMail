@@ -1,7 +1,7 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { debug } from "../api.js";
-  import { notify } from "../store.svelte.js";
+  import { debug, backendBase } from "../api.js";
+  import { app, notify, saveSettings, syncAllAccounts, recategorizeOnce } from "../store.svelte.js";
 
   let records = $state([]);
   let health = $state(null);
@@ -56,9 +56,45 @@
     poll(); timer = setInterval(poll, 1500);
   });
   onDestroy(() => clearInterval(timer));
+
+  // --- Developer tools -------------------------------------------------------
+  function copyDiagnostics() {
+    // A copy-pasteable snapshot for bug reports — health/system + a redacted
+    // settings dump (secrets/keys stripped) so nothing sensitive leaks.
+    const SECRET = /(key|token|password|secret|pgp|smime|cert|refresh|caldav|carddav)/i;
+    const redacted = {};
+    for (const [k, v] of Object.entries(app.settings || {})) redacted[k] = SECRET.test(k) ? "«redacted»" : v;
+    const blob = {
+      version: appVersion, when: new Date().toISOString(),
+      system: health?.system || null,
+      accounts: (health?.accounts || []).map((a) => ({ provider: a.provider, status: a.status, idle: a.idle_active, last_error: a.last_error || null })),
+      backend: (() => { try { return backendBase(); } catch { return null; } })(),
+      settings: redacted,
+    };
+    navigator.clipboard?.writeText(JSON.stringify(blob, null, 2)).then(
+      () => notify("Copied diagnostics to clipboard"),
+      () => notify("Couldn't copy", "error"));
+  }
+  function relock() {
+    saveSettings({ debugUnlocked: false });
+    notify("Developer mode hidden. Tap the version 5× to re-enable.");
+  }
+  const base = (() => { try { return backendBase(); } catch { return "—"; } })();
 </script>
 
 <div class="wrap">
+  <section class="card">
+    <h3>Developer tools</h3>
+    <p class="hint">Diagnostics and manual triggers. This section stays hidden until you tap the version 5 times.</p>
+    <div class="devgrid">
+      <button class="btn ghost" onclick={copyDiagnostics}>Copy diagnostics</button>
+      <button class="btn ghost" onclick={() => { syncAllAccounts(); notify("Sync triggered"); }}>Force sync all</button>
+      <button class="btn ghost" onclick={() => { recategorizeOnce(true); notify("Recategorizing inbox…"); }}>Recategorize inbox</button>
+      <button class="btn ghost danger" onclick={relock}>Hide developer mode</button>
+    </div>
+    <div class="kv"><span>Backend</span><code>{base}</code></div>
+  </section>
+
   <section class="card">
     <h3>Account health</h3>
     <p class="hint">Live sync status per account. If one is stuck on <b>syncing</b> or shows an error, that's the culprit.</p>
@@ -131,6 +167,13 @@
   .sdot.error { background: var(--danger); }
   @keyframes pulse { 50% { opacity: 0.35; } }
   .sysline { margin: 12px 0 0; font-size: 12px; color: var(--faint); }
+  .devgrid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .devgrid .btn { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; }
+  .devgrid .btn:hover { background: var(--surface-3); }
+  .devgrid .btn.danger { color: var(--danger); }
+  .kv { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+  .kv > span { color: var(--muted); width: 60px; flex: none; }
+  .kv code { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); padding: 4px 8px; border-radius: 6px; overflow-x: auto; white-space: nowrap; }
 
   .logs { display: flex; flex-direction: column; }
   .loghead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }

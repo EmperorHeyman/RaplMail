@@ -81,9 +81,37 @@
   function openCategory(cat, mode) {
     groupMode = { ...groupMode, [cat]: mode };
     const s = new Set(expandedKeys); s.add(cat); expandedKeys = s;
+    markSticky(cat);   // opening a group holds it at the top while you read it
     loadCategory(cat);
   }
   function seeAll(cat) { openCategory(cat, "all"); }
+
+  // Groups the user has touched this session stay pinned to the top even after
+  // their unread count hits 0 — otherwise reading the last new mail in a group
+  // makes the whole card drop from the "hot" band to the end of Today mid-click,
+  // which reads as "the mail I just opened jumped down". Reset when the view /
+  // search changes (or on restart), so it only holds the list stable in-session.
+  let stickyHot = $state(new Set());
+  function markSticky(cat) {
+    if (cat && groupedCategories().includes(cat) && !stickyHot.has(cat))
+      stickyHot = new Set([...stickyHot, cat]);
+  }
+  $effect(() => {
+    app.selectedKind; app.selectedFolderId; app.search;   // reset triggers
+    untrack(() => { if (stickyHot.size) stickyHot = new Set(); });
+  });
+
+  // Which Smart Inbox category cards are currently expanded (their key IS the
+  // category id). Drives the header breadcrumb — the "you're inside this group"
+  // indicator that replaces the old static "Smart Inbox" title.
+  const openCats = $derived(
+    smartActive() ? groupedCategories().filter((c) => expandedKeys.has(c)) : []
+  );
+  function collapseAllGroups() {
+    const s = new Set(expandedKeys);
+    for (const c of groupedCategories()) s.delete(c);
+    expandedKeys = s;
+  }
 
   // Expanded bundles can hold hundreds of in-memory mails; render a window.
   const CHUNK = 12;
@@ -210,8 +238,9 @@
           : (msgs.find((m) => m.id === openId)?.category
              ?? groups.find((g) => (g.recent || []).some((r) => r.id === openId))?.category
              ?? null);
-        const hot = groups.filter((g) => g.new > 0 || g.category === openCat);   // NEW mail or being read → top
-        const cold = groups.filter((g) => !(g.new > 0 || g.category === openCat)); // otherwise → end of Today
+        const isHot = (g) => g.new > 0 || g.category === openCat || stickyHot.has(g.category);
+        const hot = groups.filter(isHot);    // NEW mail, being read, or touched this session → top
+        const cold = groups.filter((g) => !isHot(g)); // otherwise → end of Today
         const hotItems = hot.flatMap(expandGroup);
         const coldItems = cold.flatMap(expandGroup);
         const out = [...hotItems];
@@ -652,6 +681,7 @@
        app.messages.some((m) => m.thread_id === message.thread_id && m.id !== message.id))
         ? message.thread_id : null;
     app.selectedMessageId = message.id;
+    markSticky(message.category);   // keep this mail's group pinned so it doesn't drop mid-click
     if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
     refocusList();
   }
@@ -666,7 +696,11 @@
     const combo = keyCombo(e);
     if (!combo) return;
     if (combo === kb.search) {
-      document.querySelector(".list .search")?.focus(); e.preventDefault(); return;
+      // Respect the user's preferred search surface: the full modal, or the
+      // inline bar in the list header.
+      if (app.settings.searchStyle === "modal") paletteOpen = true;
+      else document.querySelector(".list .search")?.focus();
+      e.preventDefault(); return;
     }
     if (!items.length) return;
     // Skip non-interactive rows (date headers, group loaders) when arrowing.
@@ -798,7 +832,25 @@
 <section class="list">
   <header>
     <div class="row1">
-      <h2>{title}</h2>
+      {#if app.selectedKind === "smart"}
+        <!-- Smart Inbox: no redundant static title. When a group is open, show a
+             breadcrumb so you can see which group folder you're in (and collapse it). -->
+        <div class="crumbs">
+          {#if openCats.length}
+            <button class="crumb root" onclick={collapseAllGroups}>{t("list.smartInbox")}</button>
+            {#each openCats as c}
+              <span class="csep">›</span>
+              <button class="crumb cur" onclick={() => toggleExpand(c)} title={t("list.collapseGroup")}>
+                <span class="cic">{@html CAT_META[c]?.icon || icons.folder}</span>
+                {CAT_META[c]?.label || c}
+                <span class="cx">×</span>
+              </button>
+            {/each}
+          {/if}
+        </div>
+      {:else}
+        <h2>{title}</h2>
+      {/if}
       <div class="row1-actions">
         {#if hasUnread}
           <button class="markread" title={t("list.markAllReadTip")} onclick={markAllRead}>
@@ -955,6 +1007,20 @@
   .markread:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   .markread :global(svg) { width: 14px; height: 14px; }
   h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Smart Inbox breadcrumb — the "you're in this group folder" indicator. Flex:1
+     so it holds the header height and pushes the actions to the right even when
+     empty (no group open = deliberately blank, no static "Smart Inbox" title). */
+  .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 26px; overflow: hidden; }
+  .crumb { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .crumb.root { color: var(--muted); }
+  .crumb.root:hover { background: var(--hover); color: var(--text); }
+  .crumb.cur { background: var(--accent-soft); color: var(--text); }
+  .crumb.cur:hover { background: var(--accent-soft-2); }
+  .crumb .cic { display: inline-flex; color: var(--accent); }
+  .crumb .cic :global(svg) { width: 14px; height: 14px; }
+  .crumb .cx { color: var(--faint); font-size: 15px; line-height: 1; margin-left: 2px; }
+  .crumb.cur:hover .cx { color: var(--text); }
+  .csep { color: var(--faint); font-size: 13px; flex: none; }
   .searchrow { display: flex; gap: 8px; align-items: center; }
   .search { flex: 1; }
   .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); transition: background var(--t-fast) var(--ease); }

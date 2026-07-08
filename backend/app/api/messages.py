@@ -15,6 +15,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.api.deps import verify_token
 from app.core.db import get_engine, get_session, index_message_fts
+from app.core.threat import assess as _assess_attachment
 from app.models import (
     Account, ActionQueue, Contact, Folder, FolderRole, Message, MessageState,
     Rule, RuleAction, RuleField, RuleOp, SenderCategory, Setting,
@@ -800,7 +801,12 @@ def _attachment_size(att: dict) -> int:
 
 
 def _attachment_meta(parsed) -> list[dict]:
-    """User-facing attachment list. Skips inline body images (embedded logos)."""
+    """User-facing attachment list. Skips inline body images (embedded logos).
+
+    Each real attachment is also run through the execution-free threat heuristic
+    (``app.core.threat.assess``) so the reader can flag a suspicious file and
+    offer to open it in the isolated wasm sandbox before touching the OS.
+    """
     out: list[dict] = []
     for i, a in enumerate(parsed.attachments or []):
         fname = (a.get("filename") or "").strip()
@@ -813,22 +819,31 @@ def _attachment_meta(parsed) -> list[dict]:
         # as downloadable attachments (the "CBE34110@…" phantom attachments bug).
         if fname and cid_raw and (fname == cid_raw or fname == cid or fname.strip("<>") == cid):
             fname = ""
+        # Decode the bytes once — reused for inline detection, sizing and threat.
+        data = _decode_att_payload(a)
         # An inline body image has a Content-ID, no real filename, and image bytes.
         # Don't trust the declared type: some clients label inline images as
         # application/octet-stream, so sniff the magic bytes as well.
         if cid and not fname:
             is_image = ctype.startswith("image/")
             if not is_image:
-                data = _decode_att_payload(a)
                 is_image = bool(data) and _sniff_image_mime(data) is not None
             if is_image:
                 continue  # embedded body image — not a real attachment
+        display = fname or f"attachment-{i + 1}"
+        # Pass a generous head so the PDF/Office content scan can find active
+        # content that isn't in the first few KB (the catalog/OpenAction can sit
+        # anywhere). Substring search over ~512 KB is cheap.
+        risk = _assess_attachment(display, ctype, (data or b"")[:524288])
         out.append({
             "index": i,
-            "filename": fname or f"attachment-{i + 1}",
+            "filename": display,
             "content_type": ctype,
-            "size": _attachment_size(a),
+            "size": len(data) if data is not None else _attachment_size(a),
             "inline": bool(cid) and ctype.startswith("image/"),
+            "risk": risk["risk"],
+            "risk_reasons": risk["reasons"],
+            "type_guess": risk["type_guess"],
         })
     return out
 

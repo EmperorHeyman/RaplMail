@@ -10,6 +10,7 @@ import goto from "./parts/goto.js";
 import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
+import sandbox from "./parts/sandbox.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -25,6 +26,7 @@ const base = {
   "common.retry": "Zkusit znovu",
   "common.play": "Přehrát",
   "common.preview": "Náhled",
+  "common.delete": "Smazat",
   "common.enabled": "Zapnuto",
   "common.disabled": "Vypnuto",
 
@@ -86,9 +88,29 @@ const base = {
   "notif.newMail": "Upozorňovat na novou poštu",
   "notif.onlyUnfocused": "Jen když RaplMail není aktivní",
   "notif.sound": "Zvuk",
+  "notif.soundMail": "Zvuk nové pošty",
+  "notif.soundCalendar": "Zvuk připomínky kalendáře",
+  "notif.customSounds": "Vlastní zvuky",
+  "notif.addCustom": "Přidat vlastní zvuk",
+  "notif.customHint": "Nahrajte zvukový soubor a vystřihněte krátký úsek jako zvuk oznámení.",
+  "notif.reminderWindow": "Zobrazit okno připomínky",
+  "notif.reminderWindowHint": "U událostí kalendáře zobrazí malé okno navrchu („zbývá X do …“) místo pouhého oznámení.",
   "notif.volume": "Hlasitost",
   "notif.test": "Odeslat zkušební oznámení",
   "notif.muteHint": "Chcete-li ztlumit konkrétního odesílatele nebo celou kategorii, přidejte pravidlo „Ztlumit oznámení“.",
+  "sound.studioTitle": "Vlastní zvuk oznámení",
+  "sound.pickFile": "Vyberte zvukový soubor",
+  "sound.pickHint": "MP3, WAV, OGG, M4A… vystřihneme z něj krátký úsek.",
+  "sound.decoding": "Načítání…",
+  "sound.decodeFailed": "Zvukový soubor se nepodařilo načíst.",
+  "sound.start": "Začátek",
+  "sound.length": "Délka",
+  "sound.name": "Název",
+  "sound.namePlaceholder": "např. Můj zvonek",
+  "sound.preview": "Náhled",
+  "sound.chooseAnother": "Vybrat jiný",
+  "sound.save": "Uložit zvuk",
+  "sound.saved": "Zvuk „{name}“ uložen",
 
   // Nastavení jazyka.
   "settings.language": "Jazyk",
@@ -151,10 +173,29 @@ const base = {
   "utility.archiveFuture": "Auto-archivace",
   "utility.archivedRule": "Budoucí pošta od {who} se bude archivovat",
   "utility.archivedN": "Přidáno pravidlo auto-archivace pro {n} odesílatelů",
+  "utility.sortDormant": "Nečinné první",
+  "utility.sortMost": "Nejvíce přijato",
+  "utility.sortRecent": "Nejnovější",
+  "utility.sortUnread": "Nejméně čtené",
+  "utility.sortName": "Název",
+  "utility.filterPlaceholder": "Filtrovat odesílatele…",
+  "utility.onlyUnsub": "Jen odhlásitelné",
+  "utility.unsubscribed": "Odhlášeno",
+  "utility.unsubDone": "Odhlášeno od {who}",
+  "utility.unsubOpened": "Otevřena stránka pro odhlášení od {who}",
+  "utility.unsubFailed": "Nepodařilo se odhlásit automaticky – otevírám stránku",
+  "update.upToDate": "Máte nejnovější verzi ✓",
+  "update.available": "Dostupná aktualizace: {version}",
+  "update.openPage": "Otevřít stránku ke stažení na GitHubu a nainstalovat?",
+  "update.download": "Stáhnout",
+  "update.later": "Teď ne",
+  "update.checkFailed": "Kontrola aktualizací selhala: {err}",
+  "schedule.localOnly": "RaplMail běží jen lokálně. Naplánované odeslání a odložení se spouští z vašeho počítače, takže RaplMail musí být spuštěný (aspoň na liště) a PC zapnuté ve zvolený čas — ze serveru se nic neodešle, když jste pryč.",
+  "schedule.localOnlyShort": "Jen lokálně: PC musí být zapnuté a RaplMail spuštěný, aby se to provedlo.",
 };
 
 export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
-  ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs,
+  ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
 };

@@ -4,9 +4,31 @@
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
   import { playSound, SOUND_OPTIONS } from "../sound.js";
+  import SoundStudio from "./SoundStudio.svelte";
   import { t, LANGUAGES } from "../i18n.svelte.js";
 
   const notifVol = $derived(app.settings.notifyVolume ?? 80);
+
+  // Built-in synth sounds + any user-uploaded custom clips, for the per-type
+  // sound dropdowns (new mail, calendar reminders).
+  const soundOpts = $derived([
+    ...SOUND_OPTIONS,
+    ...((app.settings.customSounds || []).map((c) => ({ id: `custom:${c.id}`, label: c.name }))),
+  ]);
+  let studioOpen = $state(false);
+  function onStudioClose(picked) {
+    studioOpen = false;
+    // Newly-created clip becomes the new-mail sound straight away.
+    if (typeof picked === "string") { saveSettings({ notifySound: picked }); playSound(picked, notifVol / 100); }
+  }
+  function deleteCustom(id) {
+    const list = (app.settings.customSounds || []).filter((c) => c.id !== id);
+    const patch = { customSounds: list };
+    // Fall back to a built-in if a now-deleted clip was selected anywhere.
+    if (app.settings.notifySound === `custom:${id}`) patch.notifySound = "ding";
+    if (app.settings.notifyCalendarSound === `custom:${id}`) patch.notifyCalendarSound = "chime";
+    saveSettings(patch);
+  }
 
   // --- Local API / metrics for LAN devices ---------------------------------
   function randomKey() {
@@ -276,6 +298,13 @@
       </select>
       with no reply
     </label>
+    <label class="inline">Search shortcut opens
+      <select value={app.settings.searchStyle || "inline"} onchange={(e) => setCompose({ searchStyle: e.currentTarget.value })}>
+        <option value="inline">Inline search bar</option>
+        <option value="modal">Search window (modal)</option>
+      </select>
+    </label>
+    <span class="hint" style="margin:2px 0 0 2px">Which surface the search key ({app.settings.keybinds?.search || "/"}) opens. The command palette also doubles as search — type an operator like <code>from:</code> in it.</span>
   </section>
 
   <section class="card">
@@ -401,8 +430,9 @@
 
   <section class="card">
     <h3>Updates</h3>
-    <p class="hint">RaplMail checks a signed release feed and updates itself in place. Updates are verified against
-      a built-in public key, so only releases signed with your private key install.</p>
+    <p class="hint">RaplMail is server-free: it asks GitHub for the latest published release and, if there's a
+      newer version, points you at its download page. Nothing is sent anywhere except a read-only check to
+      GitHub's public releases API.</p>
     <div class="rowbtns">
       <button class="btn primary" onclick={() => checkForUpdates()}>{@html icons.sync} Check for updates</button>
     </div>
@@ -463,12 +493,45 @@
           </select>
         </label>
       {/if}
-      <label class="inline" style="margin-top:10px">{t("notif.sound")}
+      <label class="inline" style="margin-top:10px">{t("notif.soundMail")}
         <select value={app.settings.notifySound || "ding"} onchange={(e) => { saveSettings({ notifySound: e.currentTarget.value }); playSound(e.currentTarget.value, notifVol / 100); }}>
-          {#each SOUND_OPTIONS as s}<option value={s.id}>{s.label}</option>{/each}
+          {#each soundOpts as s}<option value={s.id}>{s.label}</option>{/each}
         </select>
         <button class="btn sm" onclick={() => playSound(app.settings.notifySound || "ding", notifVol / 100)}>▶ {t("common.play")}</button>
       </label>
+      <label class="inline" style="margin-top:10px">{t("notif.soundCalendar")}
+        <select value={app.settings.notifyCalendarSound || "chime"} onchange={(e) => { saveSettings({ notifyCalendarSound: e.currentTarget.value }); playSound(e.currentTarget.value, notifVol / 100); }}>
+          {#each soundOpts as s}<option value={s.id}>{s.label}</option>{/each}
+        </select>
+        <button class="btn sm" onclick={() => playSound(app.settings.notifyCalendarSound || "chime", notifVol / 100)}>▶ {t("common.play")}</button>
+      </label>
+      <label class="check" style="margin-top:8px">
+        <input type="checkbox" checked={app.settings.calendarReminderWindow !== false}
+          onchange={(e) => saveSettings({ calendarReminderWindow: e.currentTarget.checked })} />
+        <div>
+          <b>{t("notif.reminderWindow")}</b>
+          <span>{t("notif.reminderWindowHint")}</span>
+        </div>
+      </label>
+      <div class="customsnd">
+        <div class="csnd-head">
+          <span>{t("notif.customSounds")}</span>
+          <button class="btn sm" onclick={() => (studioOpen = true)}>＋ {t("notif.addCustom")}</button>
+        </div>
+        {#if (app.settings.customSounds || []).length}
+          <div class="csnd-list">
+            {#each app.settings.customSounds as c (c.id)}
+              <div class="csnd-row">
+                <button class="csnd-play" title={t("sound.preview")} onclick={() => playSound(`custom:${c.id}`, notifVol / 100)}>▶</button>
+                <span class="csnd-name">{c.name}</span>
+                <button class="csnd-del" title={t("common.delete")} onclick={() => deleteCustom(c.id)}>{@html icons.close}</button>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="hint" style="margin:6px 0 0">{t("notif.customHint")}</p>
+        {/if}
+      </div>
       <label class="inline" style="margin-top:10px">{t("notif.volume")}
         <input type="range" min="0" max="100" step="5" value={notifVol}
           disabled={(app.settings.notifySound || "ding") === "none"}
@@ -504,9 +567,12 @@
       </select>
     </label>
     <p class="hint" style="margin-top:8px">Need an exact time? The compose “Later ⌄” menu has a date &amp; time picker.</p>
+    <div class="local-note">{@html icons.info || ""}<span>{t("schedule.localOnly")}</span></div>
   </section>
 
 </div>
+
+{#if studioOpen}<SoundStudio onclose={onStudioClose} />{/if}
 
 <style>
   .wrap { max-width: 640px; display: flex; flex-direction: column; gap: 20px; }
@@ -546,4 +612,18 @@
   .kv code.key { letter-spacing: 0.04em; }
   .apibox .hint { margin: 4px 0 0; }
   .btn.sm { padding: 4px 9px; font-size: 12px; }
+  .local-note { display: flex; gap: 9px; align-items: flex-start; margin-top: 14px; padding: 11px 13px;
+    background: color-mix(in srgb, var(--warning) 10%, transparent); border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--border));
+    border-radius: var(--radius-sm); font-size: 12.5px; line-height: 1.5; color: var(--text); }
+  .local-note :global(svg) { width: 16px; height: 16px; flex: none; margin-top: 1px; color: var(--warning); }
+  .customsnd { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--hairline); }
+  .csnd-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--muted); }
+  .csnd-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+  .csnd-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .csnd-play { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+  .csnd-play:hover { background: var(--accent); color: #fff; }
+  .csnd-name { flex: 1; min-width: 0; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .csnd-del { flex: none; color: var(--muted); padding: 3px; border-radius: 5px; }
+  .csnd-del:hover { color: var(--danger); background: var(--hover); }
+  .csnd-del :global(svg) { width: 13px; height: 13px; }
 </style>

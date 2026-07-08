@@ -839,6 +839,7 @@
             <input type="datetime-local" bind:value={customWhen} min={nowLocal()} />
             <button class="btn primary sm" onclick={sendCustom}>{t("compose.schedule")}</button>
           </div>
+          <div class="later-note">{t("schedule.localOnlyShort")}</div>
         </div>
       {/if}
     </div>
@@ -948,6 +949,7 @@
   .later-menu .custom { display: flex; gap: 6px; padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
   .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
   .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
+  .later-menu .later-note { padding: 8px 8px 4px; margin-top: 2px; color: var(--muted); font-size: 11px; line-height: 1.45; }
   .tool.ai { color: var(--accent); font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
   .tool.ai :global(svg) { width: 14px; height: 14px; }
   .tool.ai.busy { opacity: 0.7; }

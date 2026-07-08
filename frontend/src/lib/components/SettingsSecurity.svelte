@@ -1,5 +1,5 @@
 <script>
-  import { app, saveSettings, refreshVault, notify, aiEnabled } from "../store.svelte.js";
+  import { app, saveSettings, refreshVault, notify, aiEnabled, sandboxPickFile } from "../store.svelte.js";
   import { vault } from "../api.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
@@ -63,6 +63,22 @@
   <SecurityLab />
 
   <h2 class="group-head">{t("security.screenGroup")}</h2>
+
+  <section class="card">
+    <h3>{@html icons.shieldCheck || icons.shield} {t("sandbox.settingsTitle")}</h3>
+    <p class="hint">{t("sandbox.settingsHint")}</p>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.sandboxEnabled !== false}
+        onchange={(e) => set({ sandboxEnabled: e.currentTarget.checked })} />
+      <div><b>{t("sandbox.enableToggle")}</b><span>{t("sandbox.enableHint")}</span></div>
+    </label>
+    <div class="rowbtns">
+      <button class="btn" disabled={app.settings.sandboxEnabled === false} onclick={() => sandboxPickFile()}>
+        {@html icons.shield} {t("sandbox.pickAndAnalyze")}
+      </button>
+    </div>
+    <p class="hint note">{@html icons.lock || icons.shield} {t("sandbox.settingsNote")}</p>
+  </section>
 
   <section class="card">
     <h3>{t("security.phishingTitle")}</h3>
@@ -170,6 +186,8 @@
   .check span, .radio span { color: var(--muted); font-size: 12px; }
   .check input, .radio input { margin-top: 3px; }
 
+  .rowbtns { display: flex; gap: 8px; margin-top: 10px; }
+  .rowbtns .btn :global(svg) { width: 15px; height: 15px; }
   .adder { display: flex; gap: 8px; align-items: center; }
   .adder input { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border);
     border-radius: var(--radius-sm); padding: 8px 11px; color: var(--text); font-size: 13px; }

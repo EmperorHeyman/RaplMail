@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app } from "../store.svelte.js";
+  import { app, saveSettings, notify } from "../store.svelte.js";
   import SettingsAccounts from "./SettingsAccounts.svelte";
   import SettingsRules from "./SettingsRules.svelte";
   import SettingsSecurity from "./SettingsSecurity.svelte";
@@ -50,8 +50,28 @@
     { id: "rapldesk", label: t("settingsNav.rapldesk"), icon: icons.receipt || icons.general, kw: "rapldesk tickets ticketing api key support helpdesk instance" },
     { id: "utility", label: t("settingsNav.utility"), icon: icons.bolt || icons.general, kw: "utility utilities subscription audit unsubscribe mailing list newsletter cleanup read rate dormant tools" },
     { id: "general", label: t("settingsNav.general"), icon: icons.general, kw: "mail behavior compose sending undo send smart inbox notifications desktop notification snooze presence backup export import migrate auto-bcc bcc startup launch login tray minimize updates ai assistant local api metrics read receipt scheduling snooze times follow-up screener threading bundles group placement privacy tracking password security newsletter paper trail drafts" },
-    { id: "debug", label: t("settingsNav.debug"), icon: icons.bolt || icons.general, kw: "debug log logs console backend diagnostics sync health error troubleshoot stuck hang stall developer verbose activity" },
+    // Debug is hidden until unlocked with 5 taps on the version (Android-style).
+    ...(app.settings.debugUnlocked ? [{ id: "debug", label: t("settingsNav.debug"), icon: icons.bolt || icons.general, kw: "debug log logs console backend diagnostics sync health error troubleshoot stuck hang stall developer verbose activity" }] : []),
   ]);
+
+  // 5 consecutive clicks on the version string reveal the Debug section.
+  let verClicks = 0;
+  let _verTimer;
+  function tapVersion() {
+    if (app.settings.debugUnlocked) return;
+    verClicks++;
+    clearTimeout(_verTimer);
+    _verTimer = setTimeout(() => (verClicks = 0), 1200);
+    const left = 5 - verClicks;
+    if (verClicks >= 5) {
+      verClicks = 0;
+      saveSettings({ debugUnlocked: true });
+      notify(t("settingsNav.debugUnlocked"));
+      tab = "debug";
+    } else if (left <= 3) {
+      notify(t("settingsNav.debugCountdown", { n: left }));
+    }
+  }
 
   let appVersion = $state("");
   onMount(async () => {
@@ -171,7 +191,7 @@
     {:else if tab === "debug"}<SettingsDebug />
     {:else}<SettingsGeneral />{/if}
     <footer class="madeby">
-      RaplMail <span class="ver">v{appVersion}</span> · {t("settingsNav.madeBy")} <a href="https://rapl-group.eu/" target="_blank" rel="noreferrer">RAPL Group</a>
+      RaplMail <button class="ver" title={app.settings.debugUnlocked ? "" : t("settingsNav.debugHintTip")} onclick={tapVersion}>v{appVersion}</button> · {t("settingsNav.madeBy")} <a href="https://rapl-group.eu/" target="_blank" rel="noreferrer">RAPL Group</a>
     </footer>
   </div>
 </section>
@@ -226,5 +246,6 @@
   .madeby { margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--hairline); text-align: center; color: var(--muted); font-size: 12px; }
   .madeby a { color: var(--accent); text-decoration: none; }
   .madeby a:hover { text-decoration: underline; }
-  .madeby .ver { color: var(--text); font-variant-numeric: tabular-nums; }
+  .madeby .ver { color: var(--text); font-variant-numeric: tabular-nums; font: inherit; cursor: pointer; padding: 0 2px; border-radius: 4px; -webkit-user-select: none; user-select: none; }
+  .madeby .ver:hover { background: var(--hover); }
 </style>

@@ -1,6 +1,6 @@
 // Central reactive app state using Svelte 5 runes.
-import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai } from "./api.js";
-import { playSound } from "./sound.js";
+import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi } from "./api.js";
+import { playSound, setCustomSounds } from "./sound.js";
 import { setLocale, t } from "./i18n.svelte.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
@@ -103,12 +103,15 @@ const DEFAULT_SETTINGS = {
   raplDeskUserId: null,          // your RaplDesk agent user id (for replies/new tickets)
   calendarDefaultView: "month",  // calendar opens in "month" or "week"
   calendarReminders: [10],       // lead times (minutes) for event reminders; combinable
+  calendarReminderWindow: true,  // pop a small always-on-top reminder window (not just a notification)
   icsSyncMinutes: 30,            // auto-refresh subscribed calendars this often
   scheduleLaterHours: 3,         // "Later today" = now + this many hours
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
-  notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"
+  notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"|"custom:<id>"
+  notifyCalendarSound: "chime",  // sound for calendar event reminders (separate from mail)
+  customSounds: [],              // user clips: [{ id, name, data }] (data = WAV data URL, ~3s)
   notifyVolume: 80,              // notification sound volume, 0–100
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
   quietHoursEnabled: false,      // suppress notifications during a nightly window
@@ -138,6 +141,15 @@ const DEFAULT_SETTINGS = {
   smartOrder: [],               // category ids, top→bottom, when custom
   density: "comfortable",       // message-list row density: comfortable | compact | cozy
   emailMaxWidth: 820,           // reading-width cap for email bodies (px; 0 = full width)
+  searchStyle: "inline",        // the search shortcut opens: "inline" bar | "modal" search window
+  userPresets: [],              // saved custom palettes: [{ id, name, theme }]
+  dayTheme: null,               // theme object applied in auto mode during the day (null = built-in Light)
+  nightTheme: null,             // theme object applied in auto mode at night (null = default Dark)
+  dayStart: 7,                  // hour the "day" theme starts (auto mode)
+  nightStart: 19,               // hour the "night" theme starts (auto mode)
+  debugUnlocked: false,         // developer/debug section revealed (5 taps on the version)
+  sandboxEnabled: true,         // offer the WebAssembly attachment sandbox + flag risky files
+  unsubscribedSenders: [],      // list addresses the user has already unsubscribed from (shown green)
 };
 
 // Stored keybinds replace the defaults wholesale (the settings merge is
@@ -267,7 +279,11 @@ function effectiveTheme() {
   const s = app.settings;
   if (s.themeMode === "auto") {
     const h = new Date().getHours();
-    return h >= 7 && h < 19 ? LIGHT_THEME : {}; // day = light, night = default dark
+    const dayStart = s.dayStart ?? 7, nightStart = s.nightStart ?? 19;
+    const isDay = h >= dayStart && h < nightStart;
+    // Configurable day/night palettes: fall back to built-in Light (day) / dark (night).
+    const th = isDay ? s.dayTheme : s.nightTheme;
+    return th || (isDay ? LIGHT_THEME : {});
   }
   return s.theme || {};
 }
@@ -283,6 +299,8 @@ export function applyTheme() {
   if (typeof document === "undefined") return;
   // Keep the UI language in sync whenever we re-apply appearance (boot, import…).
   setLocale(app.settings.language);
+  // Register any user-uploaded notification clips (boot / import / settings sync).
+  setCustomSounds(app.settings.customSounds);
   const root = document.documentElement;
   const t = effectiveTheme();
   for (const [k] of THEME_TOKENS) {
@@ -394,6 +412,7 @@ export function saveSettings(patch) {
   // toggle (e.g. collapsing the sidebar) recomputed hundreds of them and lagged
   // the UI. In-place assignment keeps Svelte's per-key tracking granular.
   Object.assign(app.settings, patch);
+  if ("customSounds" in patch) setCustomSounds(app.settings.customSounds);
   try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(app.settings)); } catch {}
   // Persist to the backend (a file) too, debounced, so settings survive across
   // installs and can be exported.
@@ -526,23 +545,52 @@ export async function openCompose(seed = {}) {
   }
 }
 
-// Self-update via the Tauri updater plugin. No-op in the browser dev build.
-export async function checkForUpdates({ silent = false } = {}) {
-  if (!isTauri()) {
-    if (!silent) notify("Updates are only available in the installed app", "info");
-    return;
+// GitHub repo the release check + download page point at.
+export const GITHUB_REPO = "EmperorHeyman/RaplMail";
+
+// Compare two "x.y.z" version strings. >0 if a is newer than b, <0 if older, 0 equal.
+function cmpVersion(a, b) {
+  const norm = (v) => String(v || "").replace(/^v/i, "").split(/[.\-+]/).map((n) => parseInt(n, 10) || 0);
+  const pa = norm(a), pb = norm(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d > 0 ? 1 : -1;
   }
+  return 0;
+}
+
+// Serverless update check: ask the GitHub Releases API for the latest published
+// release and compare it to the running version. No update server, no signing
+// feed to maintain — if there's a newer release we point the user at its GitHub
+// page to download the installer. (Works in the browser dev build too.)
+export async function checkForUpdates({ silent = false } = {}) {
   try {
-    const { check } = await import("@tauri-apps/plugin-updater");
-    const update = await check();
-    if (!update) { if (!silent) notify("You're on the latest version ✓"); return; }
-    if (!confirm(`Update available: ${update.version}\n\n${update.body || ""}\n\nDownload and install now? The app will restart.`)) return;
-    notify(`Downloading update ${update.version}…`);
-    await update.downloadAndInstall();
-    const { relaunch } = await import("@tauri-apps/plugin-process");
-    await relaunch();
+    let current = "0.0.0";
+    if (isTauri()) {
+      try { const { getVersion } = await import("@tauri-apps/api/app"); current = await getVersion(); } catch {}
+    }
+    const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
+      headers: { Accept: "application/vnd.github+json" },
+    });
+    if (!resp.ok) throw new Error(`GitHub returned ${resp.status}`);
+    const rel = await resp.json();
+    const latest = (rel.tag_name || rel.name || "").replace(/^v/i, "");
+    if (!latest) { if (!silent) notify(t("update.checkFailed", { err: "no release found" }), "error"); return; }
+    if (isTauri() && cmpVersion(latest, current) <= 0) {
+      if (!silent) notify(t("update.upToDate"));
+      return;
+    }
+    const url = rel.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`;
+    const body = (rel.body || "").slice(0, 600);
+    const go = await confirmDialog({
+      title: t("update.available", { version: latest }),
+      message: (body ? body + "\n\n" : "") + t("update.openPage"),
+      confirmLabel: t("update.download"),
+      cancelLabel: t("update.later"),
+    });
+    if (go) openExternal(url);
   } catch (e) {
-    if (!silent) notify(`Update check failed: ${e.message || e}`, "error");
+    if (!silent) notify(t("update.checkFailed", { err: e.message || e }), "error");
   }
 }
 
@@ -1034,6 +1082,19 @@ export function toggleTrusted(addr) {
   isTrustedSender(addr) ? untrustSender(addr) : trustSender(addr);
 }
 
+// Track which senders the user has already unsubscribed from, so the button can
+// show a "done" (green) state instead of tempting a second click. Persisted in
+// settings (so it survives restarts and rides the config sync).
+export function isUnsubscribed(addr) {
+  const a = (addr || "").toLowerCase().trim();
+  return (app.settings.unsubscribedSenders || []).some((x) => (x || "").toLowerCase() === a);
+}
+export function markUnsubscribed(addr) {
+  const a = (addr || "").toLowerCase().trim();
+  if (!a || isUnsubscribed(a)) return;
+  saveSettings({ unsubscribedSenders: [...(app.settings.unsubscribedSenders || []), a] });
+}
+
 // --- calendar background services: reminders + auto-sync of subscriptions ---
 let _calEvents = [];
 const _firedReminders = new Set();
@@ -1076,11 +1137,168 @@ function _checkReminders() {
         // a long-running session accumulate them forever.
         if (_firedReminders.size > 500) _firedReminders.clear();
         _firedReminders.add(key);
-        sendNative(e.summary || "Event", `Starts ${_remindLabel(min)}${e.location ? " · " + e.location : ""}`);
+        fireReminder(e, min);
       }
     }
   }
 }
+// Fire a calendar reminder: play the (separate) calendar sound, and either pop a
+// small standalone reminder window ("you've got X till …") or fall back to a
+// system notification. The window is local-only, same as scheduling itself.
+async function fireReminder(e, min) {
+  playSound(app.settings.notifyCalendarSound || "chime", (app.settings.notifyVolume ?? 80) / 100);
+  const body = `${_remindLabel(min)}${e.location ? " · " + e.location : ""}`;
+  const wantWindow = app.settings.calendarReminderWindow !== false && isTauri();
+  if (wantWindow) {
+    try {
+      const seed = {
+        summary: e.summary || "Event",
+        start: e.start,
+        location: e.location || "",
+        minutes: min,
+        label: _remindLabel(min),
+      };
+      localStorage.setItem("raplmail.reminder.seed", JSON.stringify(seed));
+      const url = `${location.pathname}${location.search}#reminder`;
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      new WebviewWindow(`reminder-${e.id}-${min}`, {
+        url, title: "Reminder", width: 380, height: 240,
+        resizable: false, alwaysOnTop: true, focus: true, skipTaskbar: false,
+      });
+      return;
+    } catch { /* fall through to a notification */ }
+  }
+  sendNative(e.summary || "Event", `Starts ${body}`);
+}
+
+// Open a file in the isolated WebAssembly sandbox window. The bytes are handed
+// over via a localStorage seed (like compose/reminder), NEVER via the backend:
+// the sandbox window is created with a label ("sandbox-*") that carries no Tauri
+// capabilities except closing itself, so it cannot reach the OS, the network or
+// the mail backend. All it can do is parse the bytes inside wasm and show the
+// result. `payload` = { name, contentType, dataB64, source, risk?, riskReasons?, typeGuess? }.
+const SANDBOX_MAX = 8 * 1024 * 1024; // matches the wasm buffer cap
+export async function openSandbox(payload) {
+  if (!payload || !payload.dataB64) { notify(t("sandbox.noData"), "error"); return; }
+  // base64 length ~= bytes * 4/3; guard the localStorage handoff.
+  if (payload.dataB64.length > (SANDBOX_MAX * 4) / 3 + 1024) {
+    notify(t("sandbox.tooBig"), "error");
+    return;
+  }
+  const seed = {
+    name: payload.name || "file",
+    contentType: payload.contentType || "application/octet-stream",
+    dataB64: payload.dataB64,
+    source: payload.source || "",
+    risk: payload.risk || "",
+    riskReasons: payload.riskReasons || [],
+    typeGuess: payload.typeGuess || "",
+    deepReport: null,
+  };
+  // Deep analysis (macro de-obfuscation, PDF stream decompression) runs in the
+  // backend here in the main window; the isolated sandbox window can't reach it,
+  // so we fetch the report now and hand it over in the seed. Best-effort.
+  try { seed.deepReport = await sandboxApi.analyze(seed.name, payload.dataB64); } catch {}
+  try { localStorage.setItem("raplmail.sandbox.seed", JSON.stringify(seed)); }
+  catch { notify(t("sandbox.tooBig"), "error"); return; }
+  if (isTauri()) {
+    try {
+      const url = `${location.pathname}${location.search}#sandbox`;
+      const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
+      new WebviewWindow(`sandbox-${Date.now()}`, {
+        url, title: `Sandbox — ${seed.name}`, width: 860, height: 720,
+        minWidth: 560, minHeight: 480, focus: true,
+      });
+      return;
+    } catch { /* fall through to same-window navigation */ }
+  }
+  window.open(`${location.pathname}${location.search}#sandbox`, "_blank", "width=860,height=720");
+}
+
+// Deep-scan a mail attachment in the background (macro de-obfuscation / PDF
+// stream decompression) and cache the report for this session so revisiting a
+// message doesn't re-fetch + re-parse. Runs in the backend (parse/decode only,
+// never executes). Returns the deep report, or null on failure.
+const _deepCache = new Map();
+const SANDBOX_DEEP_MAX = 12 * 1024 * 1024;
+export async function deepScanAttachment(messageId, att) {
+  const key = `${messageId}:${att.index}`;
+  if (_deepCache.has(key)) return _deepCache.get(key);
+  if (att.size && att.size > SANDBOX_DEEP_MAX) return null;
+  try {
+    const b = await fetchAttachmentB64(messageId, att.index);
+    const rep = await sandboxApi.analyze(att.filename || "file", b.data_b64);
+    _deepCache.set(key, rep);
+    return rep;
+  } catch {
+    return null;
+  }
+}
+
+// Fetch a mail attachment's bytes and open it in the sandbox.
+export async function sandboxAttachment(messageId, att) {
+  try {
+    const b = await fetchAttachmentB64(messageId, att.index);
+    await openSandbox({
+      name: att.filename || "attachment",
+      contentType: att.content_type || b.content_type,
+      dataB64: b.data_b64,
+      source: "mail",
+      risk: att.risk || "",
+      riskReasons: att.risk_reasons || [],
+      typeGuess: att.type_guess || "",
+    });
+  } catch (e) { notify(e?.message || t("sandbox.openFailed"), "error"); }
+}
+
+// Pick a local file from disk and open it in the sandbox (analyze any file on
+// the PC, not just mail attachments). Uses a hidden file input — works in both
+// the Tauri webview and a browser, no extra plugin needed.
+export function sandboxPickFile() {
+  const input = document.createElement("input");
+  input.type = "file";
+  input.style.display = "none";
+  input.onchange = () => {
+    const file = input.files && input.files[0];
+    if (!file) return;
+    if (file.size > SANDBOX_MAX) { notify(t("sandbox.tooBig"), "error"); input.remove(); return; }
+    const r = new FileReader();
+    r.onload = () => {
+      const dataB64 = String(r.result).split(",", 2)[1] || "";
+      openSandbox({ name: file.name, contentType: file.type, dataB64, source: "upload" });
+      input.remove();
+    };
+    r.onerror = () => { notify(t("sandbox.openFailed"), "error"); input.remove(); };
+    r.readAsDataURL(file);
+  };
+  document.body.appendChild(input);
+  input.click();
+}
+
+// The main window listens for a "trust & open"/"save" request written by a
+// sandbox window (storage events fire in OTHER same-origin windows). The
+// sandbox itself is powerless; the privileged main window decides whether to
+// carry the action out on the OS.
+let _sandboxBridge = false;
+export function startSandboxBridge() {
+  if (_sandboxBridge) return;
+  _sandboxBridge = true;
+  window.addEventListener("storage", async (ev) => {
+    if (ev.key !== "raplmail.sandbox.action" || !ev.newValue) return;
+    let req; try { req = JSON.parse(ev.newValue); } catch { return; }
+    try { localStorage.removeItem("raplmail.sandbox.action"); } catch {}
+    if (!req || !req.dataB64) return;
+    try {
+      if (req.action === "save") {
+        const path = await saveAttachmentBytes(req.name, req.contentType, req.dataB64);
+        notify(path ? t("reader.savedTo", { path }) : t("reader.downloaded"));
+      } else if (req.action === "open") {
+        await openAttachmentBytes(req.name, req.contentType, req.dataB64);
+      }
+    } catch (e) { notify(e?.message || t("sandbox.openFailed"), "error"); }
+  });
+}
+
 let _feedTimer = null;
 // Self-rescheduling so a changed icsSyncMinutes takes effect without a restart.
 function _scheduleFeedSync() {
@@ -1125,11 +1343,12 @@ export async function muteThread(message) {
 }
 
 let _recategorized = false;
-export async function recategorizeOnce() {
-  if (_recategorized) return;
+export async function recategorizeOnce(force = false) {
+  if (_recategorized && !force) return;
   _recategorized = true;
   try { await messages.recategorize(); } catch {}
   try { await messages.rethread(); } catch {}
+  if (force) refreshMessages({ background: true });
 }
 
 /** Open a conversation in the reader. */

@@ -1,11 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capabilities for the main window and detached compose windows",
-  "windows": ["main", "compose-*"],
+  "description": "Capabilities for the main window and detached compose/reminder windows",
+  "windows": ["main", "compose-*", "reminder-*"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
+    "core:window:allow-close",
     {
       "identifier": "shell:allow-execute",
       "allow": [{ "name": "binaries/raplmail-backend", "sidecar": true, "args": false }]
@@ -17,6 +18,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "opener:default",
-    "notification:default"
+    "notification:default",
+    "dialog:allow-save"
   ]
 }

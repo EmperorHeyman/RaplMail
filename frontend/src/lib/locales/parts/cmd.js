@@ -34,6 +34,9 @@ export default {
     "cmd.cat.promotions": "Promotions",
     "cmd.searchPlaceholder": "Type a command or search…  (Esc to close)",
     "cmd.noResults": "No matching commands",
+    "cmd.searchMode": "Searching mail",
+    "cmd.searchMailFor": "Search all mail for \"{q}\"",
+    "cmd.noSubject": "(no subject)",
     "cmd.undo": "Undo",
   },
   cs: {
@@ -69,6 +72,9 @@ export default {
     "cmd.cat.promotions": "Nabídky",
     "cmd.searchPlaceholder": "Zadejte příkaz nebo hledejte…  (Esc zavře)",
     "cmd.noResults": "Žádné odpovídající příkazy",
+    "cmd.searchMode": "Hledání pošty",
+    "cmd.searchMailFor": "Hledat ve vší poště „{q}“",
+    "cmd.noSubject": "(bez předmětu)",
     "cmd.undo": "Vrátit zpět",
   },
 };

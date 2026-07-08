@@ -1,11 +1,13 @@
 <script>
-  import { app, openCompose, notify, refreshMessages, refreshQueue, setMessageSeen, threadPrefetch } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, openExternal, fetchAttachmentForCompose } from "../api.js";
+  import { app, openCompose, notify, refreshMessages, refreshQueue, setMessageSeen, threadPrefetch, sandboxAttachment } from "../store.svelte.js";
+  import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, revealPath, openExternal, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc } from "../email.js";
   import { senderHue, avatarColor, initialOf as initialFor } from "../avatar.js";
   import { fileExt, fileKind } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
+  import SuspiciousModal from "./SuspiciousModal.svelte";
+  import AttachmentMenu from "./AttachmentMenu.svelte";
 
   let list = $state([]);          // thread messages, oldest first
   let bodies = $state({});        // id -> detail
@@ -259,9 +261,48 @@
     };
   }
 
+  const sandboxOn = $derived(app.settings.sandboxEnabled !== false);
+  let suspicious = $state(null);
+  let suspiciousMsgId = null;
   async function openAtt(m, att) {
-    try { await openAttachment(m.id, att.index, att.filename); }
+    if (sandboxOn && (att.risk === "high" || att.risk === "medium")) { suspicious = att; suspiciousMsgId = m.id; return; }
+    await openAttOS(m.id, att);
+  }
+  async function openAttOS(mid, att) {
+    try { await openAttachment(mid, att.index, att.filename); }
     catch (e) { notify(e.message || t("reader.couldntOpenAttachment"), "error"); }
+  }
+  async function sandboxAtt(m, att) {
+    try { await sandboxAttachment(m.id, att); } catch {}
+  }
+  async function saveAtt(mid, att) {
+    try {
+      const path = await saveAttachment(mid, att.index, att.filename);
+      if (path) { notify(t("reader.savedTo", { path })); revealPath(path); }
+      else notify(t("reader.downloaded"));
+    } catch (e) { notify(e.message || t("reader.couldntSaveAttachment"), "error"); }
+  }
+  async function saveAsAtt(mid, att) {
+    try {
+      const path = await saveAttachmentAs(mid, att.index, att.filename);
+      if (path) { notify(t("reader.savedTo", { path })); revealPath(path); }
+    } catch (e) { notify(e.message || t("reader.couldntSaveAttachment"), "error"); }
+  }
+  function onSuspiciousClose(action) {
+    const att = suspicious, mid = suspiciousMsgId; suspicious = null;
+    if (!att) return;
+    if (action === "sandbox") sandboxAttachment(mid, att);
+    else if (action === "open") openAttOS(mid, att);
+  }
+
+  let attMenu = $state(null);  // { m, att, x, y }
+  function openAttMenu(m, att, e) { e.preventDefault(); attMenu = { m, att, x: e.clientX, y: e.clientY }; }
+  function onAttMenuAction(kind) {
+    const it = attMenu; if (!it) return;
+    if (kind === "open") openAtt(it.m, it.att);
+    else if (kind === "sandbox") sandboxAtt(it.m, it.att);
+    else if (kind === "downloads") saveAtt(it.m.id, it.att);
+    else if (kind === "saveas") saveAsAtt(it.m.id, it.att);
   }
 </script>
 
@@ -306,10 +347,19 @@
               {#if atts.length}
                 <div class="atts">
                   {#each atts as a}
-                    <button class="att" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(m, a)}>
-                      <span class="att-badge {fileKind(a.filename)}">{fileExt(a.filename)}</span>
-                      <span class="att-name">{a.filename}</span>
-                    </button>
+                    <span class="att-wrap" class:risky={a.risk === "high" || a.risk === "medium"}
+                          oncontextmenu={(e) => openAttMenu(m, a, e)}>
+                      <button class="att" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(m, a)}>
+                        <span class="att-badge {fileKind(a.filename)}" class:risk={a.risk === "high" || a.risk === "medium"}>{fileExt(a.filename)}</span>
+                        <span class="att-name">
+                          {#if a.risk === "high" || a.risk === "medium"}<span class="att-warn" title={t("threat.riskBadge")}>{@html icons.warning || "!"}</span>{/if}
+                          {a.filename}
+                        </span>
+                      </button>
+                      {#if sandboxOn}
+                        <button class="att-sb" title={t("threat.openSandbox")} onclick={() => sandboxAtt(m, a)}>{@html icons.shield || "▣"}</button>
+                      {/if}
+                    </span>
                   {/each}
                 </div>
               {/if}
@@ -326,6 +376,15 @@
     {#if actionsBottom}<div class="actions actions-bottom">{@render threadActions()}</div>{/if}
   {/if}
 </section>
+
+{#if suspicious}
+  <SuspiciousModal att={suspicious} onclose={onSuspiciousClose} />
+{/if}
+{#if attMenu}
+  <AttachmentMenu x={attMenu.x} y={attMenu.y} sandboxOn={sandboxOn}
+    risky={attMenu.att.risk === "high" || attMenu.att.risk === "medium"}
+    onaction={onAttMenuAction} onclose={() => (attMenu = null)} />
+{/if}
 
 {#snippet threadActions()}
   <button class="btn" onclick={() => replyTo(list[list.length - 1])}>{@html icons.reply} {t("reader.reply")}</button>
@@ -380,7 +439,16 @@
   .att-badge.slide { background: #e07b2e; } .att-badge.archive { background: #c9922b; }
   .att-badge.code { background: #6d5bd0; } .att-badge.audio { background: #b2478f; }
   .att-badge.video { background: #c0453f; }
-  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-flex; align-items: center; }
+  .att-wrap { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+  .att-wrap .att { border: none; border-radius: 0; }
+  .att-wrap.risky { border-color: color-mix(in srgb, var(--danger, #e5484d) 45%, var(--border)); }
+  .att-badge.risk { background: var(--danger, #e5484d); }
+  .att-warn { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--danger, #e5484d); }
+  .att-warn :global(svg) { width: 11px; height: 11px; }
+  .att-sb { display: inline-flex; align-items: center; padding: 0 8px; border-left: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
+  .att-sb:hover { color: var(--accent); background: var(--surface-3); }
+  .att-sb :global(svg) { width: 13px; height: 13px; }
   iframe { width: 100%; height: 200px; border: none; border-top: 1px solid var(--border); background: var(--bg); display: block; }
   .loadingbody { padding: 16px; color: var(--muted); }
 </style>

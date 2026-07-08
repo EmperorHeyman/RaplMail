@@ -128,6 +128,16 @@ fn save_attachment(app: tauri::AppHandle, filename: String, data_b64: String) ->
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// Write attachment bytes to an explicit path chosen via the "Save as" dialog.
+#[tauri::command]
+fn save_attachment_to(path: String, data_b64: String) -> Result<String, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(&data_b64)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
 /// Write an attachment to a temp file and open it with the OS default app.
 #[tauri::command]
 fn open_attachment(app: tauri::AppHandle, filename: String, data_b64: String) -> Result<(), String> {
@@ -202,6 +212,7 @@ fn main() {
             None,
         ))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .manage(Backend {
             base: base.clone(),
@@ -211,8 +222,8 @@ fn main() {
         .manage(QuitFlag(AtomicBool::new(false)))
         .manage(CloseToTray(AtomicBool::new(true)))
         .invoke_handler(tauri::generate_handler![
-            backend_config, set_unread_badge, save_attachment, open_attachment, reveal_path,
-            open_url, set_close_to_tray
+            backend_config, set_unread_badge, save_attachment, save_attachment_to, open_attachment,
+            reveal_path, open_url, set_close_to_tray
         ])
         // Closing the window hides to the tray (so IMAP IDLE + notifications keep
         // running in the background) unless the user explicitly chose Quit.

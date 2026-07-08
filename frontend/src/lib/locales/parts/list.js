@@ -85,6 +85,7 @@ export default {
     // List title (per view).
     "list.titleSearch": "Search: \"{q}\"",
     "list.smartInbox": "Smart Inbox",
+    "list.collapseGroup": "Collapse this group",
     "list.allInboxes": "All Inboxes",
     "list.allSent": "All Sent",
     "list.snoozed": "Snoozed",
@@ -223,6 +224,7 @@ export default {
     // Nadpis seznamu (podle zobrazení).
     "list.titleSearch": "Hledání: „{q}“",
     "list.smartInbox": "Chytrá schránka",
+    "list.collapseGroup": "Sbalit tuto skupinu",
     "list.allInboxes": "Všechny schránky",
     "list.allSent": "Všechny odeslané",
     "list.snoozed": "Odložené",

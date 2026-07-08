@@ -5,6 +5,13 @@ Tauri injects RAPLMAIL_PORT and RAPLMAIL_TOKEN; we bind localhost only.
 
 import os
 
+# Pin a valid TLS CA bundle BEFORE requests / msal / ssl import and cache their
+# defaults — otherwise the frozen M365 (msal->requests) path dies with
+# "Could not find a suitable TLS CA certificate bundle".
+from app.core.certs import pin_ca_bundle
+
+pin_ca_bundle()
+
 import uvicorn
 
 from app.main import app

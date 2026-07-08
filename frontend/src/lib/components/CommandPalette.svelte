@@ -4,7 +4,9 @@
     app, openCompose, selectUnifiedInbox, selectFolder, selectSnoozed, selectSmartInbox,
     selectUnifiedSent, selectUnifiedDrafts, selectScreener, selectPaperTrail, selectFollowups,
     syncAllAccounts, toggleShowDone, saveSettings, setCategory, aiEnabled, openAiAssistant, markAllRead,
+    refreshMessages, sandboxPickFile,
   } from "../store.svelte.js";
+  import { messages as messagesApi } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
@@ -12,7 +14,49 @@
   let active = $state(0);
   let inputEl;
 
-  function close() { app.paletteOpen = false; query = ""; active = 0; }
+  // The palette doubles as a search bar: as soon as the query looks like a mail
+  // search (a from:/subject:/… operator, or a /regex/), it flips to showing live
+  // message results instead of commands — same backend as the search modal, just
+  // rendered inline here.
+  const searchMode = $derived(
+    /(^|\s)(from|to|cc|bcc|subject|has|is)\s*:/i.test(query) || /^\/.+\/$/.test(query.trim())
+  );
+  let results = $state([]);
+  let searching = $state(false);
+  let _seq = 0;
+  $effect(() => {
+    const q = query.trim();
+    if (!searchMode || !q) { results = []; searching = false; return; }
+    const s = ++_seq;
+    searching = true;
+    const tmr = setTimeout(async () => {
+      try { const r = await messagesApi.list({ q, limit: 20 }); if (s === _seq) results = r || []; }
+      catch { if (s === _seq) results = []; }
+      finally { if (s === _seq) searching = false; }
+    }, 180);
+    return () => clearTimeout(tmr);
+  });
+  // NB: run() closes the palette first (which clears `query`), so these must NOT
+  // re-read `query` — the search term is captured into `q` when searchItems is
+  // built and passed in. Reading query.trim() here would see the cleared "".
+  function applySearchQ(q) {
+    app.view = "mail"; app.search = q; app.semantic = false;
+    refreshMessages();
+  }
+  function openMsg(m, q) {
+    app.view = "mail"; app.search = q; app.semantic = false;
+    app.selectedMessageId = m.id; app.threadKey = null;
+    refreshMessages();
+  }
+  const searchItems = $derived.by(() => {
+    const q = query.trim();
+    const items = [{ icon: icons.search, label: t("cmd.searchMailFor", { q }), run: () => applySearchQ(q) }];
+    for (const m of results)
+      items.push({ icon: icons.mail, label: m.subject || t("cmd.noSubject"), hint: m.from_name || m.from_addr, run: () => openMsg(m, q) });
+    return items;
+  });
+
+  function close() { app.paletteOpen = false; query = ""; active = 0; results = []; }
   function run(fn) { close(); fn(); }
   const goMail = (fn) => () => { app.view = "mail"; fn(); };
 
@@ -38,6 +82,7 @@
       // Actions.
       { icon: icons.mail, label: t("cmd.markAllRead"), run: goMail(markAllRead) },
       { icon: icons.sync, label: t("cmd.syncAll"), run: syncAllAccounts },
+      ...(app.settings.sandboxEnabled !== false ? [{ icon: icons.shield, label: t("cmd.sandboxFile"), run: sandboxPickFile }] : []),
       { icon: icons.done, label: app.showDone ? t("cmd.hideDone") : t("cmd.showDone"), run: goMail(toggleShowDone) },
       { icon: "↔", label: app.settings.sidebarCollapsed ? t("cmd.expandSidebar") : t("cmd.collapseSidebar"), run: () => saveSettings({ sidebarCollapsed: !app.settings.sidebarCollapsed }) },
       { icon: icons.settings, label: t("cmd.openSettings"), run: () => (app.view = "settings") },
@@ -83,13 +128,16 @@
       .map((x) => x.c);
   });
 
-  $effect(() => { if (active >= filtered.length) active = Math.max(0, filtered.length - 1); });
+  // What the list shows: mail results in search mode, commands otherwise.
+  const entries = $derived(searchMode ? searchItems : filtered);
+
+  $effect(() => { if (active >= entries.length) active = Math.max(0, entries.length - 1); });
   $effect(() => { if (app.paletteOpen) queueMicrotask(() => inputEl?.focus()); });
 
   function onKey(e) {
-    if (e.key === "ArrowDown") { active = Math.min(filtered.length - 1, active + 1); e.preventDefault(); }
+    if (e.key === "ArrowDown") { active = Math.min(entries.length - 1, active + 1); e.preventDefault(); }
     else if (e.key === "ArrowUp") { active = Math.max(0, active - 1); e.preventDefault(); }
-    else if (e.key === "Enter") { if (filtered[active]) run(filtered[active].run); }
+    else if (e.key === "Enter") { if (entries[active]) run(entries[active].run); }
     else if (e.key === "Escape") { close(); }
   }
 </script>
@@ -99,15 +147,16 @@
     <div class="palette" transition:fly={{ y: -12, duration: 150 }} onclick={(e) => e.stopPropagation()}>
       <input bind:this={inputEl} bind:value={query} onkeydown={onKey}
         placeholder={t("cmd.searchPlaceholder")} />
+      {#if searchMode}<div class="mode-tag">{@html icons.search} {searching ? t("palette.searching") : t("cmd.searchMode")}</div>{/if}
       <ul>
-        {#each filtered as c, i}
+        {#each entries as c, i}
           <li class:active={i === active} onmousedown={() => run(c.run)} onmouseenter={() => (active = i)}>
             <span class="ic">{@html c.icon}</span>
             <span class="lbl">{c.label}</span>
             {#if c.hint}<span class="hint">{c.hint}</span>{/if}
           </li>
         {/each}
-        {#if filtered.length === 0}<li class="none">{t("cmd.noResults")}</li>{/if}
+        {#if entries.length === 0}<li class="none">{t("cmd.noResults")}</li>{/if}
       </ul>
     </div>
   </div>
@@ -118,6 +167,10 @@
   .palette { width: min(560px, 92vw); max-height: 60vh; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--hairline); border-radius: calc(var(--radius) + 3px); box-shadow: var(--shadow-lg); overflow: hidden; animation: pop-in var(--t) var(--ease); transform-origin: top center; }
   input { border: none; border-bottom: 1px solid var(--hairline); border-radius: 0; padding: 15px 18px; font-size: 15px; background: transparent; box-shadow: none; }
   input:focus { border-color: var(--hairline); box-shadow: none; }
+  .mode-tag { display: flex; align-items: center; gap: 6px; padding: 6px 16px; font-size: 11px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .mode-tag :global(svg) { width: 13px; height: 13px; }
+  .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   ul { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer; }
   li.active { background: var(--accent); color: #fff; }

@@ -1,12 +1,15 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, sendToLab } from "../store.svelte.js";
-  import { messages as messagesApi, openAttachment, saveAttachment, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment } from "../api.js";
+  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, sendToLab, sandboxAttachment, deepScanAttachment, markUnsubscribed } from "../store.svelte.js";
+  import { untrack } from "svelte";
+  import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment, subscriptions } from "../api.js";
   import { icons } from "../icons.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
   import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
   import { fade } from "svelte/transition";
   import ThreadView from "./ThreadView.svelte";
+  import SuspiciousModal from "./SuspiciousModal.svelte";
+  import AttachmentMenu from "./AttachmentMenu.svelte";
 
   // A conversation opened explicitly (threadKey set) always shows as a thread,
   // independent of the list-grouping setting — so "View conversation" works even
@@ -472,12 +475,97 @@
     return `${(n / 1048576).toFixed(1)} MB`;
   }
   let downloading = $state(null);
-  // Click an attachment → open it with the OS default app.
+  let suspicious = $state(null);  // an attachment awaiting the risk confirmation
+  // Click an attachment → open it with the OS default app. A file the backend
+  // flagged as risky is intercepted here: the user is offered the sandbox first.
   async function openAtt(att) {
+    if (sandboxOn && isFlagged(att)) { suspicious = withDeep(att); return; }
+    await openAttOS(att);
+  }
+  async function openAttOS(att) {
     downloading = att.index;
     try { await openAttachment(detail.id, att.index, att.filename); }
     catch (e) { notify(e.message || t("reader.couldntOpenAttachment"), "error"); }
     finally { downloading = null; }
+  }
+  // Analyze an attachment in the isolated WebAssembly sandbox (never the OS).
+  async function sandboxAtt(att) {
+    downloading = att.index;
+    try { await sandboxAttachment(detail.id, att); }
+    finally { downloading = null; }
+  }
+  async function saveAsAtt(att) {
+    downloading = att.index;
+    try {
+      const path = await saveAttachmentAs(detail.id, att.index, att.filename);
+      if (path) { notify(t("reader.savedTo", { path })); revealPath(path); }
+    } catch (e) { notify(e.message || t("reader.couldntSaveAttachment"), "error"); }
+    finally { downloading = null; }
+  }
+  function onSuspiciousClose(action) {
+    const att = suspicious; suspicious = null;
+    if (!att) return;
+    if (action === "sandbox") sandboxAtt(att);
+    else if (action === "open") openAttOS(att);
+  }
+
+  // Right-click context menu.
+  const sandboxOn = $derived(app.settings.sandboxEnabled !== false);
+
+  // Automatic background deep-scan of Office / PDF / archive attachments: fetch
+  // + de-obfuscate in the backend (never executes), cache, and surface a verdict
+  // badge. A high deep score escalates the pre-click warning even for a file the
+  // fast filename/magic heuristic didn't flag.
+  const DEEP_KINDS = new Set(["pdf", "doc", "sheet", "slide", "archive"]);
+  let deepV = $state({});   // index -> { score, verdict, summary[] }
+  let _deepFor = null;
+  const _deepStarted = new Set();
+  $effect(() => {
+    const id = detail?.id;
+    const atts = attachments;
+    if (_deepFor !== id) { _deepFor = id; _deepStarted.clear(); deepV = {}; }
+    if (!id || !sandboxOn) return;
+    untrack(() => {
+      for (const a of atts) {
+        if (!DEEP_KINDS.has(fileKind(a.filename))) continue;
+        if (_deepStarted.has(a.index)) continue;
+        _deepStarted.add(a.index);
+        deepScanAttachment(id, a).then((rep) => {
+          if (app.selectedMessageId !== id || !rep) return;
+          const s = rep.score || 0;
+          const verdict = s >= 55 ? "high" : s >= 22 ? "medium" : s > 0 ? "low" : "none";
+          deepV = { ...deepV, [a.index]: { score: s, verdict, summary: rep.summary || [] } };
+        }).catch(() => {});
+      }
+    });
+  });
+  // Worst of the fast heuristic risk and the deep-scan verdict.
+  const RANK = { high: 3, medium: 2, low: 1, none: 0, "": 0, undefined: 0 };
+  function effRisk(a) {
+    const d = deepV[a.index]?.verdict || "none";
+    return RANK[d] >= RANK[a.risk || "none"] ? d : (a.risk || "none");
+  }
+  function isFlagged(a) {
+    const r = effRisk(a);
+    return r === "high" || r === "medium";
+  }
+  // Build the attachment object the modal sees, merging deep-scan reasons in.
+  function withDeep(a) {
+    const dv = deepV[a.index];
+    if (!dv || !dv.summary?.length) return { ...a, risk: effRisk(a) };
+    return { ...a, risk: effRisk(a), risk_reasons: [...(a.risk_reasons || []), ...dv.summary] };
+  }
+  let attMenu = $state(null);  // { att, x, y }
+  function openAttMenu(att, e) {
+    e.preventDefault();
+    attMenu = { att, x: e.clientX, y: e.clientY };
+  }
+  function onAttMenuAction(kind) {
+    const att = attMenu?.att; if (!att) return;
+    if (kind === "open") openAtt(att);
+    else if (kind === "sandbox") sandboxAtt(att);
+    else if (kind === "downloads") saveAtt(att);
+    else if (kind === "saveas") saveAsAtt(att);
   }
   // Save one attachment to disk (Downloads).
   async function saveAtt(att) {
@@ -541,16 +629,24 @@
   });
   function runCtx(a) { ctxMenu = null; a.run(); }
 
-  function unsubscribe() {
+  async function unsubscribe() {
     const parts = [...(detail.unsubscribe || "").matchAll(/<([^>]+)>/g)].map((m) => m[1].trim());
     const http = parts.find((p) => p.startsWith("http"));
     const mailto = parts.find((p) => p.startsWith("mailto:"));
+    const who = detail.from_addr;
     if (http) {
-      // window.open is a no-op in the desktop webview — route via the OS browser.
+      // Try RFC 8058 one-click POST first (some links error on a plain browser
+      // GET); fall back to the OS browser (window.open is a no-op in the webview).
+      try {
+        const r = await subscriptions.unsubscribe(http);
+        if (r?.ok) { markUnsubscribed(who); notify(t("utility.unsubDone", { who })); return; }
+      } catch {}
       openExternal(http);
+      markUnsubscribed(who);
     } else if (mailto) {
       const addr = mailto.slice(7).split("?")[0];
       openCompose({ to: addr, subject: "Unsubscribe", html: "Please unsubscribe me from this list.", account_id: detail.account_id });
+      markUnsubscribed(who);
     }
   }
 </script>
@@ -735,19 +831,36 @@
       <div class="attachments">
         <span class="att-label">{@html icons.attachment} {attachments.length === 1 ? t("reader.attachmentOne") : t("reader.attachmentN", { n: attachments.length })}</span>
         {#each attachments as a}
-          <span class="att" class:busy={downloading === a.index}>
+          <span class="att" class:busy={downloading === a.index} class:risky={isFlagged(a)}
+                oncontextmenu={(e) => openAttMenu(a, e)}>
             <button class="att-open" title={t("reader.openFile", { name: a.filename })} onclick={() => openAtt(a)}>
               {#if thumbs[a.index]}
                 <img class="att-thumb" src={thumbs[a.index]} alt="" />
               {:else}
-                <span class="att-badge {fileKind(a.filename)}">{fileExt(a.filename)}</span>
+                <span class="att-badge {fileKind(a.filename)}" class:risk={isFlagged(a)}>{fileExt(a.filename)}</span>
               {/if}
               <span class="att-meta">
-                <span class="att-name">{a.filename}</span>
-                {#if a.size}<span class="att-size">{humanSize(a.size)}</span>{/if}
+                <span class="att-name">
+                  {#if isFlagged(a)}<span class="att-warn" title={t("threat.riskBadge")}>{@html icons.warning || "!"}</span>{/if}
+                  {a.filename}
+                </span>
+                <span class="att-sub">
+                  {#if a.size}<span class="att-size">{humanSize(a.size)}</span>{/if}
+                  {#if deepV[a.index]}
+                    <span class="scan v-{deepV[a.index].verdict}" title={t("sandbox.scanTip")}>
+                      {@html (deepV[a.index].verdict === "none" || deepV[a.index].verdict === "low") ? (icons.shieldCheck || icons.shield || "") : (icons.shieldAlert || icons.warning || "")}
+                      {t("sandbox.scan_" + deepV[a.index].verdict)}
+                    </span>
+                  {:else if DEEP_KINDS.has(fileKind(a.filename)) && sandboxOn}
+                    <span class="scan v-scanning" title={t("sandbox.scanTip")}>{t("sandbox.scanning")}</span>
+                  {/if}
+                </span>
               </span>
               {#if downloading === a.index}<span class="att-dl">…</span>{/if}
             </button>
+            {#if sandboxOn}
+              <button class="att-sandbox" title={t("threat.openSandbox")} onclick={() => sandboxAtt(a)}>{@html icons.shield || icons.lock || "▣"}</button>
+            {/if}
             <button class="att-save" title={t("reader.saveToDownloads")} onclick={() => saveAtt(a)}>{@html icons.sent || "↓"}</button>
           </span>
         {/each}
@@ -758,7 +871,15 @@
         {/if}
       </div>
     {/if}
-    {#if detail.html}
+    {#if suspicious}
+      <SuspiciousModal att={suspicious} onclose={onSuspiciousClose} />
+    {/if}
+    {#if attMenu}
+      <AttachmentMenu x={attMenu.x} y={attMenu.y} sandboxOn={sandboxOn}
+        risky={isFlagged(attMenu.att)}
+        onaction={onAttMenuAction} onclose={() => (attMenu = null)} />
+    {/if}
+    {#if detail.html || detail.text}
       <div class="viewbar">
         {#if hasEarlier && collapseOn}
           <button class="vtoggle" class:on={showQuoted} title={t("reader.showHideEarlierTitle")}
@@ -956,6 +1077,20 @@
   .att-open { display: inline-flex; align-items: center; gap: 9px; padding: 5px 10px 5px 6px; min-width: 0; }
   .att-save { display: inline-flex; align-items: center; padding: 0 9px; border-left: 1px solid var(--border); color: var(--muted); }
   .att-save:hover { background: var(--surface-3); color: var(--accent); }
+  .att-sandbox { display: inline-flex; align-items: center; padding: 0 9px; border-left: 1px solid var(--border); color: var(--muted); }
+  .att-sandbox:hover { background: var(--surface-3); color: var(--accent); }
+  .att-sandbox :global(svg) { width: 14px; height: 14px; }
+  .att.risky { border-color: color-mix(in srgb, var(--danger, #e5484d) 45%, var(--border)); }
+  .att-badge.risk { background: var(--danger, #e5484d); }
+  .att-warn { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--danger, #e5484d); }
+  .att-warn :global(svg) { width: 12px; height: 12px; }
+  .att-sub { display: flex; align-items: center; gap: 8px; }
+  .scan { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; }
+  .scan :global(svg) { width: 11px; height: 11px; }
+  .scan.v-none, .scan.v-low { color: var(--ok, #30a46c); }
+  .scan.v-medium { color: #b8801f; }
+  .scan.v-high { color: var(--danger, #e5484d); }
+  .scan.v-scanning { color: var(--muted); font-weight: 500; }
   .att-thumb { width: 28px; height: 28px; border-radius: 5px; object-fit: cover; flex: none; background: var(--surface-3); }
   .att-badge { flex: none; display: grid; place-items: center; width: 30px; height: 24px; border-radius: 5px;
     font-size: 9px; font-weight: 800; letter-spacing: 0.02em; color: #fff; background: var(--muted); }

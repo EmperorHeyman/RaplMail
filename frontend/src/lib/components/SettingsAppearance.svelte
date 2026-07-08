@@ -1,5 +1,5 @@
 <script>
-  import { app, saveSettings, applyTheme, THEME_TOKENS, notify } from "../store.svelte.js";
+  import { app, saveSettings, applyTheme, THEME_TOKENS, notify, LIGHT_THEME } from "../store.svelte.js";
   import { PRESETS, PRESET_CATEGORIES } from "../themes.js";
 
   // Effective email appearance mode (migrates the old two booleans).
@@ -121,6 +121,49 @@
   function applyGenerated() {
     applyPreset({ name: "Generated", theme: generatePalette(genAccent, genBase) });
   }
+  // --- Your own saved presets ------------------------------------------------
+  function saveAsPreset() {
+    const name = (prompt("Name this preset:") || "").trim();
+    if (!name) return;
+    const id = (crypto.randomUUID?.() || String(Date.now())).replace(/[^a-z0-9]/gi, "").slice(0, 12);
+    const list = [...(app.settings.userPresets || []), { id, name, theme: { ...app.settings.theme } }];
+    saveSettings({ userPresets: list });
+    notify(`Saved preset "${name}"`);
+  }
+  function deleteUserPreset(id) {
+    saveSettings({ userPresets: (app.settings.userPresets || []).filter((p) => p.id !== id) });
+  }
+  const userPresets = $derived(app.settings.userPresets || []);
+
+  // --- Auto day / night theme assignment -------------------------------------
+  // A flat list of everything you can assign to day/night: built-in presets +
+  // your saved ones. We store the resolved theme object, matched back by value.
+  const themeChoices = $derived([
+    { key: "dark", name: "Dark (default)", theme: {} },
+    { key: "light", name: "Light", theme: LIGHT_THEME },
+    ...PRESETS.filter((p) => p.name !== "Dark" && p.name !== "Light").map((p) => ({ key: "b:" + p.name, name: p.name, theme: p.theme })),
+    ...userPresets.map((p) => ({ key: "u:" + p.id, name: p.name + " (yours)", theme: p.theme })),
+  ]);
+  // Map a stored theme object back to its dropdown key. null = "not set" → the
+  // per-slot default (Light for day, Dark for night).
+  const keyForTheme = (th, fallback) => {
+    if (th == null) return fallback;
+    const j = JSON.stringify(th);
+    return (themeChoices.find((c) => JSON.stringify(c.theme) === j) || { key: fallback }).key;
+  };
+  function setDayNight(which, key) {
+    const c = themeChoices.find((x) => x.key === key);
+    if (!c) return;
+    saveSettings({ [which]: c.theme });
+    applyTheme();
+  }
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
+  function setHour(which, v) { saveSettings({ [which]: Number(v) }); applyTheme(); }
+
+  // --- Live shape/layout preview ---------------------------------------------
+  const DENSITY = { comfortable: [11, 11, 34], compact: [6, 9, 28], cozy: [15, 13, 36] };
+  const dens = $derived(DENSITY[app.settings.density] || DENSITY.comfortable);
+
   function setMode(mode) { saveSettings({ themeMode: mode }); applyTheme(); }
   function setRadius(v) { saveSettings({ radius: Number(v) }); applyTheme(); }
   function setScale(v) { saveSettings({ uiScale: Number(v) }); applyTheme(); }
@@ -138,12 +181,55 @@
     <label class="radio"><input type="radio" name="tmode" checked={!auto} onchange={() => setMode("manual")} />
       <div><b>Manual</b><span>Use the preset / colors you pick below.</span></div></label>
     <label class="radio"><input type="radio" name="tmode" checked={auto} onchange={() => setMode("auto")} />
-      <div><b>Auto (day / night)</b><span>Light theme 7am–7pm, dark otherwise. Overrides custom colors while on.</span></div></label>
+      <div><b>Auto (day / night)</b><span>Switch themes by time of day. Overrides your manual colors while on.</span></div></label>
+    {#if auto}
+      <div class="daynight">
+        <label class="dn"><span>Day theme</span>
+          <select value={keyForTheme(app.settings.dayTheme, "light")} onchange={(e) => setDayNight("dayTheme", e.currentTarget.value)}>
+            {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
+          </select>
+        </label>
+        <label class="dn"><span>from</span>
+          <select value={app.settings.dayStart ?? 7} onchange={(e) => setHour("dayStart", e.currentTarget.value)}>
+            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+          </select>
+        </label>
+        <label class="dn"><span>Night theme</span>
+          <select value={keyForTheme(app.settings.nightTheme, "dark")} onchange={(e) => setDayNight("nightTheme", e.currentTarget.value)}>
+            {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
+          </select>
+        </label>
+        <label class="dn"><span>from</span>
+          <select value={app.settings.nightStart ?? 19} onchange={(e) => setHour("nightStart", e.currentTarget.value)}>
+            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+          </select>
+        </label>
+      </div>
+      <p class="hint" style="margin:10px 0 0">Tip: build a look under Custom colors, hit <b>Save as preset</b>, then pick it here as your day or night theme.</p>
+    {/if}
   </section>
 
   <section class="card" class:dim={auto}>
     <h3>Presets</h3>
     <p class="hint">Each preview shows the actual background, panel and accent — pick a mood, then fine-tune below.</p>
+    {#if userPresets.length}
+      <div class="preset-cat">Yours</div>
+      <div class="presets">
+        {#each userPresets as p (p.id)}
+          <div class="preset upreset" class:active={isActivePreset(p)}>
+            <button class="preset-apply" onclick={() => applyPreset(p)} title={p.name}>
+              <span class="chip" style="background:{pv(p, '--bg')}; border-color:{pv(p, '--border')}">
+                <span class="chip-bar" style="background:{pv(p, '--surface-2')}"></span>
+                <span class="chip-dot" style="background:{pv(p, '--accent')}"></span>
+                <span class="chip-line" style="background:{pv(p, '--muted')}"></span>
+              </span>
+              <span class="preset-name">{p.name}</span>
+            </button>
+            <button class="updel" title="Delete preset" onclick={() => deleteUserPreset(p.id)}>×</button>
+          </div>
+        {/each}
+      </div>
+    {/if}
     {#each presetGroups as g}
       <div class="preset-cat">{g.cat}</div>
       <div class="presets">
@@ -162,7 +248,12 @@
   </section>
 
   <section class="card" class:dim={auto}>
-    <div class="head"><h3>Custom colors</h3><button class="btn ghost" onclick={reset}>Reset all</button></div>
+    <div class="head"><h3>Custom colors</h3>
+      <div class="head-btns">
+        <button class="btn ghost" onclick={saveAsPreset}>Save as preset</button>
+        <button class="btn ghost" onclick={reset}>Reset all</button>
+      </div>
+    </div>
     <div class="gen">
       <span class="gen-lbl">Generate from one color</span>
       <input class="gen-swatch" type="color" bind:value={genAccent} title="Accent color" />
@@ -186,6 +277,28 @@
 
   <section class="card">
     <h3>Shape & layout</h3>
+    <!-- Live preview: a mock message row + button that reflect the roundness and
+         density below as you drag, so you see the effect before committing. -->
+    <div class="lp" style="--lp-r:{app.settings.radius}px">
+      <div class="lp-lbl">Preview</div>
+      <div class="lp-card">
+        <div class="lp-row" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
+          <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
+          <span class="lp-txt">
+            <span class="lp-l1"></span>
+            <span class="lp-l2"></span>
+          </span>
+          <span class="lp-btn">Done</span>
+        </div>
+        <div class="lp-row alt" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
+          <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
+          <span class="lp-txt">
+            <span class="lp-l1 short"></span>
+            <span class="lp-l2 short"></span>
+          </span>
+        </div>
+      </div>
+    </div>
     <label class="slider-row">
       <span>Text &amp; UI size</span>
       <input type="range" min="0.8" max="1.4" step="0.05" value={app.settings.uiScale ?? 1} oninput={(e) => setScale(e.currentTarget.value)} />
@@ -413,4 +526,29 @@
   .token input[type=color] { width: 38px; height: 30px; padding: 2px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--border); cursor: pointer; }
   .tname { flex: 1; font-size: 13px; }
   .tval { font-size: 11px; color: var(--faint); font-family: ui-monospace, monospace; }
+  .head-btns { display: flex; gap: 8px; }
+  /* Auto day/night picker grid */
+  .daynight { display: grid; grid-template-columns: 1fr auto; gap: 8px 12px; margin-top: 12px; align-items: center; }
+  .dn { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+  .dn > span { flex: none; }
+  .dn select { flex: 1; }
+  /* User presets: apply button + a delete corner */
+  .upreset { position: relative; padding: 0; }
+  .preset-apply { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 8px; width: 100%; }
+  .updel { position: absolute; top: 3px; right: 3px; width: 18px; height: 18px; border-radius: 50%;
+    background: var(--surface-3); color: var(--muted); font-size: 13px; line-height: 1; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+  .upreset:hover .updel { opacity: 1; }
+  .updel:hover { background: var(--danger); color: #fff; }
+  /* Live shape/layout preview */
+  .lp { margin-bottom: 16px; }
+  .lp-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin-bottom: 6px; }
+  .lp-card { border: 1px solid var(--border); border-radius: var(--lp-r); overflow: hidden; background: var(--surface-2); }
+  .lp-row { display: flex; align-items: center; }
+  .lp-row.alt { border-top: 1px solid var(--hairline); }
+  .lp-av { flex: none; border-radius: 50%; background: var(--accent-soft); }
+  .lp-txt { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .lp-l1 { height: 8px; width: 55%; border-radius: 999px; background: var(--muted); opacity: 0.75; }
+  .lp-l2 { height: 7px; width: 78%; border-radius: 999px; background: var(--faint); opacity: 0.6; }
+  .lp-l1.short { width: 38%; } .lp-l2.short { width: 60%; }
+  .lp-btn { flex: none; font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); padding: 5px 12px; border-radius: var(--lp-r); }
 </style>

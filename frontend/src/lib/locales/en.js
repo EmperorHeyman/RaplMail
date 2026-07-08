@@ -14,6 +14,7 @@ import goto from "./parts/goto.js";
 import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
+import sandbox from "./parts/sandbox.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -29,6 +30,7 @@ const base = {
   "common.retry": "Retry",
   "common.play": "Play",
   "common.preview": "Preview",
+  "common.delete": "Delete",
   "common.enabled": "Enabled",
   "common.disabled": "Disabled",
 
@@ -90,9 +92,29 @@ const base = {
   "notif.newMail": "Notify me about new mail",
   "notif.onlyUnfocused": "Only when RaplMail isn't focused",
   "notif.sound": "Sound",
+  "notif.soundMail": "New-mail sound",
+  "notif.soundCalendar": "Calendar reminder sound",
+  "notif.customSounds": "Your own sounds",
+  "notif.addCustom": "Add custom sound",
+  "notif.customHint": "Upload an audio file and cut a short clip to use as a notification sound.",
+  "notif.reminderWindow": "Pop a reminder window",
+  "notif.reminderWindowHint": "For calendar events, throw a small always-on-top window (\"you've got X till …\") instead of only a notification.",
   "notif.volume": "Volume",
   "notif.test": "Send test notification",
   "notif.muteHint": "To silence a specific sender or a whole category, add a \"Mute notifications\" rule.",
+  "sound.studioTitle": "Custom notification sound",
+  "sound.pickFile": "Choose an audio file",
+  "sound.pickHint": "MP3, WAV, OGG, M4A… we'll cut a short clip from it.",
+  "sound.decoding": "Decoding…",
+  "sound.decodeFailed": "Couldn't read that audio file.",
+  "sound.start": "Start",
+  "sound.length": "Length",
+  "sound.name": "Name",
+  "sound.namePlaceholder": "e.g. My chime",
+  "sound.preview": "Preview",
+  "sound.chooseAnother": "Choose another",
+  "sound.save": "Save sound",
+  "sound.saved": "Saved sound \"{name}\"",
 
   // Language settings.
   "settings.language": "Language",
@@ -155,10 +177,29 @@ const base = {
   "utility.archiveFuture": "Auto-archive",
   "utility.archivedRule": "Future mail from {who} will be archived",
   "utility.archivedN": "Auto-archive rule added for {n} sender(s)",
+  "utility.sortDormant": "Dormant first",
+  "utility.sortMost": "Most received",
+  "utility.sortRecent": "Most recent",
+  "utility.sortUnread": "Least read",
+  "utility.sortName": "Name",
+  "utility.filterPlaceholder": "Filter senders…",
+  "utility.onlyUnsub": "Only unsubscribable",
+  "utility.unsubscribed": "Unsubscribed",
+  "utility.unsubDone": "Unsubscribed from {who}",
+  "utility.unsubOpened": "Opened the unsubscribe page for {who}",
+  "utility.unsubFailed": "Couldn't unsubscribe automatically — opening the page instead",
+  "update.upToDate": "You're on the latest version ✓",
+  "update.available": "Update available: {version}",
+  "update.openPage": "Open the download page on GitHub to install it?",
+  "update.download": "Download",
+  "update.later": "Not now",
+  "update.checkFailed": "Update check failed: {err}",
+  "schedule.localOnly": "RaplMail is local-only. Scheduled sends and snoozes fire from your computer, so RaplMail must be running (at least in the tray) and the PC powered on at the chosen time — they won't deliver from a server while you're away.",
+  "schedule.localOnlyShort": "Local-only: your PC must be on and RaplMail running for this to fire.",
 };
 
 export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
-  ...goto.en, ...search.en, ...devicesync.en, ...security.en,
+  ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
 };

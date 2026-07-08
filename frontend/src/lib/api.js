@@ -16,6 +16,9 @@ function isTauri() {
 }
 
 async function resolveCfg() {
+  // The isolated sandbox window must never reach the backend (it has no token
+  // and no capability to). Short-circuit so nothing polls /health from there.
+  if (typeof location !== "undefined" && location.hash === "#sandbox") return { base: "", token: "" };
   if (!isTauri()) return { base: "/api", token: "" };
   const { invoke } = await import("@tauri-apps/api/core");
   const c = await invoke("backend_config");
@@ -141,6 +144,69 @@ export async function saveAttachment(messageId, index, filename) {
   return null;
 }
 
+// "Save as…": pick a destination via the native dialog, then write the bytes
+// there. Returns the saved path, or null if the user cancelled / in the browser.
+export async function saveAttachmentBytesAs(filename, contentType, dataB64) {
+  if (isTauri()) {
+    const { save } = await import("@tauri-apps/plugin-dialog");
+    const { invoke } = await import("@tauri-apps/api/core");
+    const path = await save({ defaultPath: filename || "attachment" });
+    if (!path) return null;  // cancelled
+    return invoke("save_attachment_to", { path, dataB64: dataB64 || "" });
+  }
+  // Browser: a plain download (the OS may still prompt depending on settings).
+  const url = URL.createObjectURL(b64ToBlob(dataB64, contentType));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename || "attachment"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return null;
+}
+
+export async function saveAttachmentAs(messageId, index, filename) {
+  const blob = await fetchAttachment(messageId, index);
+  return saveAttachmentBytesAs(filename, blob.type, await blobToBase64(blob));
+}
+
+function b64ToBlob(dataB64, contentType) {
+  const bin = atob(dataB64 || "");
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: contentType || "application/octet-stream" });
+}
+
+// Open raw bytes (base64) with the OS default app. Used when the caller already
+// holds the bytes — an uploaded local file, or a "trust & open" out of the
+// sandbox — rather than a message attachment index.
+export async function openAttachmentBytes(filename, contentType, dataB64) {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("open_attachment", { filename: filename || "attachment", dataB64: dataB64 || "" });
+    return;
+  }
+  const url = URL.createObjectURL(b64ToBlob(dataB64, contentType));
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+// Save raw bytes (base64) to disk. Returns the saved path in Tauri, else null.
+export async function saveAttachmentBytes(filename, contentType, dataB64) {
+  if (isTauri()) {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return invoke("save_attachment", { filename: filename || "attachment", dataB64: dataB64 || "" });
+  }
+  const url = URL.createObjectURL(b64ToBlob(dataB64, contentType));
+  const a = document.createElement("a");
+  a.href = url; a.download = filename || "attachment"; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  return null;
+}
+
+// Fetch an attachment's bytes as base64 (for handing to the sandbox window).
+export async function fetchAttachmentB64(messageId, index) {
+  const blob = await fetchAttachment(messageId, index);
+  return { data_b64: await blobToBase64(blob), size: blob.size, content_type: blob.type };
+}
+
 // Export a message as .eml (Safe Export strips internal headers + tracking pixels
 // when sanitize=true). Saves to disk in Tauri, blob-downloads in the browser.
 export async function saveEml(messageId, sanitize = true, filename = "message.eml") {
@@ -176,6 +242,12 @@ export async function openExternal(url) {
 }
 
 export const unfurl = (url) => api.get(`/unfurl?url=${encodeURIComponent(url)}`);
+
+// Tier-2 deep analysis (macro de-obfuscation, PDF stream decompression) for the
+// sandbox. Runs in the backend (extraction only, never executes the file).
+export const sandbox = {
+  analyze: (filename, dataB64) => api.post("/sandbox/analyze", { filename, data_b64: dataB64 }),
+};
 
 // Absolute base URL of the backend (e.g. http://127.0.0.1:8765), once resolved.
 // Used to show the user the local /metrics URL for LAN devices.
@@ -323,7 +395,9 @@ export const messages = {
 };
 
 export const subscriptions = {
-  audit: () => api.get("/subscriptions/audit"),
+  audit: (sort = "dormant") => api.get(`/subscriptions/audit?sort=${encodeURIComponent(sort)}`),
+  // RFC 8058 one-click unsubscribe (server-side POST); resolves { ok, ... }.
+  unsubscribe: (url) => api.post("/subscriptions/unsubscribe", { url }),
 };
 
 export const smime = {

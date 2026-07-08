@@ -1,0 +1,5 @@
+# Emit undefined `host_*` symbols as wasm imports instead of failing to link.
+# This is what makes the import boundary work: the module can only reach the
+# outside world by calling host-provided functions, which the JS runtime logs.
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "link-arg=--allow-undefined"]

@@ -5,8 +5,14 @@
 from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hiddenimports = []
-for pkg in ("uvicorn", "anyio", "app", "email", "encodings", "pgpy"):
-    hiddenimports += collect_submodules(pkg)
+for pkg in ("uvicorn", "anyio", "app", "email", "encodings", "pgpy",
+            # oletools/olevba (deep macro analysis) + its runtime deps. These pull
+            # in submodules PyInstaller won't discover on its own.
+            "oletools", "olefile", "pcodedmp", "msoffcrypto"):
+    try:
+        hiddenimports += collect_submodules(pkg)
+    except Exception:
+        pass
 hiddenimports += [
     "websockets", "websockets.legacy", "h11",
     "mailparser", "msal", "google.auth", "google.auth.transport.requests",
@@ -23,8 +29,24 @@ hiddenimports += [
 import os
 
 datas = collect_data_files("certifi")
+# Also drop cacert.pem at the bundle root as a stable fallback: newer certifi
+# resolves its bundle via importlib.resources, which doesn't reliably land in the
+# onefile _MEI dir, so app/core/certs.py looks here too (fixes the frozen M365
+# "Could not find a suitable TLS CA certificate bundle" crash).
+try:
+    import certifi as _certifi
+    if os.path.exists(_certifi.where()):
+        datas += [(_certifi.where(), ".")]
+except Exception:
+    pass
 # The timezone database is pure data — collect its files so zoneinfo can find them.
 datas += collect_data_files("tzdata")
+# oletools ships data files (signatures, thirdparty tables) it reads at runtime.
+for _pkg in ("oletools", "pcodedmp"):
+    try:
+        datas += collect_data_files(_pkg)
+    except Exception:
+        pass
 # Bake the local .env (OAuth client IDs, etc.) into the bundle so the packaged
 # app is configured out of the box. Users can override it with a .env next to
 # the exe or in %APPDATA%/RaplMail without rebuilding (see core/config.py).

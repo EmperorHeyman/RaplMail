@@ -232,6 +232,53 @@ function recolorForDark(html, bg, text) {
   } catch { return html; }
 }
 
+// The background color declared directly on an element (bgcolor attr or inline
+// style), "" if none.
+function _bgOf(el) {
+  const bgc = el.getAttribute ? el.getAttribute("bgcolor") : "";
+  if (bgc) return bgc.trim();
+  const style = (el.getAttribute && el.getAttribute("style")) || "";
+  const m = style.match(/background(?:-color)?\s*:\s*([^;]+)/i);
+  return m ? m[1].trim() : "";
+}
+// Does this element (or any ancestor) paint itself a dark background? If so, its
+// light text is intentional (light-on-dark) and must be left alone.
+function _onDarkBg(el) {
+  let n = el;
+  while (n && n.getAttribute) {
+    const l = _lum(_bgOf(n));
+    if (!Number.isNaN(l) && l < 0.5) return true;
+    n = n.parentElement;
+  }
+  return false;
+}
+
+/**
+ * White-on-white guard for the LIGHT reading pane: emails authored for a dark
+ * background (light/near-white text) render invisibly on our white pane. Recolor
+ * only near-white text to the pane's dark text color, and only when the element
+ * isn't sitting on its own dark background (so light-on-dark brand blocks stay
+ * exactly as designed). Never runs in "show original" mode.
+ */
+function fixInvisibleText(html, paneText) {
+  try {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const el of doc.querySelectorAll("font[color]")) {
+      const l = _lum(el.getAttribute("color"));
+      if (!Number.isNaN(l) && l >= 0.75 && !_onDarkBg(el)) el.removeAttribute("color");
+    }
+    for (const el of doc.querySelectorAll("[style]")) {
+      const style = el.getAttribute("style");
+      const next = style.replace(/(^|;)(\s*)color\s*:\s*([^;]+)/gi, (full, sep, ws, val) => {
+        const l = _lum(val.trim());
+        return (!Number.isNaN(l) && l >= 0.75 && !_onDarkBg(el)) ? `${sep}${ws}color:${paneText}` : full;
+      });
+      if (next !== style) el.setAttribute("style", next);
+    }
+    return doc.body.innerHTML;
+  } catch { return html; }
+}
+
 const _URL_RE = /\b(https?:\/\/[^\s<>"')]+)/gi;
 /** Turn a plain-text body into safe HTML with clickable links. */
 export function autoLink(text) {
@@ -398,6 +445,9 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
       `a{color:${link};} img{max-width:100%;height:auto;}` +
       `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}`;
   } else {
+    // Default (non-"original") light pane: guard against white-on-white — recolor
+    // near-white text that isn't on its own dark background so it stays readable.
+    if (!original) body = fixInvisibleText(body, "#1a1a1a");
     pageCss =
       `html{background:#fff;}` +
       `body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;${bodyBox}}` +

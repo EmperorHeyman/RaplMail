@@ -11,6 +11,192 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.8.5] — 2026-07-08
+
+### Added
+- **Subscription Audit → "Only unsubscribable" filter.** A toggle in Settings →
+  Utility that hides senders with no unsubscribe target, so you can sweep just the
+  lists you can actually leave.
+- **Unsubscribe tracking.** Once you unsubscribe from a sender, the button turns
+  into a green **"Unsubscribed ✓"** marker (in the audit list and reflected from
+  the reader), so you never re-click one you've already handled. The state
+  persists across restarts and rides the config sync.
+
+### Fixed
+- **Command palette search did nothing.** Typing an operator query (`from:…`,
+  `subject:…`, `/regex/`) and pressing Enter (or clicking a result) silently ran
+  an **empty** search — closing the palette cleared the query *before* it was
+  read. It now searches the term you typed.
+- **Unsubscribe opened an error page** for senders like Humble Bundle. RaplMail
+  now performs a proper **RFC 8058 one-click unsubscribe** (a server-side POST)
+  first, and only falls back to opening the page in the browser if that isn't
+  supported — so one-click links that error on a plain GET work.
+- **"Show original styling" button missing on plain-text mail.** The toggle was
+  gated on the message having HTML; it now appears for any message body.
+- **White-on-white emails.** Mail authored with light text for a dark background
+  rendered invisibly on the light reading pane. A contrast safety-net now
+  recolors near-white text that isn't on its own dark background, so the default
+  view is always readable ("Show original" still renders the sender's exact
+  design untouched).
+
+## [0.8.4] — 2026-07-08
+
+### Added
+- **Automatic background deep-scan.** Office, PDF and archive attachments are now
+  deep-scanned automatically when you open a message (macro de-obfuscation / PDF
+  stream decompression, in the backend — still never executed). Each attachment
+  shows a **verdict badge** (Clean / Suspicious / Dangerous) once ready, and a
+  high deep score **escalates the pre-click warning** even for a file the fast
+  filename/magic check didn't flag. Results are cached per session.
+
+### Changed / hardened
+- Deep-scan now runs under a **wall-clock timeout** and an **anti-decompression-
+  bomb cap** (per-stream and total), so a crafted attachment can't hang or
+  exhaust memory when scanned automatically.
+
+## [0.8.3] — 2026-07-08
+
+### Added
+- **Deep macro analysis (Tier 2).** Office documents are now run through
+  `oletools`/olevba in the backend: it **extracts and de-obfuscates** VBA macros
+  (decoding `Chr()`/Base64/hex tricks) without ever executing them, so a
+  disguised `Shell("powershell … DownloadString('http://…'))` dropper is shown in
+  plain language — auto-run triggers (AutoOpen/Document_Open), behaviour, and
+  IOCs (URLs, dropped filenames), plus the de-obfuscated source. This is the
+  answer to "how would it catch a Word macro": it reads and decodes the macro
+  rather than guessing from the raw bytes.
+- **PDF stream decompression.** Malicious PDFs hide `/JS` / `/Launch` inside
+  compressed (FlateDecode) object streams. The backend now inflates those
+  streams and re-scans them, so content the raw-byte scan can't see is caught.
+- The sandbox window shows a **Deep analysis** panel (macro/PDF findings), and
+  its verdict now folds in the backend deep score — so a compressed `.docm`
+  macro (invisible to the in-window WASM byte scan) still reads as dangerous.
+- **`test-samples/macro-dropper.bas`** — an obfuscated VBA sample to see macro
+  de-obfuscation work.
+
+### Note
+- True *detonation* (running the file in a real Windows VM and watching syscalls)
+  is intentionally not attempted: WebAssembly has no OS/VBA runtime, so it's not
+  possible locally. This release does the strongest thing that is — full static
+  extraction + de-obfuscation — which catches the obfuscated droppers a plain
+  keyword scan misses.
+
+## [0.8.2] — 2026-07-08
+
+### Fixed
+- **Attachment right-click menu did nothing.** Every item is now wired correctly
+  (the menu closed itself before the action could read which file was picked).
+- **Sandbox "N outbound attempts blocked" with no visible log.** The sandbox
+  window was quietly polling the local backend's `/health`, and each retry was
+  counted as a blocked "external" attempt. The sandbox now never contacts the
+  backend at all, loopback/local traffic is never treated as a phone-home, and
+  the counter is tied 1:1 to the visible, de-duplicated activity list — so a
+  number can never appear without matching entries you can read.
+
+### Added
+- **Content-based flagging for documents.** A PDF or Office file with a clean
+  name but active content inside (`/Launch`, embedded JavaScript, `/OpenAction`,
+  embedded files, or VBA macros) now triggers the suspicious-file warning before
+  you open it — previously only the filename/type was checked pre-click.
+- **`test-samples/`** — inert `invoice.pdf.ps1` and `statement.pdf` you can drop
+  into the sandbox to see detection work (they never execute).
+
+## [0.8.1] — 2026-07-08
+
+### Added
+- **Attachment right-click menu** with Open, Open in sandbox, **Save to
+  Downloads**, and **Save as…** (a real native save dialog, via the new Tauri
+  dialog plugin).
+- **Enable/disable the sandbox** in Settings → Security, alongside the
+  "Analyze a file in the sandbox…" upload button (moved here from General).
+
+### Changed
+- **Sandbox is friendlier.** A plain-language verdict summary now explains what
+  the score means and what to do; a one-line note explains the sandbox itself.
+- Duplicate activity/finding rows are collapsed.
+
+### Fixed
+- **"Network guard: N requests blocked" was counting the sandbox window's own
+  framework/asset requests**, so a safe file could show dozens of scary "blocked"
+  entries with no explanation. The guard now only flags genuine *external*
+  phone-home attempts (which stay at zero for normal files) and shows a clear
+  "No network, disk or system access" status otherwise.
+
+## [0.8.0] — 2026-07-08
+
+### Added
+- **WebAssembly attachment sandbox.** Suspicious attachments can now be opened in
+  a sealed, isolated window that analyzes the file entirely inside a raw
+  `wasm32` module with **zero access to your PC** — no filesystem, no network, no
+  backend. The module's only channel to the outside world is a set of host
+  functions RaplMail logs, so everything the file *tries* to do (launch a
+  program, run embedded JavaScript, phone home to a URL, fire a VBA macro) is
+  intercepted and shown, never performed.
+- **Live "what is this file trying to do" dashboard.** The sandbox window streams
+  the payload's intercepted actions (launch / network / script / macro) as they
+  are found, plus a static-analysis summary, a safe extracted-text preview, and a
+  raw hex view — a verdict badge scores the file 0–100.
+- **Suspicious-file warning.** Opening a flagged attachment (executable, macro
+  doc, double extension like `payroll.pdf.exe`, or a file whose bytes don't match
+  its name) now shows a warning with the reasons and a **3-second countdown** on
+  "Open anyway", offering the sandbox as the safe path. Right-click any
+  attachment to open it straight in the sandbox.
+- **Analyze any file on your PC.** A new "Analyze a file in the sandbox…" action
+  (command palette and Settings → General) lets you inspect any local file, not
+  just mail attachments, in the same sealed sandbox.
+- **Execution-free threat heuristics (backend).** Attachments are scored while the
+  message loads — dangerous/macro extensions, decoy double extensions,
+  right-to-left-override filename spoofing, and magic-byte/extension mismatch —
+  so the reader can flag them before you click.
+
+### Changed
+- Clicking a risky attachment no longer opens it in the OS immediately; it routes
+  through the sandbox/warning flow first. Safe files open exactly as before.
+
+## [0.7.0] — 2026-07-08
+
+### Added
+- **Custom colour presets + auto day/night themes.** Appearance now lets you save
+  the current custom palette as a named preset, and pick any built-in or saved
+  preset as your **day** and **night** theme in Auto mode (with configurable
+  switch hours).
+- **Live shape & layout preview.** A mock message row + button in Appearance
+  reflects corner roundness and message density as you drag the sliders.
+- **Command palette doubles as search.** Start typing a `from:` / `subject:` /
+  `is:` operator (or a `/regex/`) in the palette and it flips to live mail
+  results; pick one to open it, or run the full search.
+- **Search-surface setting.** Choose whether the search shortcut opens the inline
+  bar or the search window (Settings → General).
+- **Calendar reminder windows.** Event reminders can now pop a small always-on-top
+  window ("you've got X until …") with its own sound, instead of only a
+  notification.
+- **Per-type notification sounds + your own clips.** Separate sounds for new mail
+  and calendar reminders, plus a small studio to upload an audio file and cut a
+  short clip to use as a notification sound.
+- **Unsubscribe utility filters.** Sort the subscription audit by most received,
+  most recent, least read, dormant, or name, and filter by sender.
+- **Serverless updates.** "Check for updates" now queries the GitHub Releases API
+  and points you at the latest download — no update server or signing feed.
+- **Hidden developer mode.** The Debug section is hidden until you tap the version
+  5 times (Android-style), and now includes copy-diagnostics, force-sync,
+  recategorize, and a re-hide control.
+
+### Changed
+- **Smart Inbox header is now a breadcrumb.** The redundant static "Smart Inbox"
+  title is gone; when you open a group (e.g. Promotions) the header shows it as a
+  breadcrumb so you can see — and collapse — the group you're inside.
+- **Scheduling & snooze local-only disclaimers** in the compose Later menu, the
+  Scheduled view, and settings — a reminder that these fire only while RaplMail is
+  running and the PC is on.
+
+### Fixed
+- **M365 sync TLS error.** The frozen build could crash M365 token calls with
+  "Could not find a suitable TLS CA certificate bundle"; the CA bundle is now
+  pinned before `requests`/`msal` load.
+- **Smart groups no longer jump on click.** Reading the newest unread mail in a
+  group used to drop the whole card down mid-click; the group you're reading now
+  stays put.
+
 ## [0.6.4] — 2026-07-08
 
 ### Fixed

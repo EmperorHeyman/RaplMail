@@ -13,6 +13,7 @@ import re
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel
 from sqlalchemy import func, or_
 from sqlmodel import Session, select
 
@@ -34,9 +35,13 @@ def _unsub_target(raw: str) -> str:
 
 
 @router.get("/audit")
-def audit(session: Session = Depends(get_session)) -> dict:
+def audit(sort: str = "dormant", session: Session = Depends(get_session)) -> dict:
     """One row per mailing-list sender: totals, 30-day activity + read rate,
-    last-seen, and an unsubscribe target. Sorted dormant/unread first."""
+    last-seen, and an unsubscribe target.
+
+    `sort` orders the rows: "dormant" (lowest read-rate + oldest, the best cleanup
+    targets — the default), "most" (most received overall), "recent" (most active
+    in the last 30 days), "unread" (lowest read-rate), or "name" (A-Z)."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = now - timedelta(days=30)
     # A "subscription" = mail that carries a List-Unsubscribe header (only set once
@@ -77,6 +82,43 @@ def audit(session: Session = Depends(get_session)) -> dict:
             "last_seen": last_date.isoformat() if last_date else "",
             "unsubscribe": _unsub_target(unsub or ""),
         })
-    # Dormant first: lowest read-rate, then oldest last-seen — the best cleanup targets.
-    lists.sort(key=lambda r: (r["read_rate"], r["last_seen"]))
+    sorters = {
+        # Dormant first: lowest read-rate, then oldest last-seen — best cleanup targets.
+        "dormant": (lambda r: (r["read_rate"], r["last_seen"]), False),
+        "most": (lambda r: r["total"], True),                 # most received overall
+        "recent": (lambda r: r["recent30"], True),            # most active last 30 days
+        "unread": (lambda r: r["read_rate"], False),          # lowest read rate
+        "name": (lambda r: (r["from_name"] or r["from_addr"]).lower(), False),
+    }
+    key, reverse = sorters.get(sort, sorters["dormant"])
+    lists.sort(key=key, reverse=reverse)
     return {"lists": lists, "count": len(lists)}
+
+
+class UnsubIn(BaseModel):
+    url: str
+
+
+@router.post("/unsubscribe")
+def unsubscribe_oneclick(body: UnsubIn) -> dict:
+    """RFC 8058 one-click unsubscribe: POST `List-Unsubscribe=One-Click` to the
+    http(s) unsubscribe URL. Many bulk senders (e.g. Humble Bundle) expose a
+    one-click endpoint that returns an error page on a plain browser GET but
+    unsubscribes correctly on a POST. Returns ok=False so the caller can fall back
+    to opening the page in the browser (confirmation-style unsubscribes)."""
+    import httpx  # deferred — only when the user actually unsubscribes
+
+    url = (body.url or "").strip()
+    if not url.lower().startswith("http"):
+        return {"ok": False, "method": "none"}
+    try:
+        with httpx.Client(timeout=12.0, follow_redirects=True) as client:
+            r = client.post(
+                url,
+                data={"List-Unsubscribe": "One-Click"},
+                headers={"Content-Type": "application/x-www-form-urlencoded",
+                         "User-Agent": "RaplMail-Unsubscribe/1.0"},
+            )
+        return {"ok": 200 <= r.status_code < 300, "method": "post", "status": r.status_code}
+    except Exception as exc:  # noqa: BLE001 — network/DNS/TLS: fall back to the browser
+        return {"ok": False, "method": "post", "error": str(exc)}

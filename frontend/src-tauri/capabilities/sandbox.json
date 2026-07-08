@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "sandbox",
+  "description": "The isolated attachment sandbox window. Deliberately granted ONLY the ability to close itself - no core:default, no shell, no network, no backend invoke - so a hostile attachment analyzed inside it can reach nothing. All data arrives via a localStorage seed; all privileged actions are delegated to the main window.",
+  "windows": ["sandbox-*"],
+  "permissions": ["core:window:allow-close"]
+}

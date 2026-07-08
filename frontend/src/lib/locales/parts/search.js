@@ -50,6 +50,11 @@ export default {
     "palette.resultsCount": "{n} results",
     "palette.noSubject": "(no subject)",
     "palette.kbdHint": "↑↓ to move · Enter to open · Esc to close",
+    "palette.title": "Search",
+    "palette.contacts": "Contacts",
+    "palette.contactsHint": "Type a name or address, then Enter",
+    "palette.subjectHint": "Type subject words, then Enter",
+    "palette.finishOperator": "Enter to add",
   },
   cs: {
     "search.advancedTitle": "Rozšířené hledání",
@@ -100,5 +105,10 @@ export default {
     "palette.resultsCount": "{n} výsledků",
     "palette.noSubject": "(bez předmětu)",
     "palette.kbdHint": "↑↓ pohyb · Enter otevře · Esc zavře",
+    "palette.title": "Hledání",
+    "palette.contacts": "Kontakty",
+    "palette.contactsHint": "Napište jméno nebo adresu a Enter",
+    "palette.subjectHint": "Napište slova předmětu a Enter",
+    "palette.finishOperator": "Enter přidá",
   },
 };

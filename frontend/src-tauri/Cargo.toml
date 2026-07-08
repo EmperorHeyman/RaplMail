@@ -1,6 +1,6 @@
 [package]
 name = "raplmail"
-version = "0.6.1"
+version = "0.6.4"
 description = "RaplMail desktop shell"
 authors = ["RaplMail"]
 edition = "2021"

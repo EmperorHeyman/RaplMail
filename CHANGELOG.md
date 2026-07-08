@@ -11,6 +11,41 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.6.4] — 2026-07-08
+
+### Fixed
+- **Smart search now shows its results in the window** instead of closing with
+  nothing to show. Clicking "Smart search" (or pressing Enter in Smart mode) runs
+  the meaning-based search on demand and lists the matches right in the panel —
+  pick one to open it (the inbox stays filtered behind), or Esc/X to dismiss. It
+  still falls back through AI keyword extraction to plain keyword search, so you
+  get results even without a local embedding index; when there genuinely are
+  none, it says so rather than silently closing.
+
+## [0.6.3] — 2026-07-08
+
+### Changed
+- **Rebuilt the search window to match the compose / AI windows.** It is now a
+  solid floating panel you can drag and resize, and it **never closes on an
+  outside click** — only Esc, the close button, running a search, or opening a
+  result dismiss it. It also **keeps whatever you typed** across close/reopen, so
+  an accidental click can't lose your query.
+- **Operator chips + contact suggestions.** Typing `from:` turns into a badge and
+  the suggestions become matching contacts, so `from: apa` proposes apavlik's
+  addresses; Enter/Tab or a click locks the operator in. Backspace on an empty
+  field pops the last chip back to edit it.
+- Restyled the query field into a proper input surface (focus ring, rounded), and
+  Smart search no longer feels like it vanishes — the query persists for
+  refining even after it runs.
+
+## [0.6.2] — 2026-07-08
+
+### Fixed
+- **Could not type into the search palette.** The effect that seeds the palette
+  from the search bar on open also read the query state, so Svelte treated that
+  state as a dependency and re-ran the effect on every keystroke — resetting the
+  text and swallowing what you typed. It now runs only when the palette opens.
+
 ## [0.6.1] — 2026-07-08
 
 ### Fixed

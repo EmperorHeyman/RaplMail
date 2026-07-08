@@ -25,7 +25,7 @@ MS_SCOPES = [
     "https://outlook.office365.com/SMTP.Send",
 ]
 # Graph send, used when the tenant has SMTP client auth disabled (a common admin
-# policy — SMTP AUTH is off by default in modern M365). Graph Mail.Send is a
+# policy - SMTP AUTH is off by default in modern M365). Graph Mail.Send is a
 # separate permission that still works, so we send via Graph instead of SMTP.
 # Different resource than the Outlook scopes above, so it's acquired separately.
 MS_GRAPH_SCOPES = ["https://graph.microsoft.com/Mail.Send"]
@@ -34,7 +34,7 @@ MS_SMTP_HOST = "smtp.office365.com"
 
 # --- Gmail -------------------------------------------------------------------
 # openid + userinfo.email are required so the flow returns an id_token we can read
-# the account's email from — without them, "could not determine account email".
+# the account's email from - without them, "could not determine account email".
 GOOGLE_SCOPES = [
     "https://mail.google.com/",
     "openid",
@@ -71,7 +71,7 @@ class DeviceFlow:
 
 
 def _ms_app(cache_blob: str | None = None) -> tuple["msal.PublicClientApplication", "msal.SerializableTokenCache"]:
-    # msal (with its requests/cryptography baggage) is heavy — import it only
+    # msal (with its requests/cryptography baggage) is heavy - import it only
     # when an M365 flow actually runs, not at process start.
     import msal
     settings = get_settings()
@@ -124,7 +124,7 @@ def ms_graph_token(cache_blob: str) -> tuple[str, str]:
 
     Uses the same cached refresh token. Requires the Azure app registration to
     have the Graph *Mail.Send* delegated permission granted (admin consent, or a
-    re-login that consents to it) — otherwise MSAL can't mint a Graph token.
+    re-login that consents to it) - otherwise MSAL can't mint a Graph token.
     """
     return _ms_token_for(cache_blob, MS_GRAPH_SCOPES)
 
@@ -140,7 +140,7 @@ def _ms_token_for(cache_blob: str, scopes: list[str]) -> tuple[str, str]:
     if not result or "access_token" not in result:
         r = result or {}
         err = r.get("error_description") or r.get("error") or "re-authentication required"
-        # Collapse to the first line — AADSTS descriptions are multi-line essays.
+        # Collapse to the first line - AADSTS descriptions are multi-line essays.
         err = str(err).splitlines()[0]
         raise RuntimeError(f"failed to acquire Microsoft token for {scopes}: {err}")
     return result["access_token"], cache.serialize()

@@ -20,7 +20,7 @@
   let paletteOpen = $state(false);
 
   // While the list is actively scrolling, rows sliding under a stationary cursor
-  // would each fire :hover — which springs their action buttons in and animates
+  // would each fire :hover - which springs their action buttons in and animates
   // the row background. A whole scroll gesture becomes a rolling wave of spring
   // transitions + repaints (the "sluggish scroll" feel, and it happens at 30
   // rows just as much as at 300). Suppress hover mid-scroll: a class flips
@@ -48,7 +48,7 @@
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
   // Bulk category-done hides ids we don't hold objects for; single-row done
   // relies on the row object's own is_done (so the store's undo, which flips
-  // that flag back, also un-hides it here — a separate id set desynced).
+  // that flag back, also un-hides it here - a separate id set desynced).
   let hiddenDone = $state(new Set());
   const visibleIn = (arr) => (app.showDone ? arr : arr.filter((x) => !x.is_done && !hiddenDone.has(x.id)));
   function smartScope() {
@@ -87,7 +87,7 @@
   function seeAll(cat) { openCategory(cat, "all"); }
 
   // Groups the user has touched this session stay pinned to the top even after
-  // their unread count hits 0 — otherwise reading the last new mail in a group
+  // their unread count hits 0 - otherwise reading the last new mail in a group
   // makes the whole card drop from the "hot" band to the end of Today mid-click,
   // which reads as "the mail I just opened jumped down". Reset when the view /
   // search changes (or on restart), so it only holds the list stable in-session.
@@ -102,7 +102,7 @@
   });
 
   // Which Smart Inbox category cards are currently expanded (their key IS the
-  // category id). Drives the header breadcrumb — the "you're inside this group"
+  // category id). Drives the header breadcrumb - the "you're inside this group"
   // indicator that replaces the old static "Smart Inbox" title.
   const openCats = $derived(
     smartActive() ? groupedCategories().filter((c) => expandedKeys.has(c)) : []
@@ -133,7 +133,7 @@
     io.observe(node);
     return { destroy() { io?.disconnect(); } };
   }
-  // Keyboard navigation can outrun the window — grow it before focus hits the edge.
+  // Keyboard navigation can outrun the window - grow it before focus hits the edge.
   $effect(() => {
     const f = focusIndex;
     untrack(() => { if (f >= mainShown - 8) mainShown += MAIN_CHUNK; });
@@ -170,7 +170,7 @@
 
   // Flatten a group card + (when expanded) its loaded messages into the item
   // stream. Expanded rows are REAL items: keyboard-navigable, and `e` acts on
-  // the focused row — previously they lived outside `items`, so focus stayed
+  // the focused row - previously they lived outside `items`, so focus stayed
   // on the card and `e` marked the ENTIRE group done.
   function expandGroup(g) {
     const out = [g];
@@ -189,7 +189,7 @@
         out.push({ kind: "groupseeall", key: "sa:" + g.key, cat: g.category, total: g.count || 0 });
       return out;
     }
-    // Bundles/threads hold their messages in memory — window the render.
+    // Bundles/threads hold their messages in memory - window the render.
     const vis = visibleIn(g.msgs);
     const lim = shownFor(g.key);
     for (const m of vis.slice(0, lim)) out.push({ kind: "msg", msg: m, inGroup: true });
@@ -311,7 +311,7 @@
   }
   const items = $derived.by(() => {
     const built = buildItems(app.messages);
-    // Date-section layout has its own ordering (with header rows) — don't pull
+    // Date-section layout has its own ordering (with header rows) - don't pull
     // pinned/VIP to the top or it would orphan the section headers.
     if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
@@ -344,7 +344,7 @@
   // loaded window). Used by the card's "Done all" button and the `e` shortcut.
   async function doneCategory(item) {
     try {
-      // "Done all" must cover the ENTIRE category — fetch the full id list
+      // "Done all" must cover the ENTIRE category - fetch the full id list
       // unless the paged cache already holds everything.
       const entry = smartCatMsgs[item.category + "|all"];
       let list = entry?.full ? entry.msgs : null;
@@ -357,7 +357,7 @@
       hiddenDone = new Set([...hiddenDone, ...ids]);
       const s = new Set(expandedKeys); s.delete(item.key); expandedKeys = s;  // collapse
       await messagesApi.bulk(ids, "done");
-      // A category-done can touch hundreds/thousands of messages — always offer
+      // A category-done can touch hundreds/thousands of messages - always offer
       // undo (single-message done already does; this destructive bulk must too).
       notify(t("list.markedDone", { n: ids.length }), "info", () => {
         hiddenDone = new Set([...hiddenDone].filter((id) => !idset.has(id)));
@@ -402,11 +402,11 @@
 
   function toggleSelect(msg, index, e) {
     // Shift-range only makes sense for rows that live in `items` (index >= 0).
-    // Nested bundle rows pass index < 0 and just toggle themselves — using the
+    // Nested bundle rows pass index < 0 and just toggle themselves - using the
     // group's index produced a zero-width range that selected the whole bundle.
     if (e?.shiftKey && lastIdx >= 0 && index >= 0) {
       const [a, b] = [Math.min(lastIdx, index), Math.max(lastIdx, index)];
-      // Ranges can span headers, category cards, and group frames — only rows
+      // Ranges can span headers, category cards, and group frames - only rows
       // with actual messages contribute ids.
       const ids = items.slice(a, b + 1).flatMap((it) =>
         it.kind === "msg" ? [it.msg.id] : (it.msgs ? it.msgs.map((m) => m.id) : []));
@@ -500,7 +500,7 @@
     if (first) runCtx(first);
   }
 
-  // Position the menu fully on-screen — flip up/left near edges, cap height.
+  // Position the menu fully on-screen - flip up/left near edges, cap height.
   function placeMenu(node, pos) {
     const apply = (p) => {
       const r = node.getBoundingClientRect();
@@ -569,7 +569,7 @@
   });
 
   // Row-by-row entrance cascade (like the home screen). Replays on every view
-  // switch — the rows block is re-keyed on this same value — then switches OFF a
+  // switch - the rows block is re-keyed on this same value - then switches OFF a
   // moment later so scrolling more rows in / triage reorders don't re-animate.
   const viewKey = $derived(`${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`);
   let intro = $state(false);
@@ -584,7 +584,7 @@
 
   // Keep expanded category lists live: refetch them in place when a sync lands
   // (a cleared cache would flash "Loading…" inside every open card). Refetch
-  // only at each group's CURRENT page size — not the whole category.
+  // only at each group's CURRENT page size - not the whole category.
   $effect(() => {
     void app.syncTick;
     const entries = untrack(() => Object.entries(smartCatMsgs));
@@ -610,7 +610,7 @@
     if (focusIndex >= items.length) focusIndex = Math.max(0, items.length - 1);
   });
 
-  // Prefetch the focused item's latest message (urgent — jumps the queue) plus
+  // Prefetch the focused item's latest message (urgent - jumps the queue) plus
   // the next one, so opening / arrowing through is instant.
   const _pfId = (it) => (it?.kind === "msg" ? it.msg.id : it?.latest?.id);
   $effect(() => {
@@ -628,7 +628,7 @@
 
   function onSearch(v) {
     clearTimeout(searchTimer);
-    // app.search is set WITH the (debounced) fetch, not per keystroke — the
+    // app.search is set WITH the (debounced) fetch, not per keystroke - the
     // rows block is keyed on the view scope (incl. search), so an eager
     // assignment would tear down and remount the whole list on every letter.
     // Typing in the bar is always a keyword search (clears any semantic mode).
@@ -645,7 +645,7 @@
   }
 
   // Pull keyboard focus back to the list. Opening a message loads the reader
-  // iframe, which (in the desktop webview) grabs focus — after which shortcuts
+  // iframe, which (in the desktop webview) grabs focus - after which shortcuts
   // like `e` land in the iframe and appear dead until you click the list again.
   function refocusList() {
     queueMicrotask(() => {
@@ -657,7 +657,7 @@
 
   async function open(message, index, e) {
     // Ctrl/Cmd-click or Shift-click builds a multi-selection instead of opening
-    // the mail — the standard way to start selecting without hunting for the
+    // the mail - the standard way to start selecting without hunting for the
     // avatar checkbox. Shift extends a range; Ctrl/Cmd toggles a single row.
     if (e && (e.ctrlKey || e.metaKey || e.shiftKey)) {
       toggleSelect(message, index, e);
@@ -670,7 +670,7 @@
     // slot in `items`, so don't move keyboard focus to the group card (that's
     // what made a subsequent `e` mass-complete the whole category).
     if (index >= 0) focusIndex = index;
-    // Conversations open as conversations — but ONLY when the user has
+    // Conversations open as conversations - but ONLY when the user has
     // "Conversation threading" turned on. With it off, every message opens as a
     // single mail (opening a thread sibling used to still flip the thread view,
     // which looked like the toggle was ignored). Siblings visible in the loaded
@@ -717,7 +717,7 @@
     if (combo === kb.next || combo === kb.prev) {
       step(combo === kb.next ? 1 : -1);
       // Arrowing through the list opens the focused mail immediately (Spark-style)
-      // — no separate Enter needed. Only for real messages; group cards / loaders
+      // - no separate Enter needed. Only for real messages; group cards / loaders
       // just move the highlight and open on Enter.
       const it = items[focusIndex];
       if (it?.kind === "msg") open(it.msg, focusIndex);
@@ -733,7 +733,7 @@
       if (it.kind !== "msg" && it.kind !== "group") { e.preventDefault(); return; }
       if (it.kind === "msg") {
         // The store's markDone handles open-next-on-done itself (when the done
-        // message was the open one) — a second advance here picked a DIFFERENT
+        // message was the open one) - a second advance here picked a DIFFERENT
         // "next" (items is re-sorted) and marked an unseen message read.
         markDone(it.msg, !it.msg.is_done);
       } else if (it.gtype === "category") doneCategory(it);
@@ -741,7 +741,7 @@
       refocusList();
       e.preventDefault();
     } else if (combo === kb.reply || combo === kb.forward) {
-      // Reply/forward the OPEN message (single or conversation) — the reader
+      // Reply/forward the OPEN message (single or conversation) - the reader
       // surfaces own the bodies needed to build the quote.
       if (app.selectedMessageId != null || app.threadKey) {
         readerCommand(combo === kb.reply ? "reply" : "forward");
@@ -772,7 +772,7 @@
     (app.folders.find((f) => f.id === app.selectedFolderId)?.name || t("list.inbox"))
   );
 
-  // Show "Mark all read" when the current view has any unread — either in the
+  // Show "Mark all read" when the current view has any unread - either in the
   // loaded stream or hidden inside a Smart Inbox group card.
   const hasUnread = $derived(
     app.messages.some((m) => !m.is_seen) ||
@@ -904,7 +904,7 @@
 
   <div class="rows" class:intro class:scrolling bind:this={rowsEl} tabindex="-1" onscroll={onRowsScroll}>
     <!-- Keyed on the view scope: switching folder/category/search tears the old
-         rows down instantly instead of playing ~100 simultaneous out-flights —
+         rows down instantly instead of playing ~100 simultaneous out-flights -
          that mass animation was the "whole app hitches on navigation" feel.
          Triage removals inside one view still animate (each row's own out:fly).
          No animate:flip here on purpose: FLIP measures every kept row on each
@@ -1007,7 +1007,7 @@
   .markread:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   .markread :global(svg) { width: 14px; height: 14px; }
   h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Smart Inbox breadcrumb — the "you're in this group folder" indicator. Flex:1
+  /* Smart Inbox breadcrumb - the "you're in this group folder" indicator. Flex:1
      so it holds the header height and pushes the actions to the right even when
      empty (no group open = deliberately blank, no static "Smart Inbox" title). */
   .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 26px; overflow: hidden; }
@@ -1066,7 +1066,7 @@
 
   .rows { flex: 1; overflow-y: auto; min-height: 0; }
   .rows:focus { outline: none; }
-  /* Kill hover work while scrolling — see onRowsScroll. Rows can't fire :hover
+  /* Kill hover work while scrolling - see onRowsScroll. Rows can't fire :hover
      with pointer-events off, so no button springs / background transitions play
      as they stream past the cursor. Wheel/touch scrolling targets .rows itself,
      so the scroll is unaffected; interaction returns the moment scrolling stops. */
@@ -1085,12 +1085,12 @@
   .rows.intro > *:nth-child(8) { animation-delay: 210ms; }
   .rows.intro > *:nth-child(9) { animation-delay: 240ms; }
   .rows.intro > *:nth-child(n+10) { animation-delay: 270ms; }
-  /* Skip layout/paint for offscreen rows entirely — the single biggest scroll
+  /* Skip layout/paint for offscreen rows entirely - the single biggest scroll
      win. Date headers are excluded: paint containment would clip their sticky
      positioning. The placeholder height matches a real 3-line row (~74px), so
      scroll distance estimates stay honest and the scrollbar doesn't jump. */
   .cv { content-visibility: auto; contain-intrinsic-size: auto 74px; }
-  /* Spark-style date section header. NOTE: no backdrop-filter here — blur on a
+  /* Spark-style date section header. NOTE: no backdrop-filter here - blur on a
      sticky element repaints every scroll frame in WebView2 (felt "heavy"). */
   .datesep { position: sticky; top: 0; z-index: 4; padding: 8px 16px 5px; font-size: 10.5px; font-weight: 700;
     text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint);

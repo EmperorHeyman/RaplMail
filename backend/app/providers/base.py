@@ -84,7 +84,7 @@ class MailProvider(Protocol):
                       max_uid: int | None = None, limit: int | None = None) -> list[HeaderInfo]:
         """Return header info for messages with UID in ``[min_uid, max_uid]``
         (max_uid None = open-ended). With ``limit`` set, the newest ``limit`` of
-        that range — used by backfill to page steadily older."""
+        that range - used by backfill to page steadily older."""
         ...
 
     def fetch_uids(self, folder_path: str) -> list[int]:

@@ -69,8 +69,8 @@ else {
   Write-Host "Version: $new (unchanged)" -ForegroundColor Yellow
 }
 
-# Kill any running app / sidecar first. A leftover backend process — including
-# the PyInstaller onefile CHILD, which is named "raplmail-backend-<triple>" —
+# Kill any running app / sidecar first. A leftover backend process - including
+# the PyInstaller onefile CHILD, which is named "raplmail-backend-<triple>" -
 # holds an open handle on the bundled sidecar exe. If it's locked when we copy
 # the freshly-frozen binary over it, the OLD binary stays in place and the build
 # silently ships a stale backend (e.g. missing new endpoints). Match the prefix

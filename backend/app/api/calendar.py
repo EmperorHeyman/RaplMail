@@ -2,7 +2,7 @@
 
 Events are pulled from text/calendar parts when a message body is fetched, and
 can be back-filled in bulk via /calendar/scan (which fetches the raw invite
-messages and parses their .ics). This is an email-derived calendar — no CalDAV.
+messages and parses their .ics). This is an email-derived calendar - no CalDAV.
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ class EventOut(BaseModel):
     # Event times are stored normalized to UTC, but SQLite drops the tzinfo so
     # they come back naive. Emit them with an explicit UTC offset so the frontend's
     # `new Date(...)` converts to the viewer's local zone (else it reads the UTC
-    # wall-clock as local — the "2 hours behind" bug).
+    # wall-clock as local - the "2 hours behind" bug).
     @field_serializer("start", "end")
     def _as_utc(self, v: datetime | None):
         if v is None:
@@ -194,7 +194,7 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
             events = dav.fetch_ics(url)
         except Exception:
             continue  # one bad feed shouldn't break the rest (and don't prune its events)
-        # This feed responded — its events are now authoritative for pruning.
+        # This feed responded - its events are now authoritative for pruning.
         ok_prefixes.append(f"ics:{hashlib.sha1(url.encode('utf-8')).hexdigest()[:10]}:")
         for ev in events:
             if not ev.get("start"):
@@ -220,7 +220,7 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
             row.all_day = bool(ev.get("all_day"))
             row.cancelled = bool(ev.get("cancelled"))
             upserted += 1
-    # Delete ICS events that vanished — but ONLY for feeds that actually responded
+    # Delete ICS events that vanished - but ONLY for feeds that actually responded
     # this run. A feed that failed (network blip / temporary 5xx) must not have its
     # whole calendar wiped; its events are left untouched until it fetches again.
     removed = 0
@@ -263,9 +263,9 @@ async def caldav_sync(session: Session = Depends(get_session)) -> CalDavResult:
     from app.sync import caldav as dav
     acct_id = session.exec(select(Account.id)).first()
     if not acct_id:
-        # Events are stored per account (FK enforced) — account_id 0 would just
+        # Events are stored per account (FK enforced) - account_id 0 would just
         # fail every insert.
-        return CalDavResult(error="Add a mail account first — calendar entries are stored per account.")
+        return CalDavResult(error="Add a mail account first - calendar entries are stored per account.")
     res = CalDavResult()
     try:
         if cal_url:
@@ -307,7 +307,7 @@ def _ics_dt(dt: datetime, all_day: bool) -> str:
 def _build_event_ics(uid, summary, start, end, all_day, location, description,
                      organizer, attendee, method="REQUEST", partstat="NEEDS-ACTION") -> str:
     """A minimal iMIP VEVENT. With METHOD:REQUEST + an ATTENDEE, Gmail/Outlook add
-    it to the calendar and show an RSVP box — no API needed (RFC 6047). With
+    it to the calendar and show an RSVP box - no API needed (RFC 6047). With
     METHOD:REPLY + a PARTSTAT it tells the organizer your accept/decline."""
     end = end or (start + (timedelta(days=1) if all_day else timedelta(hours=1)))
     now = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -376,7 +376,7 @@ def _gcal_bundle(store) -> dict | None:
 @router.post("/google/connect")
 async def google_calendar_connect(session: Session = Depends(get_session)) -> dict:
     """Run the Google OAuth flow (calendar scope) so events can be written
-    directly to the user's Google Calendar — reliable, unlike the iMIP trick."""
+    directly to the user's Google Calendar - reliable, unlike the iMIP trick."""
     import json
 
     from app.core.security import get_secret_store
@@ -440,7 +440,7 @@ async def create_event(body: CreateEventIn, request: Request,
     if acct is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
     # Normalize tz-aware input to UTC: SQLite drops the offset UNTRANSLATED, and
-    # EventOut re-labels stored times as UTC — an un-normalized "+02:00" would
+    # EventOut re-labels stored times as UTC - an un-normalized "+02:00" would
     # display shifted. Kept tz-aware for the Google/iMIP writers below.
     if body.start.tzinfo is not None:
         body.start = body.start.astimezone(timezone.utc)
@@ -508,7 +508,7 @@ async def create_event(body: CreateEventIn, request: Request,
 
 
 def _google_event_id(ev: CalendarEvent) -> str | None:
-    """The Google Calendar event id for a row, if it maps to one — either an event
+    """The Google Calendar event id for a row, if it maps to one - either an event
     we created (uid 'gcal:<id>') or a Google-feed event synced via ICS."""
     if (ev.uid or "").startswith("gcal:"):
         return ev.uid[5:]
@@ -556,7 +556,7 @@ async def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_sessi
     session.commit()
     session.refresh(ev)
 
-    # Tell the organizer (iMIP METHOD:REPLY) — otherwise "Accept/Decline" only
+    # Tell the organizer (iMIP METHOD:REPLY) - otherwise "Accept/Decline" only
     # turned a local badge green and the organizer saw no response. Best-effort:
     # the local status is already saved if the email can't go out.
     acct = session.get(Account, ev.account_id)
@@ -572,7 +572,7 @@ async def rsvp(event_id: int, body: RsvpIn, session: Session = Depends(get_sessi
         payload = {
             "account_id": ev.account_id, "from_addr": me, "to": [organizer],
             "subject": f"{verb}: {ev.summary or '(no title)'}",
-            "html": f"<p>{verb} — {ev.summary or ''}</p>",
+            "html": f"<p>{verb} - {ev.summary or ''}</p>",
             "calendar_ics": ics, "calendar_method": "REPLY",
         }
         try:

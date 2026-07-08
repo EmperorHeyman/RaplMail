@@ -6,7 +6,7 @@ that never leaves your devices) and APPENDed as a message into a hidden
 `RaplMail Sync` folder. The other PC reads that folder, decrypts, and applies.
 
 What travels:
-  * Per-message triage state (done / snooze / pin) — the stuff that does NOT
+  * Per-message triage state (done / snooze / pin) - the stuff that does NOT
     ride standard IMAP flags, so it never synced before. Keyed by
     (account email, RFC Message-ID) so it resolves to the right mail on the
     other machine regardless of local row ids. Applied straight into
@@ -176,7 +176,7 @@ def _collect_states(session: Session, since: datetime | None, full: bool) -> lis
 
 def _build_state_payload(session: Session, device: str, since: datetime | None, full: bool) -> dict:
     """Automatic payload: per-message triage state only. Config never rides the
-    automatic channel — it moves only on an explicit push/pull, so a device that
+    automatic channel - it moves only on an explicit push/pull, so a device that
     hasn't touched its settings can't clobber one that has."""
     return {
         "v": 1,
@@ -222,7 +222,7 @@ def _wrap_message(token: str, account_email: str, device: str, subject: str | No
     msg = EmailMessage()
     msg["From"] = account_email
     msg["To"] = account_email
-    msg["Subject"] = subject or "RaplMail settings sync — safe to ignore"
+    msg["Subject"] = subject or "RaplMail settings sync - safe to ignore"
     msg["Date"] = formatdate(localtime=True)
     msg[SYNC_HEADER] = "1"
     msg[DEVICE_HEADER] = device
@@ -270,7 +270,7 @@ def apply_states(session: Session, states: list[dict]) -> datetime | None:
         ).first()
         local_ts = _naive(row.updated_at) if (row and row.updated_at) else _EPOCH
         if row is not None and ts <= local_ts:
-            continue   # our copy is newer or equal — keep it
+            continue   # our copy is newer or equal - keep it
         if row is None:
             row = MessageState(account_id=acct_id, message_id=mid)
             session.add(row)
@@ -294,7 +294,7 @@ def apply_states(session: Session, states: list[dict]) -> datetime | None:
 def _apply_config_bundle(session: Session, cfg: dict) -> None:
     """Apply a config snapshot onto this device (explicit pull only). Sync-control
     keys are stripped so a peer's bundle can never change this device's own sync
-    setup (carrier account / passphrase / cursors). Does NOT commit rules/sigs —
+    setup (carrier account / passphrase / cursors). Does NOT commit rules/sigs -
     the caller commits."""
     if not isinstance(cfg, dict):
         return
@@ -314,7 +314,7 @@ def _apply_config_bundle(session: Session, cfg: dict) -> None:
 
 def publish(session: Session, account: Account, provider) -> None:
     """Automatic publish: encrypt and append changed triage state only. Config is
-    never published automatically — use push_config for that."""
+    never published automatically - use push_config for that."""
     passphrase = get_passphrase()
     if not passphrase:
         return
@@ -324,7 +324,7 @@ def publish(session: Session, account: Account, provider) -> None:
     full = since is None   # first publish → all local state so a new peer catches up
     payload = _build_state_payload(session, device_id(session), since, full)
     if not payload["states"]:
-        return   # nothing changed — skip the round-trip
+        return   # nothing changed - skip the round-trip
     fernet = derive_fernet(passphrase)
     token = fernet.encrypt(json.dumps(payload, default=str).encode("utf-8")).decode("ascii")
     provider.ensure_folder(folder)
@@ -334,7 +334,7 @@ def publish(session: Session, account: Account, provider) -> None:
 
 def scan(session: Session, provider) -> int:
     """Automatic scan: apply incoming triage state. Config snapshots sitting in
-    the folder are ignored here — they only apply on an explicit pull_config."""
+    the folder are ignored here - they only apply on an explicit pull_config."""
     passphrase = get_passphrase()
     if not passphrase:
         return 0
@@ -363,12 +363,12 @@ def scan(session: Session, provider) -> int:
                 continue
             payload = json.loads(fernet.decrypt(token.encode("ascii")).decode("utf-8"))
         except Exception:
-            continue   # not ours / wrong passphrase / corrupt — skip
+            continue   # not ours / wrong passphrase / corrupt - skip
         if payload.get("device") == my_device:
             continue   # our own message
         states = payload.get("states") or []
         if not states:
-            continue   # config snapshot or empty — not applied automatically
+            continue   # config snapshot or empty - not applied automatically
         ts = apply_states(session, states)
         if ts is not None and (newest_applied is None or ts > newest_applied):
             newest_applied = ts
@@ -386,7 +386,7 @@ def scan(session: Session, provider) -> int:
 # --- explicit settings push / pull (manual, user-driven) ----------------------
 
 def _default_label(session: Session) -> str:
-    """A human name for this device in the pull picker — the machine hostname if
+    """A human name for this device in the pull picker - the machine hostname if
     we can read it, else the short device id."""
     blob = _blob(session)
     lbl = blob.get("syncDeviceLabel")
@@ -415,7 +415,7 @@ def push_config(session: Session, account: Account, provider) -> dict:
     provider.append_to_folder(
         folder,
         _wrap_message(token, account.email, payload["device"],
-                      subject="RaplMail settings snapshot — safe to ignore"),
+                      subject="RaplMail settings snapshot - safe to ignore"),
         seen=True,
     )
     _save(session, {"syncConfigVersion": version, "syncLastConfigPushAt": payload["ts"]})
@@ -457,7 +457,7 @@ def list_config_snapshots(session: Session, provider) -> list[dict]:
             continue
         cfg = payload.get("config")
         if not isinstance(cfg, dict):
-            continue   # state-only payload — not a settings snapshot
+            continue   # state-only payload - not a settings snapshot
         settings = cfg.get("settings") if isinstance(cfg.get("settings"), dict) else {}
         out.append({
             "uid": uid,
@@ -507,7 +507,7 @@ def pull_config(session: Session, provider, uid: int) -> dict:
 
 
 def tick(session: Session, account: Account, provider) -> None:
-    """One publish+scan cycle for the sync account. Best-effort — never let a
+    """One publish+scan cycle for the sync account. Best-effort - never let a
     sync-channel hiccup break the normal mail sync."""
     if not is_sync_account(session, account.id):
         return

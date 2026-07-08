@@ -12,7 +12,7 @@
   import AttachmentMenu from "./AttachmentMenu.svelte";
 
   // A conversation opened explicitly (threadKey set) always shows as a thread,
-  // independent of the list-grouping setting — so "View conversation" works even
+  // independent of the list-grouping setting - so "View conversation" works even
   // in Smart Inbox mode where the list never produces thread rows.
   const threadMode = $derived(!!app.threadKey);
   let detail = $state(null);
@@ -30,7 +30,7 @@
     loadImages = false;
     if (id == null || app.threadKey) return;
     loading = true;
-    // Only apply the response if this is still the selected message — a slow
+    // Only apply the response if this is still the selected message - a slow
     // fetch for a previous click must not overwrite the one now on screen.
     messagesApi
       .get(id)
@@ -39,7 +39,7 @@
       .finally(() => { if (app.selectedMessageId === id) loading = false; });
   });
 
-  // Conversations open AS conversations — when the open message turns out to
+  // Conversations open AS conversations - when the open message turns out to
   // have thread siblings (they may live in other folders/pages, so the list
   // couldn't know), promote the pane to the thread view automatically. The
   // fetched thread is handed to ThreadView so it doesn't re-fetch.
@@ -101,8 +101,8 @@
     summary = ""; aiDraft = null; aiVerdict = null; aiScreening = false;
   });
 
-  // Seed the AI verdict from the cached value the detail carries, and — in
-  // "automatic" mode — screen a mail the first time it's opened (the backend
+  // Seed the AI verdict from the cached value the detail carries, and - in
+  // "automatic" mode - screen a mail the first time it's opened (the backend
   // caches the result, so re-opens don't re-spend tokens).
   $effect(() => {
     const d = detail;
@@ -158,11 +158,11 @@
   let showOriginal = $state(false); // view the email with its own original styling
   let showAllTo = $state(false);    // expand a long recipient list
   let showQuoted = $state(false);   // reveal collapsed quoted reply history
-  let secOpen = $state(null);       // which security pill is expanded (key) — one at a time
+  let secOpen = $state(null);       // which security pill is expanded (key) - one at a time
   $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; secOpen = null; frameH = 360; ctxMenu = null; });
 
   // Trust / auth / encryption status as COMPACT PILLS instead of stacked
-  // full-width bars — an S/MIME-signed + authenticated mail used to eat 2-3
+  // full-width bars - an S/MIME-signed + authenticated mail used to eat 2-3
   // lines of header. Each pill carries its detail (hover) + optional action,
   // revealed inline when clicked.
   const secPills = $derived.by(() => {
@@ -244,11 +244,11 @@
   );
 
   // Links inside the sandboxed email iframe don't navigate on their own in the
-  // desktop shell — intercept clicks and open them in the real browser (mailto
+  // desktop shell - intercept clicks and open them in the real browser (mailto
   // opens a compose). Re-wired on every iframe load (each message reload).
   let frame;
   // The reader scrolls as ONE document (header included) instead of pinning the
-  // header and scrolling only the body — so the iframe sizes itself to its
+  // header and scrolling only the body - so the iframe sizes itself to its
   // content. Measured on load and on any later reflow (images finishing, theme
   // re-adapt, quote toggles). Reset small on nav so a tall old mail doesn't leave
   // a blank gap before the next one measures.
@@ -294,7 +294,7 @@
       }
     }, true);
     // The email iframe grabs focus on load, so app keyboard shortcuts (Ctrl+K
-    // command palette, Ctrl+N compose) "die" while reading — the keydowns land in
+    // command palette, Ctrl+N compose) "die" while reading - the keydowns land in
     // the iframe document, not the app window. Handle the important ones here.
     doc.addEventListener("keydown", (e) => {
       const cmd = e.ctrlKey || e.metaKey;
@@ -333,7 +333,7 @@
     const seen = new Set([...myIdentities(), (detail.from_addr || "").toLowerCase()]);
     const out = [];
     for (const a of all) {
-      // to_addrs/cc_addrs entries may be "Name <addr>" — compare on the address.
+      // to_addrs/cc_addrs entries may be "Name <addr>" - compare on the address.
       const k = (a || "").toLowerCase();
       const addr = (k.match(/<([^>]+)>/)?.[1] || k).trim();
       if (addr && !seen.has(addr)) { seen.add(addr); out.push(a); }
@@ -388,7 +388,7 @@
       `Subject: ${escapeHtml(detail.subject || "")}<br>` +
       `To: ${escapeHtml((detail.to_addrs || []).join(", "))}</div><br>${orig}`,
       { collapsed: false });
-    // Carry the original (non-inline) attachments — a forward without them is
+    // Carry the original (non-inline) attachments - a forward without them is
     // surprising. Inline images already live in the quoted HTML.
     const atts = (detail.attachments || []).filter((a) => !a.inline);
     let attachments = [];
@@ -443,7 +443,7 @@
   });
 
   const attachments = $derived((detail?.attachments || []).filter((a) => !a.inline));
-  // Per-account color for the reader header accent (multi-account cohesion — the
+  // Per-account color for the reader header accent (multi-account cohesion - the
   // same color that stripes this account's rows in the list).
   const readerAcctColor = $derived(app.accounts.find((a) => a.id === detail?.account_id)?.color || null);
   const multiAcct = $derived(app.accounts.length > 1);
@@ -601,7 +601,7 @@
   }
   function toggleMenu(e, addr) { e.stopPropagation(); menuAddr = menuAddr === addr ? null : addr; }
 
-  // Reader right-click menu — long overdue. Opens over the header and (via the
+  // Reader right-click menu - long overdue. Opens over the header and (via the
   // forwarded iframe event) anywhere inside the email body.
   function openReaderCtx(e) {
     if (!detail) return;
@@ -971,7 +971,7 @@
   .placeholder.err { color: var(--danger); }
   .placeholder .rapl-link { margin-top: 2px; font-size: 12px; color: var(--accent); text-decoration: none; opacity: 0.8; }
   .placeholder .rapl-link:hover { opacity: 1; text-decoration: underline; }
-  /* Rounded "message header" card — mirrors the thread's per-message cards for a
+  /* Rounded "message header" card - mirrors the thread's per-message cards for a
      unified feel (was a flat full-width bar with a bottom border). */
   header { margin: 14px 16px 8px; padding: 15px 18px; background: var(--surface); border: 1px solid var(--border);
     border-radius: 16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 6px; }
@@ -994,7 +994,7 @@
   .menu button:hover { background: var(--accent); color: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   /* Bottom mode: a sticky, right-aligned action bar pinned to the foot of the reader. */
-  /* Solid background — backdrop blur on a sticky bar repaints every scroll frame. */
+  /* Solid background - backdrop blur on a sticky bar repaints every scroll frame. */
   .actions.bottom { margin-top: 0; position: sticky; bottom: 0; z-index: 5; justify-content: flex-end;
     padding: 10px 18px; background: var(--bg);
     border-top: 1px solid var(--hairline); }
@@ -1117,7 +1117,7 @@
   .vtoggle:hover { color: var(--text); border-color: var(--accent); }
   .vtoggle.on { color: var(--accent); border-color: var(--accent); background: var(--surface-2); }
   /* The message body sits in its own framed card (border + shadow + rounded)
-     instead of a bare full-bleed div, so it reads as "the email" — matching the
+     instead of a bare full-bleed div, so it reads as "the email" - matching the
      header card and the conversation cards. */
   .body-card { display: flex; flex-direction: column; margin: 0 16px 14px;
     border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface);

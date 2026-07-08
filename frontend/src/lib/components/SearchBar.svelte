@@ -1,7 +1,7 @@
 <script>
   // Search box with operator "chips" + a suggestion whisperer.
   // Completed operators (from:x, is:unread, /regex/) render as removable chips;
-  // the trailing free text stays editable. As you type, suggestions appear —
+  // the trailing free text stays editable. As you type, suggestions appear -
   // operators by prefix, and real contacts once you start a from:/to:/cc:.
   import { contacts as contactsApi } from "../api.js";
   import { icons } from "../icons.js";

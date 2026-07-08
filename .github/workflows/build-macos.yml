@@ -57,10 +57,10 @@ jobs:
         # (empty if the key has no password), and drop the --config override below.
         run: |
           if printf '%s' "$TAURI_SIGNING_PRIVATE_KEY" | grep -q "untrusted comment"; then
-            echo "Signing key present — building signed updater artifacts."
+            echo "Signing key present - building signed updater artifacts."
             npx tauri build
           else
-            echo "No valid signing key secret — building .dmg without updater artifacts."
+            echo "No valid signing key secret - building .dmg without updater artifacts."
             npx tauri build --config '{"bundle":{"createUpdaterArtifacts":false}}'
           fi
 

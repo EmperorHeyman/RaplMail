@@ -1,9 +1,9 @@
 // A flat index of the individual settings the search box can jump to, so typing
-// "undo send" or "keep alive" surfaces the EXACT control — not just the category
+// "undo send" or "keep alive" surfaces the EXACT control - not just the category
 // it happens to live in. Each entry: { tab, label, kw }.
-//   tab   — settings tab id (must match Settings.svelte `tabs`)
-//   label — the human name of the setting (also used to flash it in the panel)
-//   kw    — extra search terms / synonyms (EN + a few CZ) so fuzzy queries hit
+//   tab   - settings tab id (must match Settings.svelte `tabs`)
+//   label - the human name of the setting (also used to flash it in the panel)
+//   kw    - extra search terms / synonyms (EN + a few CZ) so fuzzy queries hit
 //
 // Labels stay concise and match the on-screen wording where possible so the
 // "flash the setting" jump can find it in the rendered panel.

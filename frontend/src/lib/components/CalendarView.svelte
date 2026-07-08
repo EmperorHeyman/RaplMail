@@ -46,7 +46,7 @@
     finally { if (gen === _loadGen) loading = false; }
   }
   // "Sync" pulls BOTH mail-derived invites AND any configured calendar
-  // subscriptions (ICS feeds / CalDAV) — otherwise a subscription added in
+  // subscriptions (ICS feeds / CalDAV) - otherwise a subscription added in
   // Settings would never show up here.
   async function scan() {
     scanning = true;
@@ -121,7 +121,7 @@
     try {
       const startIso = form.all_day ? `${form.date}T00:00:00` : `${form.date}T${form.start}:00`;
       // All-day DTEND is EXCLUSIVE (the render side treats it that way): the
-      // form's endDate is the last covered day, so send the day after it —
+      // form's endDate is the last covered day, so send the day after it -
       // start==end made single-day all-day events invisible everywhere.
       let endIso;
       if (form.all_day) {
@@ -139,7 +139,7 @@
       });
       if (r.error) notify(r.error, "error");
       else if (r.google) notify("Added to your Google Calendar ✓");
-      else notify(r.sent ? "Event created — accept the invite in your inbox to add it" : "Saved locally (invite couldn't be sent)");
+      else notify(r.sent ? "Event created - accept the invite in your inbox to add it" : "Saved locally (invite couldn't be sent)");
       if (!r.error) creating = false;
       await load();
     } catch (e) { notify(e.message || "Couldn't create event", "error"); }
@@ -216,8 +216,8 @@
       const f = weekDays[0], l = weekDays[6];
       const mf = MONTHS[f.getMonth()].slice(0, 3), ml = MONTHS[l.getMonth()].slice(0, 3);
       return f.getMonth() === l.getMonth()
-        ? `${mf} ${f.getDate()} – ${l.getDate()}, ${f.getFullYear()}`
-        : `${mf} ${f.getDate()} – ${ml} ${l.getDate()}`;
+        ? `${mf} ${f.getDate()} - ${l.getDate()}, ${f.getFullYear()}`
+        : `${mf} ${f.getDate()} - ${ml} ${l.getDate()}`;
     }
     return `${MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
   });
@@ -255,7 +255,7 @@
           <label class="fr"><span>End date</span><input type="date" bind:value={form.endDate} min={form.date} /></label>
         {:else}
           <div class="fr"><span>Time</span>
-            <div class="times"><input type="time" bind:value={form.start} /> – <input type="time" bind:value={form.end} /></div>
+            <div class="times"><input type="time" bind:value={form.start} /> - <input type="time" bind:value={form.end} /></div>
           </div>
         {/if}
         <label class="fr"><span>All day</span><input type="checkbox" bind:checked={form.all_day} /></label>
@@ -270,7 +270,7 @@
             </select>
           </label>
         {/if}
-        <p class="modal-hint">{gcal.connected ? "Written straight to your Google Calendar." : "No Google Calendar connected — an invite is emailed to the chosen account's own inbox. Connect Google in Settings → Calendar for direct writes."}</p>
+        <p class="modal-hint">{gcal.connected ? "Written straight to your Google Calendar." : "No Google Calendar connected - an invite is emailed to the chosen account's own inbox. Connect Google in Settings → Calendar for direct writes."}</p>
         <div class="modal-btns">
           <button class="btn ghost" onclick={() => (creating = false)}>Cancel</button>
           <button class="btn primary" onclick={saveEvent} disabled={saving}>{saving ? "Creating…" : "Create event"}</button>
@@ -288,9 +288,9 @@
         </div>
         <p class="d-when">
           {#if detailEv.all_day || isMultiDay(detailEv)}
-            {fmtDayHeader(new Date(detailEv.start))}{#if detailEv.end && dayKey(new Date(detailEv.start)) !== dayKey(new Date(new Date(detailEv.end).getTime() - 1))} – {fmtDayHeader(new Date(new Date(detailEv.end).getTime() - 1))}{/if} · all day
+            {fmtDayHeader(new Date(detailEv.start))}{#if detailEv.end && dayKey(new Date(detailEv.start)) !== dayKey(new Date(new Date(detailEv.end).getTime() - 1))} - {fmtDayHeader(new Date(new Date(detailEv.end).getTime() - 1))}{/if} · all day
           {:else}
-            {fmtDayHeader(new Date(detailEv.start))} · {fmtTime(detailEv.start)}{#if detailEv.end} – {fmtTime(detailEv.end)}{/if}
+            {fmtDayHeader(new Date(detailEv.start))} · {fmtTime(detailEv.start)}{#if detailEv.end} - {fmtTime(detailEv.end)}{/if}
           {/if}
         </p>
         {#if detailEv.location}<p class="d-meta">{@html icons.inbox} {detailEv.location}</p>{/if}
@@ -389,7 +389,7 @@
       {:else}
         {#each dayEvents as e}
           <div class="event" class:cancelled={e.cancelled} style={e.color ? `--evc:${e.color}` : ""}>
-            <div class="time"><span class="dot"></span>{e.all_day ? "All day" : `${fmtTime(e.start)}${e.end ? " – " + fmtTime(e.end) : ""}`}
+            <div class="time"><span class="dot"></span>{e.all_day ? "All day" : `${fmtTime(e.start)}${e.end ? " - " + fmtTime(e.end) : ""}`}
               <button class="del" title="Delete event" onclick={() => deleteEvent(e)}>{@html icons.trash}</button>
             </div>
             <div class="title">{e.summary || "(untitled)"}{#if e.cancelled} <span class="cx">Cancelled</span>{/if}</div>

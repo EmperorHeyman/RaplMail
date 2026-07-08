@@ -63,7 +63,7 @@ export const SOUND_OPTIONS = [
 // Custom sounds are referenced by the id "custom:<id>" and stored (as base64
 // WAV data URLs) in settings. The store pushes the current list here on load /
 // change; we decode each clip to an AudioBuffer lazily on first play and cache
-// it. No files on disk — everything lives in settings so it syncs + backs up.
+// it. No files on disk - everything lives in settings so it syncs + backs up.
 let _customData = {};             // id -> data URL
 const _customBuffers = {};        // id -> decoded AudioBuffer
 

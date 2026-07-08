@@ -171,7 +171,7 @@ fn set_unread_badge(app: tauri::AppHandle, count: i64) {
     }
     if let Some(tray) = app.tray_by_id("main-tray") {
         let tip = if count > 0 {
-            format!("RaplMail — {count} unread")
+            format!("RaplMail - {count} unread")
         } else {
             "RaplMail".to_string()
         };

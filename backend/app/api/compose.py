@@ -68,7 +68,7 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
     if session.get(Account, body.account_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
 
-    # Read-receipt: embed the pixel ONCE, here — retries/scheduled sends rebuild
+    # Read-receipt: embed the pixel ONCE, here - retries/scheduled sends rebuild
     # the message from this payload, so embedding at delivery time minted a new
     # tracker row per attempt. (PGP turns the body into armored text; skip.)
     if body.request_receipt and not body.pgp_sign and not body.pgp_encrypt:
@@ -91,12 +91,12 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
     try:
         await run_in_threadpool(_deliver_blocking, payload)
     except PermanentSendError as exc:
-        # Won't succeed on retry (e.g. missing Graph Mail.Send consent) — tell the
+        # Won't succeed on retry (e.g. missing Graph Mail.Send consent) - tell the
         # user now instead of silently queuing a doomed send.
         log.error("send rejected (permanent): %s", exc)
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     except Exception as exc:
-        # Offline / transient failure — queue it and let the worker retry.
+        # Offline / transient failure - queue it and let the worker retry.
         log.warning("send failed after %.1fs (queued for retry): %s", time.monotonic() - t0, exc)
         session.add(ActionQueue(kind="send", payload=payload))
         session.commit()
@@ -134,7 +134,7 @@ class ScheduledOut(BaseModel):
     send_at: datetime
     status: str
 
-    # send_at is stored UTC but SQLite drops the tzinfo, so stamp the offset —
+    # send_at is stored UTC but SQLite drops the tzinfo, so stamp the offset -
     # otherwise the frontend's `new Date(...)` reads the UTC wall-clock as local.
     @field_serializer("send_at")
     def _as_utc(self, v: datetime):
@@ -188,7 +188,7 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
     html, body_imgs = extract_data_images(html)
     inline_images = inline_images + body_imgs
     # Use the chosen send-as identity, but only if it's a recognized alias of
-    # this account (or the account's own address) — never an arbitrary From.
+    # this account (or the account's own address) - never an arbitrary From.
     from_addr = account.email
     if body.from_addr:
         valid = {account.email.lower(), *( _alias_addr(a).lower() for a in (account.aliases or []) )}
@@ -214,7 +214,7 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
         recipients = [*body.to, *body.cc, *body.bcc]
         recip_keys = pgpmod.pubkeys_for(recipients, blob) if body.pgp_encrypt else []
         if body.pgp_encrypt and len(recip_keys) < len({r.lower() for r in recipients if r}):
-            raise RuntimeError("Missing a PGP public key for one or more recipients — import it first.")
+            raise RuntimeError("Missing a PGP public key for one or more recipients - import it first.")
         armored = pgpmod.sign_and_encrypt(
             _html_to_text(html), blob, recip_keys,
             do_sign=body.pgp_sign, do_encrypt=body.pgp_encrypt)
@@ -232,7 +232,7 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
         row = session.get(Setting, 1)
         blob = dict(row.data) if row and row.data else {}
         if body.smime_sign and not (blob.get("smimeCert") and blob.get("smimeKey")):
-            raise RuntimeError("No S/MIME certificate imported — add one in Settings → S/MIME.")
+            raise RuntimeError("No S/MIME certificate imported - add one in Settings → S/MIME.")
         recip_certs: list[str] = []
         if body.smime_encrypt:
             recipients = {parseaddr(r)[1].lower() for r in [*body.to, *body.cc, *body.bcc] if r}
@@ -247,7 +247,7 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
                     continue
             recip_certs = [by_email[r] for r in recipients if r in by_email]
             if len(recip_certs) < len(recipients):
-                raise RuntimeError("Missing an S/MIME certificate for one or more recipients — "
+                raise RuntimeError("Missing an S/MIME certificate for one or more recipients - "
                                    "import it in Settings → S/MIME.")
         message.smime_sign = bool(body.smime_sign)
         message.smime_encrypt = bool(body.smime_encrypt)
@@ -311,7 +311,7 @@ def _transport_send(provider, message, is_m365: bool, secret_key: str, account_i
     if is_m365:
         # Graph-first for Microsoft 365: works even when the tenant has SMTP AUTH
         # disabled (the common default) and avoids a guaranteed ~13s SMTP failure.
-        # Fall back to SMTP only if Graph is unavailable — some tenants allow SMTP
+        # Fall back to SMTP only if Graph is unavailable - some tenants allow SMTP
         # but haven't granted Graph Mail.Send.
         try:
             return _send_via_graph(secret_key, message), True
@@ -333,16 +333,16 @@ def _transport_send(provider, message, is_m365: bool, secret_key: str, account_i
             raise PermanentSendError(
                 "This Microsoft 365 mailbox has SMTP sending disabled by the tenant, "
                 "and it's connected here with a password. Re-add it with 'Sign in "
-                "with Microsoft' so RaplMail can send via Graph — or ask your admin "
+                "with Microsoft' so RaplMail can send via Graph - or ask your admin "
                 "to re-enable SMTP AUTH."
             ) from exc
         raise
     except smtplib.SMTPException:
         # Other SMTP-protocol failures (recipient refused, disconnect, …) also
-        # subclass OSError — they must not trigger the host re-detection below.
+        # subclass OSError - they must not trigger the host re-detection below.
         raise
     except OSError as exc:   # socket.gaierror "getaddrinfo failed", timeouts, etc.
-        # Unreachable SMTP host — the stored server is stale/wrong (common for
+        # Unreachable SMTP host - the stored server is stale/wrong (common for
         # vanity domains, e.g. a Seznam-hosted rapl-group.eu). Re-detect + retry.
         return _resend_with_detected_host(account_id, message, exc), False
 
@@ -373,7 +373,7 @@ def _send_via_graph(secret_key: str, message) -> bytes:
             "This Microsoft 365 tenant has SMTP sending disabled, and RaplMail "
             "couldn't get a Microsoft Graph send token. Ask your admin to add the "
             "Graph 'Mail.Send' permission to the app registration (with admin "
-            "consent), then reconnect the account — or to re-enable SMTP AUTH for "
+            "consent), then reconnect the account - or to re-enable SMTP AUTH for "
             f"your mailbox. ({exc})"
         ) from exc
     if updated and updated != cache_blob:
@@ -383,8 +383,8 @@ def _send_via_graph(secret_key: str, message) -> bytes:
         graph.send_mime(token, raw)
     except graph.GraphSendError as exc:
         # Only 401/403 (token lacks Mail.Send) is a config problem that won't fix
-        # itself on retry. 5xx/throttling — and network errors, which aren't
-        # GraphSendError at all — stay ordinary exceptions so the send is queued.
+        # itself on retry. 5xx/throttling - and network errors, which aren't
+        # GraphSendError at all - stay ordinary exceptions so the send is queued.
         if exc.status_code not in (401, 403):
             raise
         raise PermanentSendError(

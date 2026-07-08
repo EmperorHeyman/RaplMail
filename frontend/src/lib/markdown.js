@@ -1,5 +1,5 @@
 // Tiny, dependency-free Markdown → inline-styled HTML for the composer.
-// Not full CommonMark — covers the constructs people actually write in email
+// Not full CommonMark - covers the constructs people actually write in email
 // (headings, bold/italic, inline + fenced code, links, lists, blockquotes,
 // horizontal rules) and emits inline styles so it renders consistently in
 // recipients' mail clients (which strip <style> blocks).
@@ -9,7 +9,7 @@ function esc(s) {
 }
 
 // Apply inline markdown to a line. Text is HTML-escaped first, then spans are
-// wrapped — so a literal "<" in the source can't inject markup.
+// wrapped - so a literal "<" in the source can't inject markup.
 function inline(s) {
   let t = esc(s);
   t = t.replace(/`([^`]+)`/g,

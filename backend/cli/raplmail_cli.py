@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""raplmail-cli — drive your local RaplMail backend from the terminal.
+"""raplmail-cli - drive your local RaplMail backend from the terminal.
 
 The backend is a localhost HTTP service. In dev it needs no token; the packaged
 app uses a per-launch token + random port. Point the CLI at it with env vars:
@@ -14,7 +14,7 @@ Examples:
     raplmail-cli send -t you@x.com -s "Build done" --account 1
     make 2>&1 | raplmail-cli send -t me@x.com -s "Build log"   # pipe stdin into the body
 
-Pure stdlib — no dependencies. Designed to pipe terminal output straight into a draft.
+Pure stdlib - no dependencies. Designed to pipe terminal output straight into a draft.
 """
 
 from __future__ import annotations

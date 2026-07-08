@@ -18,7 +18,7 @@ hiddenimports += [
     "mailparser", "msal", "google.auth", "google.auth.transport.requests",
     "google_auth_oauthlib", "google_auth_oauthlib.flow", "requests_oauthlib",
     "imapclient", "argon2", "cryptography", "orjson",
-    # OpenPGP (pgpy) — needs the stdlib `imghdr` module that was removed in
+    # OpenPGP (pgpy) - needs the stdlib `imghdr` module that was removed in
     # Python 3.13 and restored by the `standard-imghdr` backport.
     "pgpy", "imghdr",
     # tzdata supplies the IANA timezone database used by zoneinfo to convert
@@ -39,7 +39,7 @@ try:
         datas += [(_certifi.where(), ".")]
 except Exception:
     pass
-# The timezone database is pure data — collect its files so zoneinfo can find them.
+# The timezone database is pure data - collect its files so zoneinfo can find them.
 datas += collect_data_files("tzdata")
 # oletools ships data files (signatures, thirdparty tables) it reads at runtime.
 for _pkg in ("oletools", "pcodedmp"):

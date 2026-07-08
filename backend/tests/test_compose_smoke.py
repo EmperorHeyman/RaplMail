@@ -1,6 +1,6 @@
 """Smoke test: inline-CID signature image produces a correct MIME structure.
 
-This is the core fix for the 'signature image never shows up' problem — verify
+This is the core fix for the 'signature image never shows up' problem - verify
 the image is embedded with a Content-ID that the HTML references via cid:.
 """
 

@@ -40,7 +40,7 @@ def audit(sort: str = "dormant", session: Session = Depends(get_session)) -> dic
     last-seen, and an unsubscribe target.
 
     `sort` orders the rows: "dormant" (lowest read-rate + oldest, the best cleanup
-    targets — the default), "most" (most received overall), "recent" (most active
+    targets - the default), "most" (most received overall), "recent" (most active
     in the last 30 days), "unread" (lowest read-rate), or "name" (A-Z)."""
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = now - timedelta(days=30)
@@ -83,7 +83,7 @@ def audit(sort: str = "dormant", session: Session = Depends(get_session)) -> dic
             "unsubscribe": _unsub_target(unsub or ""),
         })
     sorters = {
-        # Dormant first: lowest read-rate, then oldest last-seen — best cleanup targets.
+        # Dormant first: lowest read-rate, then oldest last-seen - best cleanup targets.
         "dormant": (lambda r: (r["read_rate"], r["last_seen"]), False),
         "most": (lambda r: r["total"], True),                 # most received overall
         "recent": (lambda r: r["recent30"], True),            # most active last 30 days
@@ -106,7 +106,7 @@ def unsubscribe_oneclick(body: UnsubIn) -> dict:
     one-click endpoint that returns an error page on a plain browser GET but
     unsubscribes correctly on a POST. Returns ok=False so the caller can fall back
     to opening the page in the browser (confirmation-style unsubscribes)."""
-    import httpx  # deferred — only when the user actually unsubscribes
+    import httpx  # deferred - only when the user actually unsubscribes
 
     url = (body.url or "").strip()
     if not url.lower().startswith("http"):
@@ -120,5 +120,5 @@ def unsubscribe_oneclick(body: UnsubIn) -> dict:
                          "User-Agent": "RaplMail-Unsubscribe/1.0"},
             )
         return {"ok": 200 <= r.status_code < 300, "method": "post", "status": r.status_code}
-    except Exception as exc:  # noqa: BLE001 — network/DNS/TLS: fall back to the browser
+    except Exception as exc:  # noqa: BLE001 - network/DNS/TLS: fall back to the browser
         return {"ok": False, "method": "post", "error": str(exc)}

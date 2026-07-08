@@ -51,8 +51,8 @@
   function setSort(v) { sort = v; load(); }
   const chosen = $derived(lists.filter((l) => selected.has(l.from_addr)));
 
-  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "—"; }
-  function ratePct(l) { return l.recent30 ? `${Math.round(l.read_rate * 100)}%` : "—"; }
+  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "-"; }
+  function ratePct(l) { return l.recent30 ? `${Math.round(l.read_rate * 100)}%` : "-"; }
 
   async function doUnsub(l) {
     const u = l.unsubscribe || "";

@@ -60,7 +60,7 @@ _FTS_SETUP = [
 ]
 
 
-# Columns added after the initial schema — applied to existing DBs via ALTER,
+# Columns added after the initial schema - applied to existing DBs via ALTER,
 # since SQLModel.create_all() never alters existing tables.
 _MIGRATIONS: dict[str, dict[str, str]] = {
     "message": {
@@ -151,7 +151,7 @@ def index_message_fts(session: Session, rowid: int, *, subject: str, from_addr: 
     # DELETE only matters when re-indexing an existing rowid; for new messages
     # there's nothing to remove. Wrap it in a SAVEPOINT so a rejection rolls back
     # ONLY the delete (not the caller's pending message insert) and the INSERT
-    # still runs — worst case a re-indexed row leaves a duplicate, deduped on read.
+    # still runs - worst case a re-indexed row leaves a duplicate, deduped on read.
     try:
         with session.begin_nested():
             session.exec(text("DELETE FROM message_fts WHERE rowid = :rid").bindparams(rid=rowid))

@@ -26,7 +26,7 @@
   let deep = $state(null);      // backend deep report (macros, pdf streams)
   let truncated = $state(false);
   // The verdict is the worst of the in-sandbox wasm scan and the backend deep
-  // analysis — a compressed .docm macro is invisible to the raw-byte wasm scan
+  // analysis - a compressed .docm macro is invisible to the raw-byte wasm scan
   // but caught by olevba, so the deep score must be able to raise the verdict.
   const score = $derived(Math.max(wasmScore, deep?.score || 0));
   let running = $state(true);
@@ -113,7 +113,7 @@
 
     if (!seed || !seed.dataB64) { error = t("sandbox.noData"); running = false; return; }
     deep = seed.deepReport || null;
-    document.title = `${t("sandbox.title")} — ${seed.name}`;
+    document.title = `${t("sandbox.title")} - ${seed.name}`;
 
     try {
       bytes = b64ToBytes(seed.dataB64);
@@ -252,7 +252,7 @@
           {/if}
           {#if deep.office.suspicious?.length}
             <div class="deeprow"><span class="dlabel">{t("sandbox.macroSuspicious")}</span>
-              <ul class="deeplist">{#each deep.office.suspicious as s}<li><b>{s.keyword}</b> — {s.description}</li>{/each}</ul>
+              <ul class="deeplist">{#each deep.office.suspicious as s}<li><b>{s.keyword}</b> - {s.description}</li>{/each}</ul>
             </div>
           {/if}
           {#if deep.office.iocs?.length}

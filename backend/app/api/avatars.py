@@ -92,7 +92,7 @@ def _homepage_icon_url(domain: str, insecure: bool) -> str | None:
 
 
 def _fetch_favicon(domain: str) -> bytes | None:
-    # The domain's own site first — verified, then insecure (self-signed corp certs).
+    # The domain's own site first - verified, then insecure (self-signed corp certs).
     for insecure in (False, True):
         data = _get(f"https://{domain}/favicon.ico", insecure=insecure)
         if data:

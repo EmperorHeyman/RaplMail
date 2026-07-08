@@ -7,14 +7,14 @@
 
 import { WASM_B64 } from "./wasm-blob.js";
 
-// Finding kinds (host_emit) — mirror src/lib.rs.
+// Finding kinds (host_emit) - mirror src/lib.rs.
 export const K_TYPE = 0;
 export const K_EMBED = 4;
 export const K_KEYWORD = 6;
 export const K_PREVIEW = 7;
 export const K_NOTE = 8;
 
-// Intent kinds (host_intent) — the "what is it trying to do" feed.
+// Intent kinds (host_intent) - the "what is it trying to do" feed.
 export const I_NET = 1;
 export const I_EXEC = 2;
 export const I_SCRIPT = 3;

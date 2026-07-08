@@ -53,7 +53,7 @@ export function splitQuoted(html) {
   if (idx < 0) return { main: html, recent: "", earlier: "" };
   // Only collapse if there's meaningful NEW (visible) text above the quote. A
   // forward has ~no new text above the original, so collapsing would hide the
-  // whole message — measure stripped text, not the raw HTML offset (tags inflate it).
+  // whole message - measure stripped text, not the raw HTML offset (tags inflate it).
   const visibleAbove = html.slice(0, idx).replace(/<[^>]+>/g, "").replace(/&[a-z#0-9]+;/gi, " ").trim();
   if (visibleAbove.length < 25) return { main: html, recent: "", earlier: "" };
   // main      = the new text the sender just wrote
@@ -67,7 +67,7 @@ export function splitQuoted(html) {
 // Within the quoted region, peel off the OLDER history so the reader shows only
 // the most-recent reply by default. Reply clients nest each older message in
 // another <blockquote>, so a blockquote that sits inside another blockquote is
-// older history — we lift those out into `earlier`. Clients that don't nest
+// older history - we lift those out into `earlier`. Clients that don't nest
 // (Outlook divs, plain "-----Original Message-----") degrade gracefully: the
 // whole quote is treated as `recent` and no "show earlier" button appears.
 function _splitQuoteLevels(quotedHtml) {
@@ -203,7 +203,7 @@ function _lum(c) {
 /**
  * Force a dark reading surface for ANY email: rewrite near-white backgrounds to
  * the theme's dark background and dark text to light, while leaving saturated
- * brand colors alone. This is the "Dark" email mode — guarantees no white pane.
+ * brand colors alone. This is the "Dark" email mode - guarantees no white pane.
  */
 function recolorForDark(html, bg, text) {
   const LIGHT = 0.82;   // luminance above this = "basically white/very light"
@@ -348,7 +348,7 @@ const _PLAIN_BG = /^(?:#fff(?:fff)?|#ffffffff|white|transparent|none|inherit|ini
  * Does this email bring its own visual theme (background colors / background
  * images on a wrapper)? Branded newsletters and HTML-designed mail do; a plain
  * typed reply does not. We use this to decide whether dark-mode adaptation is
- * safe — we only re-theme PLAIN mail and never touch a sender's own design.
+ * safe - we only re-theme PLAIN mail and never touch a sender's own design.
  */
 function emailHasOwnTheme(html) {
   try {
@@ -395,16 +395,16 @@ function darkenPlainBody(html, lightText) {
  *
  * Emails are authored for a white background. In a dark theme, with "Adapt email
  * colors" on, we *smart-adapt*: PLAIN mail (no styling of its own) is rendered on
- * a true dark pane with light text — easy on the eyes — while branded / custom-
+ * a true dark pane with light text - easy on the eyes - while branded / custom-
  * styled mail is left exactly as the sender designed it on a white reading pane,
  * so its colors are never mangled. No whole-document inversion.
  */
 export function emailDoc(bodyHtml, { raw = false } = {}) {
   // raw = per-message "show original" toggle: exact sender design, white pane.
   // Otherwise the email appearance mode decides:
-  //   "original" — as the sender designed it (white pane)
-  //   "adaptive" — dark pane for plain mail, leave branded mail on white (default)
-  //   "dark"     — force a dark pane for ALL mail (no white, ever)
+  //   "original" - as the sender designed it (white pane)
+  //   "adaptive" - dark pane for plain mail, leave branded mail on white (default)
+  //   "dark"     - force a dark pane for ALL mail (no white, ever)
   const s = app?.settings || {};
   let mode = s.emailTheme;
   if (!mode) mode = s.alwaysOriginalHtml ? "original" : (s.emailAdaptColors === false ? "original" : "adaptive");
@@ -413,9 +413,9 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   const force = mode === "dark" && themeIsDark;                       // recolor everything
   const dark = force || (mode === "adaptive" && themeIsDark && !emailHasOwnTheme(bodyHtml));
   const original = mode === "original";
-  // Opt-in: let the user's custom CSS also style email bodies (default off — emails untouched).
+  // Opt-in: let the user's custom CSS also style email bodies (default off - emails untouched).
   const userCss = !original && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
-  // Syntax-highlight code blocks (default ON) — developer-friendly reading of pasted code.
+  // Syntax-highlight code blocks (default ON) - developer-friendly reading of pasted code.
   const highlight = !original && app?.settings?.highlightCode !== false;
   let body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
   // Link hygiene (privacy, default on): strip utm_/fbclid/gclid & unwrap redirect
@@ -445,7 +445,7 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
       `a{color:${link};} img{max-width:100%;height:auto;}` +
       `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}`;
   } else {
-    // Default (non-"original") light pane: guard against white-on-white — recolor
+    // Default (non-"original") light pane: guard against white-on-white - recolor
     // near-white text that isn't on its own dark background so it stays readable.
     if (!original) body = fixInvisibleText(body, "#1a1a1a");
     pageCss =

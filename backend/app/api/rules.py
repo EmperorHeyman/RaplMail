@@ -168,7 +168,7 @@ class ApplyOut(BaseModel):
 def apply_rule(body: RuleIn, request: Request, session: Session = Depends(get_session)) -> ApplyOut:
     """Apply a rule to EXISTING messages right now. Rules otherwise only run on
     newly-arrived mail, so a freshly-created rule appears to 'do nothing' to mail
-    already in the box — this is what makes it act on what's already there.
+    already in the box - this is what makes it act on what's already there.
     Local-state actions (mark done/read) apply immediately; move/archive/delete/
     block queue an IMAP move that flushes in the background (offline-resilient).
     Notification-only / webhook / script actions have no meaning for old mail."""

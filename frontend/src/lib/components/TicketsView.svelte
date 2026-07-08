@@ -66,8 +66,8 @@
   // Unwrap the {http, data:{status,data}} envelope; throw a useful error.
   async function rd(method, endpoint, query = {}, body = null) {
     const r = await rapldesk.call(instanceId, { method, endpoint, query, body });
-    if (r.http === 401 || r.http === 403) throw new Error(`Not allowed (${r.http}) — this API key is missing the required scope.`);
-    if (r.http === 404) throw new Error(`404 Not Found — check the instance Base URL. Called: ${r.url || "?"}`);
+    if (r.http === 401 || r.http === 403) throw new Error(`Not allowed (${r.http}) - this API key is missing the required scope.`);
+    if (r.http === 404) throw new Error(`404 Not Found - check the instance Base URL. Called: ${r.url || "?"}`);
     if (r.http >= 400) throw new Error(r.data?.message || `HTTP ${r.http} (${r.url || ""})`);
     if (r.data?.status === "error") throw new Error(r.data.message || "RaplDesk error");
     return r.data?.data ?? r.data;
@@ -85,7 +85,7 @@
       if (fStatus) q.status = fStatus;
       if (fPriority) q.priority = fPriority;
       if (search.trim()) q.search = search.trim();
-      // v2 resolves these against the key's bound user (GET /me) — no ids needed.
+      // v2 resolves these against the key's bound user (GET /me) - no ids needed.
       if (listTab !== "all") q.scope = listTab;
       const d = await rd("GET", "tickets", q);
       tickets = d.tickets || [];
@@ -185,9 +185,9 @@
       <div class="hspace"></div>
       {#if stats}
         <div class="stats">
-          <span><b>{stats.total ?? stats.total_tickets ?? "—"}</b> total</span>
-          <span class="ok"><b>{stats.open ?? "—"}</b> open</span>
-          <span class="muted"><b>{stats.closed ?? "—"}</b> closed</span>
+          <span><b>{stats.total ?? stats.total_tickets ?? "-"}</b> total</span>
+          <span class="ok"><b>{stats.open ?? "-"}</b> open</span>
+          <span class="muted"><b>{stats.closed ?? "-"}</b> closed</span>
         </div>
       {/if}
       <button class="btn" onclick={loadList} disabled={loading} title="Refresh">{@html icons.sync}</button>
@@ -305,15 +305,15 @@
       <label class="fr"><span>Title</span><input bind:value={nf.title} /></label>
       <label class="fr"><span>Description</span><textarea rows="4" bind:value={nf.description}></textarea></label>
       <label class="fr"><span>Firm</span>
-        {#if firms.length}<select bind:value={nf.firm_id}><option value="">—</option>{#each firms as f}<option value={f.id}>{f.name}</option>{/each}</select>
+        {#if firms.length}<select bind:value={nf.firm_id}><option value="">-</option>{#each firms as f}<option value={f.id}>{f.name}</option>{/each}</select>
         {:else}<input type="number" bind:value={nf.firm_id} placeholder="firm id" />{/if}
       </label>
       <label class="fr"><span>Created by</span>
-        {#if users.length}<select bind:value={nf.created_by_user_id}><option value="">—</option>{#each users as u}<option value={u.id}>{u.name} ({u.email})</option>{/each}</select>
+        {#if users.length}<select bind:value={nf.created_by_user_id}><option value="">-</option>{#each users as u}<option value={u.id}>{u.name} ({u.email})</option>{/each}</select>
         {:else}<input type="number" bind:value={nf.created_by_user_id} placeholder="user id" />{/if}
       </label>
       <label class="fr"><span>Department</span>
-        {#if departments.length}<select bind:value={nf.department_id}><option value="">—</option>{#each departments as d}<option value={d.id}>{d.name}</option>{/each}</select>
+        {#if departments.length}<select bind:value={nf.department_id}><option value="">-</option>{#each departments as d}<option value={d.id}>{d.name}</option>{/each}</select>
         {:else}<input type="number" bind:value={nf.department_id} placeholder="optional" />{/if}
       </label>
       <label class="fr"><span>Priority</span>

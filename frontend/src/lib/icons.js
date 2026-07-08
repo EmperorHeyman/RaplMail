@@ -1,6 +1,6 @@
 // All RaplMail UI icons in one place.
 //
-// Each value is an inline SVG string — original, hand-drawn line art on a
+// Each value is an inline SVG string - original, hand-drawn line art on a
 // 24×24 grid. They use `currentColor`, so an icon takes the text color of
 // wherever it's placed, and `width/height: 1em`, so it scales with font-size.
 //
@@ -108,7 +108,7 @@ export const icons = {
     '<circle cx="16" cy="6" r="2.2"/><circle cx="8" cy="12" r="2.2"/><circle cx="14" cy="18" r="2.2"/>'
   ),
 
-  // Providers — true brand marks, in their own colors.
+  // Providers - true brand marks, in their own colors.
   microsoft:
     '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="1em" height="1em" style="vertical-align:-0.14em">' +
     '<rect x="3" y="3" width="8" height="8" fill="#F25022"/><rect x="13" y="3" width="8" height="8" fill="#7FBA00"/>' +

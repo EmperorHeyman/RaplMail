@@ -1,4 +1,4 @@
-"""Extract searchable text from attachment bytes — no third-party deps.
+"""Extract searchable text from attachment bytes - no third-party deps.
 
 Handles plain text, source code, CSV/JSON/XML, and the OOXML Office formats
 (.docx / .xlsx / .pptx), which are just ZIP archives of XML. PDF and legacy
@@ -84,7 +84,7 @@ def extract_attachment_text(filename: str, content_type: str, data: bytes) -> st
             if ext in ("html", "htm") or ctype == "text/html":
                 text = _TAG_RE.sub(" ", text)
         else:
-            return ""  # pdf, images, binaries — not indexed (no parser dep)
+            return ""  # pdf, images, binaries - not indexed (no parser dep)
     except Exception:
         return ""
     text = _WS_RE.sub(" ", text).strip()

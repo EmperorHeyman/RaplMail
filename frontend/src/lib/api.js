@@ -175,8 +175,8 @@ function b64ToBlob(dataB64, contentType) {
 }
 
 // Open raw bytes (base64) with the OS default app. Used when the caller already
-// holds the bytes — an uploaded local file, or a "trust & open" out of the
-// sandbox — rather than a message attachment index.
+// holds the bytes - an uploaded local file, or a "trust & open" out of the
+// sandbox - rather than a message attachment index.
 export async function openAttachmentBytes(filename, contentType, dataB64) {
   if (isTauri()) {
     const { invoke } = await import("@tauri-apps/api/core");
@@ -280,7 +280,7 @@ export const ai = {
   screen: (message_id, force = false) => api.post("/ai/screen", { message_id, force }),
   digest: () => api.post("/ai/digest", {}),
   triage: (limit = 20) => api.post("/ai/triage", { limit }),
-  // Ollama (local, keyless) — detect / pull models / one-click install.
+  // Ollama (local, keyless) - detect / pull models / one-click install.
   ollamaStatus: (base = "") => api.get(`/ai/ollama/status${base ? `?base=${encodeURIComponent(base)}` : ""}`),
   ollamaPull: (model, base = "") => api.post("/ai/ollama/pull", { model, base }),
   ollamaPullStatus: () => api.get("/ai/ollama/pull-status"),
@@ -447,7 +447,7 @@ export const debug = {
  * Connect to the live event stream.
  * @param {(ev:{event:string,payload:any})=>void} onEvent
  * @param {() => void} [onReconnect] called when the socket REopens after a drop
- *   (not the first connect) — events sent while it was down are lost, so the
+ *   (not the first connect) - events sent while it was down are lost, so the
  *   caller should refresh its state.
  */
 export function connectEvents(onEvent, onReconnect) {

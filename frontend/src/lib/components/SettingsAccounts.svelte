@@ -27,7 +27,7 @@
     try {
       backfill = await api.setBackfill(!backfill?.enabled);
       notify(backfill.enabled
-        ? "Syncing your full mail history — older messages appear as it runs."
+        ? "Syncing your full mail history - older messages appear as it runs."
         : "Full-history sync paused.");
     } catch (e) { notify(e.message, "error"); }
     finally { backfillBusy = false; }
@@ -82,7 +82,7 @@
                   imap_host: disc.imap_host || "", smtp_host: disc.smtp_host || "" };
   }
 
-  // OAuth providers — the sign-in itself is the connection test.
+  // OAuth providers - the sign-in itself is the connection test.
   async function connectGoogle() {
     busy = true; error = "";
     notify("Opening browser to sign in with Google…");
@@ -108,7 +108,7 @@
     try { window.open(url, "_blank", "noreferrer"); } catch {}
   }
 
-  // Password account — verifies the connection before adding.
+  // Password account - verifies the connection before adding.
   async function testAndAdd() {
     error = "";
     if (!password) { error = "Enter your password."; return; }
@@ -120,7 +120,7 @@
         imap_host: disc.imap_host, imap_port: disc.imap_port, imap_ssl: disc.imap_ssl,
         smtp_host: disc.smtp_host, smtp_port: disc.smtp_port,
       });
-      notify("Connected ✓ — syncing your mail");
+      notify("Connected ✓ - syncing your mail");
       app.syncing = true;
       await loadAccountsAndFolders();
       reset();
@@ -154,7 +154,7 @@
     if (!pw) return;
     try {
       await api.reconnect(a.id, pw);
-      notify("Reconnected ✓ — syncing");
+      notify("Reconnected ✓ - syncing");
       setTimeout(refreshHealth, 800);
     } catch (e) { notify(e.message, "error"); }
   }
@@ -185,11 +185,11 @@
                                smtp_host: srv.smtp_host.trim(), smtp_port: Number(srv.smtp_port) });
       await loadAccountsAndFolders();
       srvEdit = null;
-      notify("Server settings saved — try sending again");
+      notify("Server settings saved - try sending again");
     } catch (e) { notify(e.message, "error"); }
   }
   // Re-run provider detection (MX/known-host) for this account's domain and fill
-  // the form — fixes a stale/guessed SMTP host (e.g. a Seznam vanity domain).
+  // the form - fixes a stale/guessed SMTP host (e.g. a Seznam vanity domain).
   async function autodetectServer(a) {
     try {
       const d = await api.autodiscover(a.email);
@@ -276,7 +276,7 @@
       {/if}
       {#if idEdit === a.id}
         <div class="idedit">
-          <p class="muted">One identity per line — a plain address or <code>Name &lt;addr@host&gt;</code>. The server sends as it only if it recognizes the address. Your primary address ({a.email}) is always available.</p>
+          <p class="muted">One identity per line - a plain address or <code>Name &lt;addr@host&gt;</code>. The server sends as it only if it recognizes the address. Your primary address ({a.email}) is always available.</p>
           <textarea bind:value={idText} rows="3" placeholder={"Sales <sales@" + (a.email.split("@")[1] || "company.com") + ">\nme+side@" + (a.email.split("@")[1] || "company.com")}></textarea>
           <div class="idactions">
             <button class="btn primary" onclick={() => saveAliases(a)}>Save identities</button>
@@ -286,7 +286,7 @@
       {/if}
     {/each}
     {#if app.accounts.length === 0}
-      <p class="muted">No accounts yet. Add your first below — just type your email.</p>
+      <p class="muted">No accounts yet. Add your first below - just type your email.</p>
     {/if}
   </div>
 
@@ -297,7 +297,7 @@
           <h3>Mail history</h3>
           <p class="muted">
             RaplMail loads your most recent mail first, so older messages aren't
-            searchable yet. Turn this on to pull in your entire back-catalogue —
+            searchable yet. Turn this on to pull in your entire back-catalogue -
             it runs in the background and keeps going until every folder is done.
           </p>
         </div>
@@ -308,7 +308,7 @@
       {#if backfill?.enabled}
         <div class="bf-prog">
           {#if backfill.complete}
-            <span class="bf-done">✓ All mail synced — {backfill.messages.toLocaleString()} messages cached.</span>
+            <span class="bf-done">✓ All mail synced - {backfill.messages.toLocaleString()} messages cached.</span>
           {:else}
             <span>Working… {backfill.folders_done} of {backfill.folders_total} folders complete · {backfill.messages.toLocaleString()} messages cached so far.</span>
           {/if}
@@ -321,7 +321,7 @@
     <h3>Add an account</h3>
 
     {#if step === "email"}
-      <p class="lead">Type your email address — RaplMail figures out the rest.</p>
+      <p class="lead">Type your email address - RaplMail figures out the rest.</p>
       <div class="email-row">
         <input
           type="email" placeholder="you@example.com" bind:value={email}
@@ -370,7 +370,7 @@
                 <ol>
                   <li>On the page, sign in as your a123systems account.</li>
                   <li>If asked for a code, paste / enter: <code class="code">{msFlow.user_code}</code></li>
-                  <li>Come back here — it connects automatically.</li>
+                  <li>Come back here - it connects automatically.</li>
                 </ol>
                 <p class="muted">Didn't open? <a href={msFlow.verification_uri_complete || msFlow.verification_uri} target="_blank" rel="noreferrer">{msFlow.verification_uri}</a></p>
               </div>
@@ -382,7 +382,7 @@
         {:else}
           <!-- Password account (incl. OAuth providers via an app password) -->
           {#if usePassword && disc.provider === "gmail"}
-            <p class="note">Create an app password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a> (needs 2-Step Verification on), then paste the 16-character code below — no Google verification required.</p>
+            <p class="note">Create an app password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a> (needs 2-Step Verification on), then paste the 16-character code below - no Google verification required.</p>
           {:else if usePassword}
             <p class="note">Use an app password from your provider (not your normal login password).</p>
           {/if}

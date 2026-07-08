@@ -10,7 +10,7 @@ export default {
     "threat.openIn": "Open anyway ({n})",
     "threat.openAnyway": "Open anyway",
     "threat.openSandbox": "Open in sandbox",
-    "threat.riskBadge": "Flagged as risky — right-click to open in the sandbox",
+    "threat.riskBadge": "Flagged as risky - right-click to open in the sandbox",
 
     // Sandbox window
     "sandbox.title": "Sandbox",
@@ -32,7 +32,7 @@ export default {
     "sandbox.blocked": "blocked",
     "sandbox.intercepted": "intercepted",
     "sandbox.noActivity": "No network, launch or script behaviour detected.",
-    "sandbox.scanTip": "Auto-scanned in the background — macros/PDF de-obfuscated, never run",
+    "sandbox.scanTip": "Auto-scanned in the background - macros/PDF de-obfuscated, never run",
     "sandbox.scan_none": "Clean",
     "sandbox.scan_low": "Minor",
     "sandbox.scan_medium": "Suspicious",
@@ -92,7 +92,7 @@ export default {
     "threat.openIn": "Přesto otevřít ({n})",
     "threat.openAnyway": "Přesto otevřít",
     "threat.openSandbox": "Otevřít v sandboxu",
-    "threat.riskBadge": "Označeno jako rizikové – pravým tlačítkem otevřete v sandboxu",
+    "threat.riskBadge": "Označeno jako rizikové - pravým tlačítkem otevřete v sandboxu",
 
     "sandbox.title": "Sandbox",
     "sandbox.unknownType": "Neznámý typ",
@@ -113,7 +113,7 @@ export default {
     "sandbox.blocked": "blokováno",
     "sandbox.intercepted": "zachyceno",
     "sandbox.noActivity": "Nezjištěno žádné síťové, spouštěcí ani skriptové chování.",
-    "sandbox.scanTip": "Automaticky prověřeno na pozadí — makra/PDF de-obfuskována, nikdy nespuštěna",
+    "sandbox.scanTip": "Automaticky prověřeno na pozadí - makra/PDF de-obfuskována, nikdy nespuštěna",
     "sandbox.scan_none": "Čisté",
     "sandbox.scan_low": "Drobné",
     "sandbox.scan_medium": "Podezřelé",

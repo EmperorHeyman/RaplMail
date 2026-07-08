@@ -1,5 +1,5 @@
 // Stable per-sender avatar color + initial, so the same person always gets the
-// same colored disc — the list (and thread) read at a glance instead of a wall
+// same colored disc - the list (and thread) read at a glance instead of a wall
 // of identical accent circles. Simple deterministic string hash → hue.
 export function senderHue(s) {
   const str = (s || "").toLowerCase();

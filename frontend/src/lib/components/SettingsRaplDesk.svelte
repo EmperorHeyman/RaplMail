@@ -36,7 +36,7 @@
     <h3>RAPL Desk (ticketing)</h3>
     <p class="hint">Connect one or more RaplDesk instances by base URL + API key. Tickets show up under
       <b>Tickets</b> in the sidebar. Keys are stored encrypted in your vault (and never leave your machine
-      except to call that instance). The key's <b>scopes</b> decide what you can do — for full use grant
+      except to call that instance). The key's <b>scopes</b> decide what you can do - for full use grant
       tickets.read/write, users.read, departments.read, firms.read and reports.read.</p>
 
     {#each instances as i}

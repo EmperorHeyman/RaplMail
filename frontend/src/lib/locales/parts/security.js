@@ -1,16 +1,16 @@
 // Security settings tab + anti-phishing screening. Flat "security.key" → text.
-// en + cs kept in lockstep — every en key must also exist in cs.
+// en + cs kept in lockstep - every en key must also exist in cs.
 export default {
   en: {
     // Phishing heuristics.
     "security.screenGroup": "Anti-phishing",
     "security.phishingTitle": "Suspicious-sender screening",
     "security.phishingToggle": "Flag likely spoofs and impersonation",
-    "security.phishingHint": "Checks the sender as mail arrives: a display name that impersonates a known brand from the wrong domain (e.g. “LinkedIn” from an address on some random .ru domain), lookalike/non-standard domains, and names that cite a different domain than the real address. Flagged mail gets a warning badge — it is never auto-deleted.",
+    "security.phishingHint": "Checks the sender as mail arrives: a display name that impersonates a known brand from the wrong domain (e.g. “LinkedIn” from an address on some random .ru domain), lookalike/non-standard domains, and names that cite a different domain than the real address. Flagged mail gets a warning badge - it is never auto-deleted.",
 
     // Domain blocker.
     "security.domainTitle": "Blocked domains",
-    "security.domainHint": "Mail from these domains (or top-level domains) is quarantined the moment it arrives — moved to Junk, or deleted if there's no Junk folder. Enter a domain like spammer.com (also blocks its subdomains) or a whole TLD like ru to block everything ending in .ru.",
+    "security.domainHint": "Mail from these domains (or top-level domains) is quarantined the moment it arrives - moved to Junk, or deleted if there's no Junk folder. Enter a domain like spammer.com (also blocks its subdomains) or a whole TLD like ru to block everything ending in .ru.",
     "security.domainPlaceholder": "spammer.com  or  ru",
     "security.domainAdd": "Block",
     "security.domainEmpty": "No blocked domains yet.",
@@ -24,18 +24,18 @@ export default {
     "security.aiOff": "Off",
     "security.aiOffHint": "Never call the AI for screening.",
     "security.aiManual": "Manual",
-    "security.aiManualHint": "Adds a “Check with AI” button in the reader — runs only when you press it, so you don't spend tokens on every mail.",
+    "security.aiManualHint": "Adds a “Check with AI” button in the reader - runs only when you press it, so you don't spend tokens on every mail.",
     "security.aiAuto": "Automatic",
     "security.aiAutoHint": "Screens each message with AI the first time you open it (the verdict is cached, so it isn't re-checked).",
-    "security.aiDisclaimer": "AI can and will make mistakes — treat a verdict as a hint, not proof. Automatic mode uses your AI provider (and its quota / local GPU) on every new message you open.",
+    "security.aiDisclaimer": "AI can and will make mistakes - treat a verdict as a hint, not proof. Automatic mode uses your AI provider (and its quota / local GPU) on every new message you open.",
     "security.aiUnavailable": "Set up the AI assistant first (Settings → AI assistant) to use AI screening.",
 
     // Moved-in privacy toggles.
     "security.privacyGroup": "Privacy",
     "security.trackToggle": "Block tracking pixels",
-    "security.trackHint": "Blocks invisible 1×1 pixels and known open-tracking images so senders can't tell when you read. Real images (logos, photos, content) still load normally — you can also “Load everything” per message.",
+    "security.trackHint": "Blocks invisible 1×1 pixels and known open-tracking images so senders can't tell when you read. Real images (logos, photos, content) still load normally - you can also “Load everything” per message.",
     "security.screenerToggle": "Screener (first-time senders)",
-    "security.screenerHint": "Mail from people you've never corresponded with is held in a “Screener” instead of the inbox — approve or block each new sender once (Hey-style).",
+    "security.screenerHint": "Mail from people you've never corresponded with is held in a “Screener” instead of the inbox - approve or block each new sender once (Hey-style).",
 
     // Moved-in startup password.
     "security.startupGroup": "Startup password",
@@ -53,14 +53,14 @@ export default {
     // Security Lab (forensic report).
     "security.labGroup": "Lab",
     "security.labTitle": "Security Lab",
-    "security.labEmpty": "Right-click a message (in the list or an open mail) and choose “Send to Security Lab” to inspect its headers, hop chain, sender DNS, links and attachments — with one-tap links to VirusTotal, urlscan, MXToolbox, AbuseIPDB and whois.",
+    "security.labEmpty": "Right-click a message (in the list or an open mail) and choose “Send to Security Lab” to inspect its headers, hop chain, sender DNS, links and attachments - with one-tap links to VirusTotal, urlscan, MXToolbox, AbuseIPDB and whois.",
     "security.labLoading": "Analyzing message…",
     "security.labError": "Couldn't analyze this message: {err}",
     "security.labClear": "Clear",
     "security.labRecheck": "Re-run",
     "security.labFindings": "Findings",
-    "security.labNoFindings": "No heuristic red flags. Still verify with the external tools below — this is not a clean bill of health.",
-    "security.labReplyMismatch": "Reply-To is on a different domain than From — replies would go elsewhere.",
+    "security.labNoFindings": "No heuristic red flags. Still verify with the external tools below - this is not a clean bill of health.",
+    "security.labReplyMismatch": "Reply-To is on a different domain than From - replies would go elsewhere.",
     "security.labExternal": "Check with external tools",
     "security.labSender": "Sender & authentication",
     "security.labFromName": "Display name",
@@ -102,7 +102,7 @@ export default {
     "security.labBlacklist": "Blacklist check",
     "security.labDomainAge": "Domain age",
     "security.labRegistered": "registered {date} · {days} days ago",
-    "security.labVeryYoung": "very new — strong phishing signal",
+    "security.labVeryYoung": "very new - strong phishing signal",
     "security.labAgeUnknown": "registration date unavailable",
     "security.labPtr": "Reverse DNS",
     "security.labAsn": "Network",
@@ -118,7 +118,7 @@ export default {
     "security.labTimeline": "Timeline",
     "security.labSent": "Date header",
     "security.labReceivedAt": "Newest relay",
-    "security.labBackdated": "clock skew {mins} min — possibly backdated",
+    "security.labBackdated": "clock skew {mins} min - possibly backdated",
     "security.labMagic": "Detected type",
     "security.labArchive": "Archive contents",
     "security.labPunycode": "punycode / non-ASCII host",
@@ -134,7 +134,7 @@ export default {
     "security.screenGroup": "Ochrana proti phishingu",
     "security.phishingTitle": "Prověřování podezřelých odesílatelů",
     "security.phishingToggle": "Označit pravděpodobné podvrhy a napodobování",
-    "security.phishingHint": "Kontroluje odesílatele při doručení: zobrazované jméno napodobující známou značku z nesprávné domény (např. „LinkedIn“ z adresy na náhodné doméně .ru), podobné/nestandardní domény a jména uvádějící jinou doménu, než je skutečná adresa. Označená pošta dostane varovný odznak — nikdy se automaticky nemaže.",
+    "security.phishingHint": "Kontroluje odesílatele při doručení: zobrazované jméno napodobující známou značku z nesprávné domény (např. „LinkedIn“ z adresy na náhodné doméně .ru), podobné/nestandardní domény a jména uvádějící jinou doménu, než je skutečná adresa. Označená pošta dostane varovný odznak - nikdy se automaticky nemaže.",
 
     // Blokování domén.
     "security.domainTitle": "Blokované domény",
@@ -152,18 +152,18 @@ export default {
     "security.aiOff": "Vypnuto",
     "security.aiOffHint": "AI se pro prověřování nikdy nevolá.",
     "security.aiManual": "Ručně",
-    "security.aiManualHint": "Přidá do čtečky tlačítko „Zkontrolovat pomocí AI“ — spustí se jen po stisknutí, takže nespotřebováváte tokeny u každé zprávy.",
+    "security.aiManualHint": "Přidá do čtečky tlačítko „Zkontrolovat pomocí AI“ - spustí se jen po stisknutí, takže nespotřebováváte tokeny u každé zprávy.",
     "security.aiAuto": "Automaticky",
     "security.aiAutoHint": "Prověří každou zprávu pomocí AI při jejím prvním otevření (výsledek se uloží, takže se nekontroluje znovu).",
-    "security.aiDisclaimer": "AI dělá a bude dělat chyby — berte výsledek jako nápovědu, ne jako důkaz. Automatický režim využívá vašeho poskytovatele AI (a jeho kvótu / lokální GPU) u každé nově otevřené zprávy.",
+    "security.aiDisclaimer": "AI dělá a bude dělat chyby - berte výsledek jako nápovědu, ne jako důkaz. Automatický režim využívá vašeho poskytovatele AI (a jeho kvótu / lokální GPU) u každé nově otevřené zprávy.",
     "security.aiUnavailable": "Nejprve nastavte asistenta AI (Nastavení → Asistent AI), abyste mohli používat prověřování pomocí AI.",
 
     // Přesunuté přepínače soukromí.
     "security.privacyGroup": "Soukromí",
     "security.trackToggle": "Blokovat sledovací pixely",
-    "security.trackHint": "Blokuje neviditelné pixely 1×1 a známé sledovací obrázky, aby odesílatelé nepoznali, kdy jste zprávu přečetli. Běžné obrázky (loga, fotky, obsah) se načítají normálně — u každé zprávy lze také „Načíst vše“.",
+    "security.trackHint": "Blokuje neviditelné pixely 1×1 a známé sledovací obrázky, aby odesílatelé nepoznali, kdy jste zprávu přečetli. Běžné obrázky (loga, fotky, obsah) se načítají normálně - u každé zprávy lze také „Načíst vše“.",
     "security.screenerToggle": "Prověřování (první odesílatelé)",
-    "security.screenerHint": "Pošta od lidí, se kterými jste si nikdy nedopisovali, se místo do schránky uloží do „Prověřování“ — každého nového odesílatele jednou schválíte nebo zablokujete (styl Hey).",
+    "security.screenerHint": "Pošta od lidí, se kterými jste si nikdy nedopisovali, se místo do schránky uloží do „Prověřování“ - každého nového odesílatele jednou schválíte nebo zablokujete (styl Hey).",
 
     // Přesunuté heslo při spuštění.
     "security.startupGroup": "Heslo při spuštění",
@@ -181,14 +181,14 @@ export default {
     // Bezpečnostní laboratoř (forenzní zpráva).
     "security.labGroup": "Laboratoř",
     "security.labTitle": "Bezpečnostní laboratoř",
-    "security.labEmpty": "Klikněte pravým tlačítkem na zprávu (v seznamu nebo v otevřeném e-mailu) a zvolte „Odeslat do bezpečnostní laboratoře“ — zobrazí se hlavičky, cesta doručení, DNS odesílatele, odkazy a přílohy, s odkazy na VirusTotal, urlscan, MXToolbox, AbuseIPDB a whois.",
+    "security.labEmpty": "Klikněte pravým tlačítkem na zprávu (v seznamu nebo v otevřeném e-mailu) a zvolte „Odeslat do bezpečnostní laboratoře“ - zobrazí se hlavičky, cesta doručení, DNS odesílatele, odkazy a přílohy, s odkazy na VirusTotal, urlscan, MXToolbox, AbuseIPDB a whois.",
     "security.labLoading": "Analyzuji zprávu…",
     "security.labError": "Zprávu se nepodařilo analyzovat: {err}",
     "security.labClear": "Vymazat",
     "security.labRecheck": "Spustit znovu",
     "security.labFindings": "Zjištění",
-    "security.labNoFindings": "Žádné heuristické varovné signály. I tak ověřte externími nástroji níže — toto není potvrzení, že je e-mail v pořádku.",
-    "security.labReplyMismatch": "Reply-To je na jiné doméně než From — odpovědi by šly jinam.",
+    "security.labNoFindings": "Žádné heuristické varovné signály. I tak ověřte externími nástroji níže - toto není potvrzení, že je e-mail v pořádku.",
+    "security.labReplyMismatch": "Reply-To je na jiné doméně než From - odpovědi by šly jinam.",
     "security.labExternal": "Zkontrolovat externími nástroji",
     "security.labSender": "Odesílatel a ověření",
     "security.labFromName": "Zobrazované jméno",
@@ -230,7 +230,7 @@ export default {
     "security.labBlacklist": "Kontrola blacklistů",
     "security.labDomainAge": "Stáří domény",
     "security.labRegistered": "registrována {date} · před {days} dny",
-    "security.labVeryYoung": "velmi nová — silný signál phishingu",
+    "security.labVeryYoung": "velmi nová - silný signál phishingu",
     "security.labAgeUnknown": "datum registrace není dostupné",
     "security.labPtr": "Reverzní DNS",
     "security.labAsn": "Síť",
@@ -246,7 +246,7 @@ export default {
     "security.labTimeline": "Časová osa",
     "security.labSent": "Hlavička Date",
     "security.labReceivedAt": "Nejnovější relay",
-    "security.labBackdated": "odchylka hodin {mins} min — možná zpětně datováno",
+    "security.labBackdated": "odchylka hodin {mins} min - možná zpětně datováno",
     "security.labMagic": "Zjištěný typ",
     "security.labArchive": "Obsah archivu",
     "security.labPunycode": "punycode / ne-ASCII hostitel",

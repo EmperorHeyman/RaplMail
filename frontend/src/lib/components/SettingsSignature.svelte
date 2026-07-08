@@ -116,7 +116,7 @@
     await load();
   }
 
-  const acctLabel = (id) => id == null ? "All accounts" : (app.accounts.find((a) => a.id === id)?.email || "—");
+  const acctLabel = (id) => id == null ? "All accounts" : (app.accounts.find((a) => a.id === id)?.email || "-");
 </script>
 
 <div class="wrap">
@@ -170,7 +170,7 @@
           ondragover={(e) => e.preventDefault()} data-placeholder="Type your signature; drag an image right in…"></div>
       {:else}
         <textarea class="htmlsrc" spellcheck="false" bind:value={htmlSource}
-          placeholder={'<table>…</table>  or  <img src="https://…"/>  — paste your HTML here'}></textarea>
+          placeholder={'<table>…</table>  or  <img src="https://…"/>  - paste your HTML here'}></textarea>
       {/if}
 
       <div class="preview-wrap">

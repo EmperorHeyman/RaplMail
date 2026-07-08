@@ -28,7 +28,7 @@
     return out;
   });
   let avIdx = $state(0);
-  // Only reset the avatar candidate when the domains actually change — NOT on every
+  // Only reset the avatar candidate when the domains actually change - NOT on every
   // background refresh (which swaps the message object and would re-flash the icon).
   let _avKey = "";
   $effect(() => {
@@ -57,7 +57,7 @@
       default: return null;
     }
   }
-  // In the Screener, the hover buttons ARE the triage decision — approve/block
+  // In the Screener, the hover buttons ARE the triage decision - approve/block
   // a first-time sender straight from the row, no need to open the mail first.
   const rowBtns = $derived(
     screener
@@ -76,17 +76,17 @@
 
   const initial = $derived((message.from_name || message.from_addr || "?").trim()[0]?.toUpperCase() || "?");
   // Stable per-sender color for the initial-fallback disc (only when there's no
-  // favicon logo and the row isn't marked done — those have their own look).
+  // favicon logo and the row isn't marked done - those have their own look).
   const initialBg = $derived(avatarColor(message.from_addr || message.from_name));
 
   function onPointerDown(e) {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     // Don't start a swipe (and don't capture the pointer) when pressing a button
-    // — pointer capture would steal the click from it, so "Done"/select/snooze
+    // - pointer capture would steal the click from it, so "Done"/select/snooze
     // would silently open the mail instead of running their action.
     if (e.target?.closest?.("button")) return;
     // Leave the mouse to native drag-and-drop (drag a message onto a folder to
-    // move it). Swipe-to-done stays a touch/pen gesture — capturing the mouse
+    // move it). Swipe-to-done stays a touch/pen gesture - capturing the mouse
     // pointer here would suppress the row's HTML5 drag.
     if (e.pointerType === "mouse") return;
     dragging = true;
@@ -97,7 +97,7 @@
     if (!dragging) return;
     dx = Math.max(0, e.clientX - startX); // swipe right to mark done
   }
-  // A completed swipe must not ALSO count as a click — dx is reset before the
+  // A completed swipe must not ALSO count as a click - dx is reset before the
   // browser dispatches the click, so the dx===0 guard alone let the row open.
   let suppressClick = false;
   function onPointerUp() {
@@ -116,7 +116,7 @@
   // Prefetch on hover only after a short DWELL. Wheel-scrolling sweeps rows
   // under a stationary cursor, and an immediate mouseenter prefetch fired a
   // full-body fetch (+ JSON parse on the main thread) for every row that passed
-  // — a request storm that made scrolling feel sluggish. A 120ms dwell means a
+  // - a request storm that made scrolling feel sluggish. A 120ms dwell means a
   // scroll pass (enter→leave in a few ms) fetches nothing, while a real hover
   // still warms the body long before the click lands.
   let _dwell;

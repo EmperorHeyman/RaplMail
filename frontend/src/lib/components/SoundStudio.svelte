@@ -1,7 +1,7 @@
 <script>
   // Upload a sound file and cut a short clip out of it for a notification. The
   // whole file is decoded in-memory; the user drags a selection window over the
-  // waveform, previews it, and saves — we trim to a small WAV and store it (as a
+  // waveform, previews it, and saves - we trim to a small WAV and store it (as a
   // base64 data URL) in settings.customSounds via the store. No files on disk.
   import { fly, fade } from "svelte/transition";
   import { app, saveSettings, notify } from "../store.svelte.js";

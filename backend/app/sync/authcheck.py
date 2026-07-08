@@ -4,12 +4,12 @@ Rather than re-run DKIM crypto + DNS ourselves, we read the Authentication-Resul
 header that the receiving server (M365 / Seznam / Gmail) already stamped after
 doing full SPF + DKIM + DMARC with proper DNS. That header is added at the trust
 boundary (your mailbox provider), so a spoofed `a123systems.eu` arrives with
-`dmarc=fail` — which is exactly the signal we surface as a red shield.
+`dmarc=fail` - which is exactly the signal we surface as a red shield.
 
 Verdict:
-  pass        — authentication checks passed (green shield)
-  fail        — DMARC failed or DKIM/SPF explicitly failed (red shield — likely spoof)
-  none        — no/neutral auth info (no shield)
+  pass        - authentication checks passed (green shield)
+  fail        - DMARC failed or DKIM/SPF explicitly failed (red shield - likely spoof)
+  none        - no/neutral auth info (no shield)
 """
 
 from __future__ import annotations
@@ -83,12 +83,12 @@ def _brand_impersonation(from_name: str, from_dom: str) -> str:
     name_l = from_name.lower()
     for brand, domains in _BRAND_DOMAINS.items():
         if reg in domains:
-            return ""   # legit brand domain — never flag, whatever the name says
+            return ""   # legit brand domain - never flag, whatever the name says
         if re.search(rf"\b{re.escape(brand)}\b", name_l):
             tld = reg.rsplit(".", 1)[-1]
             extra = " (and a high-risk domain)" if tld in _RISKY_TLDS else ""
             return (f"Display name looks like “{brand.title()}”, but the address is "
-                    f"@{from_dom}{extra} — possible impersonation.")
+                    f"@{from_dom}{extra} - possible impersonation.")
     return ""
 
 
@@ -101,7 +101,7 @@ def spoof_warnings(from_addr: str = "", from_name: str = "", html: str = "") -> 
 
     # 1) Confusable / punycode sender domain (Cyrillic 'е', etc.).
     if from_dom and (from_dom.startswith("xn--") or any(ord(c) > 127 for c in from_dom)):
-        out.append(f"Sender domain “{from_dom}” uses non-standard characters — possible lookalike.")
+        out.append(f"Sender domain “{from_dom}” uses non-standard characters - possible lookalike.")
 
     # 1b) Display name impersonates a known brand from the wrong domain.
     brand_warn = _brand_impersonation(from_name or "", from_dom)
@@ -110,14 +110,14 @@ def spoof_warnings(from_addr: str = "", from_name: str = "", html: str = "") -> 
 
     # 2) Display name claims a different domain/email than the actual address.
     #    Skip false positives where the "domain" in the name is really just the
-    #    local part of the address — e.g. name "pet.regina" for pet.regina@seznam.cz
+    #    local part of the address - e.g. name "pet.regina" for pet.regina@seznam.cz
     #    (a dotted handle that merely looks like a domain). Only flag when the name
     #    cites a domain that is genuinely absent from the real address.
     full_addr = (from_addr or "").lower()
     if from_name and from_dom:
         for m in _DOMAIN_IN_TEXT.finditer(from_name):
             cand = m.group(1).lower()
-            if cand in full_addr:           # name echoes the real address — fine
+            if cand in full_addr:           # name echoes the real address - fine
                 continue
             d = _reg_domain(cand)
             if "." in d and d != _reg_domain(from_dom):
@@ -165,5 +165,5 @@ def check_auth(raw: bytes, from_addr: str = "") -> dict:
     else:
         status = "none"
     out["status"] = status
-    out["detail"] = f"DKIM {dkim or '—'} · SPF {spf or '—'} · DMARC {dmarc or '—'}"
+    out["detail"] = f"DKIM {dkim or '-'} · SPF {spf or '-'} · DMARC {dmarc or '-'}"
     return out

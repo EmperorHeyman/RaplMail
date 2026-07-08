@@ -1,9 +1,9 @@
-"""Microsoft Graph helpers — currently just sending mail.
+"""Microsoft Graph helpers - currently just sending mail.
 
 Used when a tenant has SMTP client authentication disabled (the common
 "SmtpClientAuthentication is disabled for the Tenant" 535 error). Graph's
 sendMail accepts a full MIME message (base64, Content-Type: text/plain) and
-delivers it, saving a copy to Sent Items automatically — so we reuse the exact
+delivers it, saving a copy to Sent Items automatically - so we reuse the exact
 MIME we already build for SMTP and skip the separate Sent append.
 """
 

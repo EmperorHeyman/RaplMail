@@ -40,7 +40,7 @@
 </div>
 
 <style>
-  /* Flat, Spark-style group section — no box, sits in the list like a row. */
+  /* Flat, Spark-style group section - no box, sits in the list like a row. */
   .sg {
     position: relative; display: flex; align-items: center; gap: 8px;
     padding: 0 14px 0 0; border-bottom: 1px solid var(--hairline);
@@ -72,7 +72,7 @@
   .chev { display: inline-flex; flex: none; color: var(--faint); transition: transform var(--t-slow) var(--ease-spring), color var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease); }
   .sg:hover .chev { color: var(--muted); }
   .open .chev { transform: rotate(180deg); color: var(--accent); }
-  /* The Done-all button reveals in the chevron's spot on hover/focus — fade the
+  /* The Done-all button reveals in the chevron's spot on hover/focus - fade the
      chevron out so the two don't visibly stack (the "something behind the button"
      clutter). */
   .sg:hover .chev, .sg.focused .chev { opacity: 0; }

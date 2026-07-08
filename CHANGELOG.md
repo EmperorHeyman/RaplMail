@@ -11,7 +11,7 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
-## [0.8.5] — 2026-07-08
+## [0.8.5] - 2026-07-08
 
 ### Added
 - **Subscription Audit → "Only unsubscribable" filter.** A toggle in Settings →
@@ -25,12 +25,12 @@ _Work in progress lands here, then moves under a version number when bundled._
 ### Fixed
 - **Command palette search did nothing.** Typing an operator query (`from:…`,
   `subject:…`, `/regex/`) and pressing Enter (or clicking a result) silently ran
-  an **empty** search — closing the palette cleared the query *before* it was
+  an **empty** search - closing the palette cleared the query *before* it was
   read. It now searches the term you typed.
 - **Unsubscribe opened an error page** for senders like Humble Bundle. RaplMail
   now performs a proper **RFC 8058 one-click unsubscribe** (a server-side POST)
   first, and only falls back to opening the page in the browser if that isn't
-  supported — so one-click links that error on a plain GET work.
+  supported - so one-click links that error on a plain GET work.
 - **"Show original styling" button missing on plain-text mail.** The toggle was
   gated on the message having HTML; it now appears for any message body.
 - **White-on-white emails.** Mail authored with light text for a dark background
@@ -39,12 +39,12 @@ _Work in progress lands here, then moves under a version number when bundled._
   view is always readable ("Show original" still renders the sender's exact
   design untouched).
 
-## [0.8.4] — 2026-07-08
+## [0.8.4] - 2026-07-08
 
 ### Added
 - **Automatic background deep-scan.** Office, PDF and archive attachments are now
   deep-scanned automatically when you open a message (macro de-obfuscation / PDF
-  stream decompression, in the backend — still never executed). Each attachment
+  stream decompression, in the backend - still never executed). Each attachment
   shows a **verdict badge** (Clean / Suspicious / Dangerous) once ready, and a
   high deep score **escalates the pre-click warning** even for a file the fast
   filename/magic check didn't flag. Results are cached per session.
@@ -54,14 +54,14 @@ _Work in progress lands here, then moves under a version number when bundled._
   bomb cap** (per-stream and total), so a crafted attachment can't hang or
   exhaust memory when scanned automatically.
 
-## [0.8.3] — 2026-07-08
+## [0.8.3] - 2026-07-08
 
 ### Added
 - **Deep macro analysis (Tier 2).** Office documents are now run through
   `oletools`/olevba in the backend: it **extracts and de-obfuscates** VBA macros
   (decoding `Chr()`/Base64/hex tricks) without ever executing them, so a
   disguised `Shell("powershell … DownloadString('http://…'))` dropper is shown in
-  plain language — auto-run triggers (AutoOpen/Document_Open), behaviour, and
+  plain language - auto-run triggers (AutoOpen/Document_Open), behaviour, and
   IOCs (URLs, dropped filenames), plus the de-obfuscated source. This is the
   answer to "how would it catch a Word macro": it reads and decodes the macro
   rather than guessing from the raw bytes.
@@ -69,19 +69,19 @@ _Work in progress lands here, then moves under a version number when bundled._
   compressed (FlateDecode) object streams. The backend now inflates those
   streams and re-scans them, so content the raw-byte scan can't see is caught.
 - The sandbox window shows a **Deep analysis** panel (macro/PDF findings), and
-  its verdict now folds in the backend deep score — so a compressed `.docm`
+  its verdict now folds in the backend deep score - so a compressed `.docm`
   macro (invisible to the in-window WASM byte scan) still reads as dangerous.
-- **`test-samples/macro-dropper.bas`** — an obfuscated VBA sample to see macro
+- **`test-samples/macro-dropper.bas`** - an obfuscated VBA sample to see macro
   de-obfuscation work.
 
 ### Note
 - True *detonation* (running the file in a real Windows VM and watching syscalls)
   is intentionally not attempted: WebAssembly has no OS/VBA runtime, so it's not
-  possible locally. This release does the strongest thing that is — full static
-  extraction + de-obfuscation — which catches the obfuscated droppers a plain
+  possible locally. This release does the strongest thing that is - full static
+  extraction + de-obfuscation - which catches the obfuscated droppers a plain
   keyword scan misses.
 
-## [0.8.2] — 2026-07-08
+## [0.8.2] - 2026-07-08
 
 ### Fixed
 - **Attachment right-click menu did nothing.** Every item is now wired correctly
@@ -90,18 +90,18 @@ _Work in progress lands here, then moves under a version number when bundled._
   window was quietly polling the local backend's `/health`, and each retry was
   counted as a blocked "external" attempt. The sandbox now never contacts the
   backend at all, loopback/local traffic is never treated as a phone-home, and
-  the counter is tied 1:1 to the visible, de-duplicated activity list — so a
+  the counter is tied 1:1 to the visible, de-duplicated activity list - so a
   number can never appear without matching entries you can read.
 
 ### Added
 - **Content-based flagging for documents.** A PDF or Office file with a clean
   name but active content inside (`/Launch`, embedded JavaScript, `/OpenAction`,
   embedded files, or VBA macros) now triggers the suspicious-file warning before
-  you open it — previously only the filename/type was checked pre-click.
-- **`test-samples/`** — inert `invoice.pdf.ps1` and `statement.pdf` you can drop
+  you open it - previously only the filename/type was checked pre-click.
+- **`test-samples/`** - inert `invoice.pdf.ps1` and `statement.pdf` you can drop
   into the sandbox to see detection work (they never execute).
 
-## [0.8.1] — 2026-07-08
+## [0.8.1] - 2026-07-08
 
 ### Added
 - **Attachment right-click menu** with Open, Open in sandbox, **Save to
@@ -122,12 +122,12 @@ _Work in progress lands here, then moves under a version number when bundled._
   phone-home attempts (which stay at zero for normal files) and shows a clear
   "No network, disk or system access" status otherwise.
 
-## [0.8.0] — 2026-07-08
+## [0.8.0] - 2026-07-08
 
 ### Added
 - **WebAssembly attachment sandbox.** Suspicious attachments can now be opened in
   a sealed, isolated window that analyzes the file entirely inside a raw
-  `wasm32` module with **zero access to your PC** — no filesystem, no network, no
+  `wasm32` module with **zero access to your PC** - no filesystem, no network, no
   backend. The module's only channel to the outside world is a set of host
   functions RaplMail logs, so everything the file *tries* to do (launch a
   program, run embedded JavaScript, phone home to a URL, fire a VBA macro) is
@@ -135,7 +135,7 @@ _Work in progress lands here, then moves under a version number when bundled._
 - **Live "what is this file trying to do" dashboard.** The sandbox window streams
   the payload's intercepted actions (launch / network / script / macro) as they
   are found, plus a static-analysis summary, a safe extracted-text preview, and a
-  raw hex view — a verdict badge scores the file 0–100.
+  raw hex view - a verdict badge scores the file 0-100.
 - **Suspicious-file warning.** Opening a flagged attachment (executable, macro
   doc, double extension like `payroll.pdf.exe`, or a file whose bytes don't match
   its name) now shows a warning with the reasons and a **3-second countdown** on
@@ -145,15 +145,15 @@ _Work in progress lands here, then moves under a version number when bundled._
   (command palette and Settings → General) lets you inspect any local file, not
   just mail attachments, in the same sealed sandbox.
 - **Execution-free threat heuristics (backend).** Attachments are scored while the
-  message loads — dangerous/macro extensions, decoy double extensions,
-  right-to-left-override filename spoofing, and magic-byte/extension mismatch —
+  message loads - dangerous/macro extensions, decoy double extensions,
+  right-to-left-override filename spoofing, and magic-byte/extension mismatch -
   so the reader can flag them before you click.
 
 ### Changed
 - Clicking a risky attachment no longer opens it in the OS immediately; it routes
   through the sandbox/warning flow first. Safe files open exactly as before.
 
-## [0.7.0] — 2026-07-08
+## [0.7.0] - 2026-07-08
 
 ### Added
 - **Custom colour presets + auto day/night themes.** Appearance now lets you save
@@ -176,7 +176,7 @@ _Work in progress lands here, then moves under a version number when bundled._
 - **Unsubscribe utility filters.** Sort the subscription audit by most received,
   most recent, least read, dormant, or name, and filter by sender.
 - **Serverless updates.** "Check for updates" now queries the GitHub Releases API
-  and points you at the latest download — no update server or signing feed.
+  and points you at the latest download - no update server or signing feed.
 - **Hidden developer mode.** The Debug section is hidden until you tap the version
   5 times (Android-style), and now includes copy-diagnostics, force-sync,
   recategorize, and a re-hide control.
@@ -184,9 +184,9 @@ _Work in progress lands here, then moves under a version number when bundled._
 ### Changed
 - **Smart Inbox header is now a breadcrumb.** The redundant static "Smart Inbox"
   title is gone; when you open a group (e.g. Promotions) the header shows it as a
-  breadcrumb so you can see — and collapse — the group you're inside.
+  breadcrumb so you can see - and collapse - the group you're inside.
 - **Scheduling & snooze local-only disclaimers** in the compose Later menu, the
-  Scheduled view, and settings — a reminder that these fire only while RaplMail is
+  Scheduled view, and settings - a reminder that these fire only while RaplMail is
   running and the PC is on.
 
 ### Fixed
@@ -197,23 +197,23 @@ _Work in progress lands here, then moves under a version number when bundled._
   group used to drop the whole card down mid-click; the group you're reading now
   stays put.
 
-## [0.6.4] — 2026-07-08
+## [0.6.4] - 2026-07-08
 
 ### Fixed
 - **Smart search now shows its results in the window** instead of closing with
   nothing to show. Clicking "Smart search" (or pressing Enter in Smart mode) runs
-  the meaning-based search on demand and lists the matches right in the panel —
+  the meaning-based search on demand and lists the matches right in the panel -
   pick one to open it (the inbox stays filtered behind), or Esc/X to dismiss. It
   still falls back through AI keyword extraction to plain keyword search, so you
   get results even without a local embedding index; when there genuinely are
   none, it says so rather than silently closing.
 
-## [0.6.3] — 2026-07-08
+## [0.6.3] - 2026-07-08
 
 ### Changed
 - **Rebuilt the search window to match the compose / AI windows.** It is now a
   solid floating panel you can drag and resize, and it **never closes on an
-  outside click** — only Esc, the close button, running a search, or opening a
+  outside click** - only Esc, the close button, running a search, or opening a
   result dismiss it. It also **keeps whatever you typed** across close/reopen, so
   an accidental click can't lose your query.
 - **Operator chips + contact suggestions.** Typing `from:` turns into a badge and
@@ -221,35 +221,35 @@ _Work in progress lands here, then moves under a version number when bundled._
   addresses; Enter/Tab or a click locks the operator in. Backspace on an empty
   field pops the last chip back to edit it.
 - Restyled the query field into a proper input surface (focus ring, rounded), and
-  Smart search no longer feels like it vanishes — the query persists for
+  Smart search no longer feels like it vanishes - the query persists for
   refining even after it runs.
 
-## [0.6.2] — 2026-07-08
+## [0.6.2] - 2026-07-08
 
 ### Fixed
 - **Could not type into the search palette.** The effect that seeds the palette
   from the search bar on open also read the query state, so Svelte treated that
-  state as a dependency and re-ran the effect on every keystroke — resetting the
+  state as a dependency and re-ran the effect on every keystroke - resetting the
   text and swallowing what you typed. It now runs only when the palette opens.
 
-## [0.6.1] — 2026-07-08
+## [0.6.1] - 2026-07-08
 
 ### Fixed
 - **Mail list scrolling is smooth again.** Rows sliding under the cursor while you
   scrolled were each firing their hover state, spring-animating the row-action
-  buttons and transitioning the row background on every row that passed by — a
+  buttons and transitioning the row background on every row that passed by - a
   rolling wave of animations that made scrolling feel sluggish regardless of how
   many mails were loaded. Hover is now suppressed while the list is actively
   scrolling and restored the moment it stops.
 - Dropped the per-row FLIP animation from the list. FLIP measured every mounted
   row on each list change, and measuring a `content-visibility` row forces the
-  browser to lay it out — so the two features fought each other on every scroll
+  browser to lay it out - so the two features fought each other on every scroll
   and background sync. The triaged row still animates out; only the gap-close
   slide is gone.
 
-## [0.6.0] — 2026-07-08
+## [0.6.0] - 2026-07-08
 
-### Added — Security
+### Added - Security
 - **New "Security" settings tab.** Gathers the privacy/screening controls in one
   place: suspicious-sender screening, a domain blocker, AI screening, plus the
   moved-in "Block tracking pixels", "Screener (first-time senders)", and "Startup
@@ -258,7 +258,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   for impersonation: a display name that names a known brand from the wrong domain
   (e.g. "LinkedIn" from an address on a random .ru domain), lookalike/non-standard
   domains, and names that cite a different domain than the real address. Flagged
-  mail gets a red shield in the list and a warning in the reader — it is never
+  mail gets a red shield in the list and a warning in the reader - it is never
   auto-deleted, so a false positive costs nothing.
 - **Domain / TLD blocker.** Block a whole domain (and its subdomains) or an entire
   TLD like `ru`. Matching mail is quarantined to Junk the moment it arrives.
@@ -268,19 +268,19 @@ _Work in progress lands here, then moves under a version number when bundled._
   mail the first time you open it. The verdict is cached so it isn't re-checked (no
   wasted tokens), and every surface carries the disclaimer that AI can make
   mistakes.
-- **Security Lab — a forensic panel for one message** (for IT admins / power users).
+- **Security Lab - a forensic panel for one message** (for IT admins / power users).
   Right-click a message (in the list or an open mail) → "Send to Security Lab" and
   Security → Lab shows a full passive workup:
-  - **Sender domain age** (RDAP) — a domain registered days ago is flagged as a
+  - **Sender domain age** (RDAP) - a domain registered days ago is flagged as a
     strong phishing signal.
-  - **Originating IP intel** — reverse DNS (PTR), ASN / network / geo, and a live
+  - **Originating IP intel** - reverse DNS (PTR), ASN / network / geo, and a live
     **DNSBL/blocklist check** (Spamhaus, SpamCop, Barracuda, SORBS).
-  - **DMARC alignment** — the DKIM `d=`/selector and Return-Path domain, each shown
+  - **DMARC alignment** - the DKIM `d=`/selector and Return-Path domain, each shown
     as aligned or not with the From domain (catches spoofs that still "pass").
   - **Timeline / clock-skew** between the `Date:` header and the newest relay.
-  - **Attachment analysis** — SHA-256 + MD5 + SHA-1, magic-byte type vs the claimed
+  - **Attachment analysis** - SHA-256 + MD5 + SHA-1, magic-byte type vs the claimed
     extension, dangerous-type / double-extension flags, and a peek inside archives.
-  - **Link analysis** — every URL + domain, punycode/homograph flags, and shortened
+  - **Link analysis** - every URL + domain, punycode/homograph flags, and shortened
     links (bit.ly, t.co, …) resolved to their true destination.
   - Parsed **Received hop chain**, sender **DNS** (MX/A/SPF/DMARC), SPF/DKIM/DMARC
     verdict, Reply-To/Return-Path mismatch, and the **raw headers**.
@@ -288,20 +288,20 @@ _Work in progress lands here, then moves under a version number when bundled._
     domain, or open a pre-filled report to `abuse@…`.
   - One-tap deep links to VirusTotal, urlscan, MXToolbox (+ blacklist), AbuseIPDB,
     whois, Google Safe Browsing, Talos, URLhaus, Hybrid Analysis and Shodan.
-  All passive — no active scanning of third-party hosts.
+  All passive - no active scanning of third-party hosts.
 - **Right-click menu inside an open email.** The reader now has a context menu
   (Reply / Reply all / Forward, copy sender or subject, show mail from sender, Send
   to Security Lab, Export .eml) that also works when you right-click inside the
   message body itself.
 
-## [0.5.15] — 2026-07-07
+## [0.5.15] - 2026-07-07
 
 ### Changed
 - **The reader header no longer stays pinned.** The subject/sender header and the
   status badges used to be anchored while only the message body scrolled, so on a
   tall header (authentication, mailing list, trackers, first-time sender) half the
   pane was header and there was barely any room to read. The reader now scrolls as
-  one document — the header scrolls away and the message gets the whole pane. The
+  one document - the header scrolls away and the message gets the whole pane. The
   body sizes itself to its content instead of scrolling inside a fixed frame.
 - **All the stacked status rows are now compact badges in one strip.** First-time
   sender, "looks like a mailing list", and "N tracking pixels blocked" were each a
@@ -319,14 +319,14 @@ _Work in progress lands here, then moves under a version number when bundled._
   "Done all" button.** On hover/focus the chevron now fades out as the Done-all
   button reveals, so the two controls don't visibly stack.
 
-## [0.5.14] — 2026-07-07
+## [0.5.14] - 2026-07-07
 
 ### Fixed
 - **Full-history sync no longer gets stuck (e.g. "44 of 69 folders" forever).**
   Empty folders (Trash/Junk/Drafts/empty labels) were never marked complete, so
   overall progress could never reach 100% and looked frozen even though there was
   nothing left to fetch. Empty folders are now completed immediately. Also, one
-  folder that errors can no longer wedge the whole backfill — it's skipped for the
+  folder that errors can no longer wedge the whole backfill - it's skipped for the
   cycle and retried on the next sweep.
 
 ### Changed
@@ -343,13 +343,13 @@ _Work in progress lands here, then moves under a version number when bundled._
     (Settings → Accounts → "Sync full history"; Settings → AI assistant →
     "Enable semantic search"), and both self-resume until complete.
 
-## [0.5.13] — 2026-07-07
+## [0.5.13] - 2026-07-07
 
 ### Fixed
 - **Installed Ollama models no longer show as "not installed" (and stop
   vanishing between restarts).** Root cause: RaplMail runs its own hidden Ollama
   server to stop console windows flashing, and in some setups that server reads a
-  different models directory than the one your tray/CLI Ollama pulls into — so a
+  different models directory than the one your tray/CLI Ollama pulls into - so a
   model you just pulled looked missing, and which directory "won" could change
   from one boot to the next. Now:
   - The model list is the **union** of what your real Ollama and the hidden
@@ -357,7 +357,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   - **Downloads go to your real Ollama**, so they land where it actually stores
     models and survive restarts.
   - RaplMail only reroutes inference to its hidden server when it can **prove**
-    that server has the same models as your real one — otherwise it uses your
+    that server has the same models as your real one - otherwise it uses your
     real Ollama directly (it may flash a console, but a model that disappears is
     far worse).
   - **Embeddings fall back to your real Ollama** if the hidden server doesn't
@@ -365,7 +365,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   - Escape hatch unchanged: Settings → AI assistant → turn off "Hide Ollama's
     console windows" to always talk to your own Ollama directly.
 
-## [0.5.12] — 2026-07-07
+## [0.5.12] - 2026-07-07
 
 ### Added
 - **Search palette.** Clicking into the search box (or pressing the search key /
@@ -387,14 +387,14 @@ _Work in progress lands here, then moves under a version number when bundled._
   search**), and backs the retries off (10 min) instead of logging a 404 every
   cycle. The embed status also reports whether the model is actually installed.
 
-## [0.5.11] — 2026-07-07
+## [0.5.11] - 2026-07-07
 
 ### Fixed
 - **Device sync no longer clobbers your settings.** The config side used to be
   last-writer-wins by *publish time*, so a second PC that turned sync on days
   later would publish its stale/default settings stamped "now" and overwrite the
   PC you'd actually configured. Settings, rules and signatures now move **only
-  when you explicitly push or pull them** — the automatic channel carries just
+  when you explicitly push or pull them** - the automatic channel carries just
   your statuses (done / snooze / pin), which are keyed by Message-ID and can't
   clash. Settings → Device sync gains **Push my settings** and **Pull from a
   device**, the latter with a snapshot picker (device, when it was pushed, when
@@ -408,7 +408,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   months/years-old message) couldn't be found because it was never pulled down.
   Settings → Accounts now has a **Sync full history** toggle that pages your
   entire back-catalogue into the local cache and search, oldest-ward, in the
-  background — with live progress (folders complete + messages cached) — until
+  background - with live progress (folders complete + messages cached) - until
   every folder is done. It reuses the warm sync connection and never fires
   notifications or runs rules on the old mail.
 - **UIDVALIDITY reset handling.** If a server resets a folder's UIDVALIDITY
@@ -416,7 +416,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   folder's stale cache and re-syncs cleanly. Your local done/snooze/pin survive
   because they're keyed by Message-ID, not UID.
 
-## [0.5.10] — 2026-07-06
+## [0.5.10] - 2026-07-06
 
 ### Fixed
 - **Inline images sent as `application/octet-stream` now render.** Some clients
@@ -427,30 +427,30 @@ _Work in progress lands here, then moves under a version number when bundled._
   "attachment-1/-2"). Fixes the case where 0.5.9 still showed empty image boxes.
 - **Self-heals mail blanked by 0.5.9.** 0.5.9 stripped unresolved `cid:` refs on
   re-cache, which could leave an inline image with an empty `src`. Such a body is
-  now detected on open, re-fetched and re-embedded, then re-cached — no resync.
+  now detected on open, re-fetched and re-embedded, then re-cached - no resync.
 
-## [0.5.9] — 2026-07-06
+## [0.5.9] - 2026-07-06
 
 ### Fixed
 - **Inline images now render in the reader.** Pasted/embedded images (typically
   from Outlook) carry a `Content-ID` but no filename, so the parser named them
-  after their `cid:` — which meant they slipped past the inline-image detection.
+  after their `cid:` - which meant they slipped past the inline-image detection.
   They now render inline as intended, and no longer clutter the attachment strip
   as phantom "CBE34110@…"-style attachments. Matching is also more forgiving:
   images are looked up by Content-ID, its local part, and filename, and both
   quoted and unquoted `cid:` references are rewritten.
 - **Already-cached mail with broken inline images self-heals.** A message whose
   body was cached before this fix (raw `cid:` refs, so broken images) is
-  re-fetched and re-embedded once on open, then re-cached — no full resync needed.
+  re-fetched and re-embedded once on open, then re-cached - no full resync needed.
 
 ### Changed
 - **Richer first-run onboarding.** The welcome wizard now introduces the app: a
   feature-highlights step (triage-to-done, Smart Inbox, privacy/tracker blocking,
   rules, drag-in signatures, snooze, local AI, keyboard-first) and a "make it
-  yours" step that tours the main settings areas — tap any to jump straight in.
+  yours" step that tours the main settings areas - tap any to jump straight in.
   The final step gets a prominent "Add an account" button.
 
-## [0.5.8] — 2026-07-05
+## [0.5.8] - 2026-07-05
 
 ### Fixed
 - **Drag a message onto a folder to move it now works.** The sender's favicon was
@@ -472,7 +472,7 @@ _Work in progress lands here, then moves under a version number when bundled._
 ### Changed
 - **Better local-model recommendations.** The one-click "Best" setup used to pull
   `gemma3:27b` (17 GB), which overflows a 16 GB GPU and runs slowly. It now pulls
-  `qwen2.5:14b` (9 GB) — excellent all-round quality that fits without spilling.
+  `qwen2.5:14b` (9 GB) - excellent all-round quality that fits without spilling.
   "Balanced" now pulls `mistral-nemo:12b` (fast and far more coherent than
   `mistral:7b`, and strong in Czech). The catalog notes now flag which models
   need more VRAM.
@@ -482,7 +482,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   Added automated tests covering every built-in AI command (summarize, draft,
   digest, triage, rewrite, ask, search, agent).
 
-## [0.5.7] — 2026-07-05
+## [0.5.7] - 2026-07-05
 
 ### Fixed
 - **AI assistant no longer dumps raw protocol text.** Asking a plain question
@@ -499,7 +499,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   answer. Summaries, questions and drafts are always plain answers and never
   trigger an unrequested action or rule.
 
-## [0.5.6] — 2026-07-05
+## [0.5.6] - 2026-07-05
 
 ### Fixed
 - **Ollama console windows are gone for good.** The earlier fixes reduced the
@@ -527,7 +527,7 @@ _Work in progress lands here, then moves under a version number when bundled._
   when managed mode is on, and the hidden server is shut down cleanly when the app
   exits or the toggle is turned off.
 
-## [0.5.5] — 2026-07-05
+## [0.5.5] - 2026-07-05
 
 ### Fixed
 - **"Free GPU" no longer flashes console windows.** It used to ping the configured
@@ -544,13 +544,13 @@ version-dependent (older builds ran model runners with a visible console). Updat
 Ollama (Settings → AI assistant → Update Ollama) and hitting Restart once, so the
 windowless app takes over, resolves them._
 
-## [0.5.4] — 2026-07-05
+## [0.5.4] - 2026-07-05
 
 ### Fixed
 - **Rules matched nothing (preview showed 0) even when mail clearly matched.** The
   match scan only looked at ~2000 rows in no particular order, so recent mail (a
   daily report) was never checked. Rules now match across the whole mailbox in the
-  database — accurate and fast.
+  database - accurate and fast.
 - **Sender rules match the display name, not just the address.** "from contains
   ZERV Reporter" now hits mail from `ZERV Reporter <tickety@…>`.
 - **Ollama no longer opens black console windows.** It's now launched via the
@@ -564,7 +564,7 @@ windowless app takes over, resolves them._
 - The AI's **Create rule** card now shows how many emails you already have would
   be affected (with a sample), so you can sanity-check the rule before creating it.
 
-## [0.5.3] — 2026-07-05
+## [0.5.3] - 2026-07-05
 
 ### Added
 - **The AI assistant can create rules.** Ask it to handle mail automatically
@@ -589,7 +589,7 @@ windowless app takes over, resolves them._
 ### Changed
 - The rule editor modal is larger and roomier.
 
-## [0.5.2] — 2026-07-05
+## [0.5.2] - 2026-07-05
 
 ### Added
 - **Start Ollama with RaplMail.** A checkbox in Settings > AI assistant brings the
@@ -602,16 +602,16 @@ windowless app takes over, resolves them._
 - The "Ollama installed but not running" state now offers a real Start action
   rather than just a hint.
 
-## [0.5.1] — 2026-07-05
+## [0.5.1] - 2026-07-05
 
 ### Fixed
 - **Signatures used the wrong account's default.** Composing from one account
   could insert another account's signature (it fell through to the first/global
   one). An account's own signature now always wins before any global fallback.
-- **Sluggish scrolling in Settings** — a redundant `zoom: 1` was forcing the
+- **Sluggish scrolling in Settings** - a redundant `zoom: 1` was forcing the
   browser off its fast-scroll path; `zoom` is now only applied when the UI scale
   is actually not 100%.
-- **The “Default” signature checkbox jumped when clicked** — checkboxes/radios
+- **The “Default” signature checkbox jumped when clicked** - checkboxes/radios
   were inheriting text-input padding + a focus ring; reset to clean native
   accent-colored controls (across all of Settings).
 - **Semantic indexing was extremely slow (0 GPU).** It embedded one message per
@@ -623,7 +623,7 @@ windowless app takes over, resolves them._
 - The email body now sits in a framed card (border, rounded corners, subtle
   shadow) matching the header and conversation cards.
 
-## [0.5.0] — 2026-07-05
+## [0.5.0] - 2026-07-05
 
 A big polish-and-capability release: the AI assistant grows hands, the whole app
 gets a visual pass, and the theming system is rebuilt.
@@ -634,7 +634,7 @@ gets a visual pass, and the theming system is rebuilt.
   “archive everything from noreply@…” and it proposes the exact action (with a
   sample of the affected mail) for you to confirm before anything runs. Backed by
   a new `/ai/agent` endpoint; actions execute through the existing bulk path.
-- **Mark all as seen** button on the mail-list header — clears every unread in the
+- **Mark all as seen** button on the mail-list header - clears every unread in the
   current view (including mail tucked inside Smart Inbox cards), with undo.
 - **Drag a message onto a folder** to move it (single or a whole multi-selection);
   the target folder highlights, and the move is queued + flushed to IMAP in the
@@ -643,21 +643,21 @@ gets a visual pass, and the theming system is rebuilt.
   Color · Editor): **True Black** (OLED), Contrast Dark/Light, Paper, Snow,
   Carbon, Graphite, Mono, Sepia, Ocean, Amethyst, Crimson. Neutral/black presets
   set the whole grey ramp, so “everything looks blue” is gone.
-- **Generate a palette from one color** — pick an accent + Dark/Light base and the
+- **Generate a palette from one color** - pick an accent + Dark/Light base and the
   full grey ramp is derived on that hue.
-- **Reading width** (Appearance) — cap email bodies to a centered column on wide
+- **Reading width** (Appearance) - cap email bodies to a centered column on wide
   screens (Full / Narrow / Medium / Wide; default Medium).
-- **Message density** (Appearance) — Compact / Comfortable / Cozy row spacing.
+- **Message density** (Appearance) - Compact / Comfortable / Cozy row spacing.
 - **Attachment type badges + image thumbnails** in the reader and thread view.
-- **Home-screen greeting tint** — the hero aurora shifts with the time of day.
+- **Home-screen greeting tint** - the hero aurora shifts with the time of day.
 - **Command palette**: fuzzy matching plus Home, Smart Inbox, Sent, Drafts,
   Screener, Paper Trail, Follow-ups, Calendar, Tickets, Scheduled, Newsletter
   Feed, and Mark-all-read.
 
 ### Changed
-- **Settings search finds the exact setting**, not just the category — results
+- **Settings search finds the exact setting**, not just the category - results
   jump to and briefly flash the specific control.
-- **Conversation view redesigned** — each reply is a rounded card tagged with the
+- **Conversation view redesigned** - each reply is a rounded card tagged with the
   sender’s colored avatar; your own replies align right (chat-style).
 - **Colored per-sender avatars** in the list (stable color per sender) instead of
   one identical accent disc; shared with the conversation view.
@@ -671,33 +671,33 @@ gets a visual pass, and the theming system is rebuilt.
   drag-to-folder; swipe-to-done remains a touch/pen gesture.
 
 ### Fixed
-- **Conversation threading “off” is respected** — with threading disabled, mail no
+- **Conversation threading “off” is respected** - with threading disabled, mail no
   longer opens as a thread (both the list-open and the reader auto-promote paths).
 - Arrow-up/down now opens the focused mail immediately (Spark-style), no separate
   Enter needed.
 - The folded sidebar’s non-clickable account circles are gone (a quiet hairline
   separates each account’s folders; hovering a rail folder shows its account).
 
-## [0.4.10] — 2026-07-04
+## [0.4.10] - 2026-07-04
 
 ### Added
 - **Live Ollama model search.** Settings → AI assistant searches Ollama's library
-  in real time — type “gemma” and get gemma, gemma2, **gemma3, gemma4**, … as
+  in real time - type “gemma” and get gemma, gemma2, **gemma3, gemma4**, … as
   they're published (no more stale hardcoded list). Pull or switch straight from
   the results, or search “qwen”, “deepseek”, “phi”, anything.
-- **One-click setup.** Three buttons — ⚡ Fast / ⚖ Balanced / 🚀 Best — each
+- **One-click setup.** Three buttons - ⚡ Fast / ⚖ Balanced / 🚀 Best - each
   switches you to Ollama, turns AI on, sets adaptive GPU, and pulls + activates
   the right model for that hardware. Nothing else to configure.
 
 ### Changed
-- Refreshed the recommended-models list (Gemma 3, not Gemma 2) — but it's now
+- Refreshed the recommended-models list (Gemma 3, not Gemma 2) - but it's now
   just a starting point; **live search covers the whole library**.
 
-## [0.4.9] — 2026-07-04
+## [0.4.9] - 2026-07-04
 
 ### Added
 - **Home-screen AI chat.** An “Ask AI about your inbox” card on Home: type plainly
-  (e.g. “shrň nové maily”) or tap **Recap new mail** — it opens the assistant with
+  (e.g. “shrň nové maily”) or tap **Recap new mail** - it opens the assistant with
   your unread inbox loaded as context and answers in your language.
 - **Tiered Ollama model picker.** Settings → AI assistant now lists recommended
   chat **and** embedding models grouped by the GPU they need (runs-anywhere /
@@ -706,27 +706,27 @@ gets a visual pass, and the theming system is rebuilt.
   with progress. Install-state is read live from Ollama; you can still pull any
   model by name.
 
-## [0.4.8] — 2026-07-04
+## [0.4.8] - 2026-07-04
 
 ### Added
 - **Adaptive GPU mode for Ollama.** A new “Free GPU after → Adaptive” option: the
   model loads into VRAM when the RaplMail window is focused and is freed a few
-  seconds after you switch away — unless you're mid-question. Ready when you are,
+  seconds after you switch away - unless you're mid-question. Ready when you are,
   off when you're not.
 - **Natural-language search.** With AI enabled, the advanced-search **Smart** mode
-  lets you type plainly — e.g. “najdi email kde se jedná o audi crash plate” — and
+  lets you type plainly - e.g. “najdi email kde se jedná o audi crash plate” - and
   the model turns it into a search. Uses your local embedding index if you built
   one, otherwise AI keyword extraction, then falls back to keyword search.
   (Requires an AI provider enabled.)
 
-## [0.4.7] — 2026-07-04
+## [0.4.7] - 2026-07-04
 
 ### Added
 - **Dedicated “AI assistant” settings tab.** The AI provider / Ollama controls
   (model, keep-alive, install/update, free-GPU) and semantic search moved out of
   General into their own tab, so it's easy to find.
 - **Right-click → “Add to AI chat.”** From the message list, add any email to the
-  assistant as context — it opens the assistant (or adds to it if it's already
+  assistant as context - it opens the assistant (or adds to it if it's already
   open) so you can ask across several messages.
 - **Clear-conversation button** in the AI assistant, to start a fresh chat
   without closing the window.
@@ -735,12 +735,12 @@ gets a visual pass, and the theming system is rebuilt.
 - **AI assistant input is multi-line now: Enter sends, Shift+Enter starts a new
   line.** The box grows as you type.
 
-## [0.4.6] — 2026-07-04
+## [0.4.6] - 2026-07-04
 
 ### Fixed
 - **AI now answers in your language, everywhere.** A universal “reply in the same
   language as the user” instruction is sent on every AI action (assistant, ask,
-  summary, reply), so writing in Czech gets a Czech answer — not English.
+  summary, reply), so writing in Czech gets a Czech answer - not English.
 - **AI assistant window keeps its size when you move it.** Resizing then dragging
   no longer snaps it back to the default width; it behaves like the compose window.
 - **Reply / Forward buttons honor the position setting in conversations too.** The
@@ -750,21 +750,21 @@ gets a visual pass, and the theming system is rebuilt.
 ### Added
 - **Aggressive GPU freeing for Ollama.** A “Free GPU after” setting (immediately /
   30s / 1m / 5m / 30m / keep loaded) controls how long Ollama keeps the model in
-  VRAM — set via the native `/api/chat` `keep_alive`. On top of that, RaplMail
+  VRAM - set via the native `/api/chat` `keep_alive`. On top of that, RaplMail
   unloads the model when you **close the AI assistant** and when you **leave a
   message** where you used AI, so the GPU frees as soon as you’re done.
 
-## [0.4.5] — 2026-07-04
+## [0.4.5] - 2026-07-04
 
 ### Fixed
 - **AI reply now answers in the email’s language** (it was always English). The
-  drafter is instructed to match the thread’s language — a Czech email gets a
+  drafter is instructed to match the thread’s language - a Czech email gets a
   Czech reply.
 - **No more “###CHIPS” gibberish in AI replies.** Small local models don’t emit
   the exact quick-reply marker we ask for (they write `###CHIPS|`, `CHIPS:`, …),
   so it leaked into the reply. Parsing now tolerates those variants and the
   marker never reaches the reply body; the quick-reply chips still work.
-- **The AI assistant, Catch-me-up, and AI reply now read the full email** — not
+- **The AI assistant, Catch-me-up, and AI reply now read the full email** - not
   just the subject and sender. Message bodies are fetched on demand (and cached)
   when building AI context, so answers are based on the real content.
 - **Ctrl+K (command palette) works while a message is open.** The email-preview
@@ -773,16 +773,16 @@ gets a visual pass, and the theming system is rebuilt.
 
 ### Added
 - **The AI assistant is one click away.** An AI button in the message-list header
-  opens it — seeded with the open message/conversation as context — alongside
+  opens it - seeded with the open message/conversation as context - alongside
   Ctrl+K and the reader’s Assistant chip.
 
-## [0.4.4] — 2026-07-04
+## [0.4.4] - 2026-07-04
 
 ### Fixed
 - **Ollama “model not found” (404).** If no model was explicitly chosen, the
   backend fell back to a default (`llama3.2`) you may not have pulled, so every
   AI call 404’d. RaplMail now auto-selects an installed model when the configured
-  one isn’t actually present — AI works out of the box once Ollama has any model.
+  one isn’t actually present - AI works out of the box once Ollama has any model.
 
 ### Added
 - **AI assistant is now a movable, minimizable window** (not a modal). It docks
@@ -792,26 +792,26 @@ gets a visual pass, and the theming system is rebuilt.
 - **Free the GPU on demand.** A “Free GPU (unload model)” button in Settings →
   AI assistant tells Ollama to evict the loaded model from VRAM immediately.
   Ollama keeps a model resident for a few minutes after each request (for fast
-  follow-ups) — this is the idle GPU use you may notice; now you can reclaim it
+  follow-ups) - this is the idle GPU use you may notice; now you can reclaim it
   instantly. Background semantic indexing also uses a 30-second keep-alive so it
   never pins the GPU.
 - **Manage Ollama from RaplMail.** The Ollama panel shows the running version and
   has an **Update Ollama** button (`winget upgrade`), alongside the existing
   install/pull controls.
 
-## [0.4.3] — 2026-07-04
+## [0.4.3] - 2026-07-04
 
 ### Added
 - **AI writing assistant in the composer.** An “✨ AI” button in the compose
   toolbar: rephrase, improve, shorten, expand, fix spelling & grammar, change
   tone (professional/friendly/formal/concise/confident), and translate to 8
-  languages — plus a freeform “Ask AI to…” box. Works on your selection or the
+  languages - plus a freeform “Ask AI to…” box. Works on your selection or the
   whole draft, in both rich-text and Markdown, and drops the result straight in.
 - **Ask about an email.** In the reader, type “tl;dr” (or anything) about the
   open message or thread, with one-tap TL;DR / Action items / Key points chips.
 - **AI assistant with context.** A chat window (Ctrl+K → “AI assistant”, the
   reader’s Assistant chip, or the composer’s AI menu) where you add emails as
-  context — the open message, a whole conversation, or the current list — and
+  context - the open message, a whole conversation, or the current list - and
   ask across them (“summarize these”, “who still needs a reply?”, “draft an
   answer from these three”). Multi-turn; copy an answer or turn it into a new email.
 - **Multi-language spell-check.** The composer has a spell-check language
@@ -822,20 +822,20 @@ gets a visual pass, and the theming system is rebuilt.
 ### Fixed
 - **AI buttons no longer hidden when using Ollama.** “Show AI buttons” had no
   effect with the keyless local Ollama provider because every gate still required
-  an API key. AI actions now appear whenever a provider is usable — a cloud key
+  an API key. AI actions now appear whenever a provider is usable - a cloud key
   **or** local Ollama.
 
-## [0.4.2] — 2026-07-04
+## [0.4.2] - 2026-07-04
 
 ### Added
 - **Spell check in the composer.** Misspellings are underlined as you type in the
-  subject, message body, and Markdown editor, with right-click corrections —
+  subject, message body, and Markdown editor, with right-click corrections -
   using your OS dictionaries for the current UI language. Native to the WebView,
   fully offline, no dependency. Toggle in Settings → General → Compose window.
-- **Ollama — first-class local AI.** A new keyless "Ollama (local, private)"
+- **Ollama - first-class local AI.** A new keyless "Ollama (local, private)"
   provider defaults to `http://localhost:11434` and powers all AI features
   (Catch-me-up, AI reply, triage scores, morning briefing) **completely
-  offline** — nothing leaves your machine. The setup panel detects Ollama,
+  offline** - nothing leaves your machine. The setup panel detects Ollama,
   lists your pulled models, pulls a model with a live progress bar, and offers
   a one-click install (winget) with a manual-download fallback.
 - **Semantic search (meaning-based).** Opt-in local vector search: find "that
@@ -849,11 +849,11 @@ gets a visual pass, and the theming system is rebuilt.
 - The AI assistant's "morning briefing", summaries, and triage now work with a
   keyless local provider (Ollama), not only with a cloud API key.
 
-## [0.4.1] — 2026-07-04
+## [0.4.1] - 2026-07-04
 
 ### Performance
 - **Smoother scrolling.** Hovering a row prefetches its body only after a 120 ms
-  dwell — previously, wheel-scrolling swept rows under the cursor and fired a
+  dwell - previously, wheel-scrolling swept rows under the cursor and fired a
   full-body fetch (+ JSON parse on the UI thread) for every row that passed,
   which is what made scrolling feel sluggish. Offscreen row placeholders also
   now match the real row height, so the scrollbar doesn't drift.
@@ -865,10 +865,10 @@ gets a visual pass, and the theming system is rebuilt.
   memory (JS heap, image/GPU caches) and restores normal behavior on show/focus.
   A tray-resident window previously kept hundreds of MB alive while invisible.
 
-## [0.4.0] — 2026-07-04
+## [0.4.0] - 2026-07-04
 
 ### Added
-- **Device sync over your own mailbox — local-first, no cloud, no server.**
+- **Device sync over your own mailbox - local-first, no cloud, no server.**
   Settings → **Device sync**: enable it, pick a **carrier account** (configured on
   both machines) and set a **sync passphrase** (the same on every device), and
   RaplMail keeps your installs in step. On a change (or **Sync now**), your
@@ -888,25 +888,25 @@ gets a visual pass, and the theming system is rebuilt.
     client. Verified by 8 unit tests + the full 36-test backend suite; end-to-end
     two-machine validation is left to the user.
 
-## [0.3.5] — 2026-07-04
+## [0.3.5] - 2026-07-04
 
 ### Changed
 - **Security shown as pills, not stacked rows.** A signed-and-authenticated
   message used to stack two or three full-width bars in the reader header
   (S/MIME + "sender authenticated" + trust/warnings), wasting vertical space.
   Trust, authentication, PGP and S/MIME now collapse into a single compact **pill
-  strip** — each pill shows its detail on hover and expands inline (with its
+  strip** - each pill shows its detail on hover and expands inline (with its
   action, e.g. Mark safe / Undo) when clicked.
 - **Spark-style recipient pills.** Compose **To:/Cc:** now render committed
-  recipients as name pills — a picked contact shows as "Jane Doe", not the raw
-  address — with backspace-to-edit and one-click removal. The value RaplMail
+  recipients as name pills - a picked contact shows as "Jane Doe", not the raw
+  address - with backspace-to-edit and one-click removal. The value RaplMail
   sends is unchanged (still a comma-separated address string); only the input got
   friendlier.
 - **`g` is now a quick-jump palette.** The invisible `g`+letter chord became a
   VS Code Ctrl+T-style palette: `g` opens a searchable list of destinations
   (Inbox, All Inboxes, Snoozed, Follow-ups, Paper Trail, Newsletter feed,
   Calendar, Scheduled, Settings) with hint letters shown. The single-letter
-  accelerators still fire instantly, so `g i` etc. stay fast — the menu just
+  accelerators still fire instantly, so `g i` etc. stay fast - the menu just
   makes them discoverable and type-to-filter.
 
 ### Added
@@ -921,15 +921,15 @@ gets a visual pass, and the theming system is rebuilt.
 - **List no longer flickers on sync.** Background syncs used to replace every row
   object wholesale, re-rendering the whole list (avatars, shields, focus) and
   making it blink each cycle. The refresh now merges results **by id in place**,
-  reusing the existing row object and only updating fields that changed — so
+  reusing the existing row object and only updating fields that changed - so
   unchanged rows don't re-render. Applied to the main list and expanded
   Smart-Inbox category cards.
 
-## [0.3.4] — 2026-07-04
+## [0.3.4] - 2026-07-04
 
 ### Changed
 - **Conversations open as conversations.** Clicking a threaded message now shows
-  the whole conversation immediately — the "View conversation" banner (and its
+  the whole conversation immediately - the "View conversation" banner (and its
   extra click) is gone. The message you clicked, the newest one, and unread
   replies auto-expand (and are marked read); the view scrolls to the one you
   opened. Message bodies auto-size into one natural scroll instead of fixed-height
@@ -948,16 +948,16 @@ gets a visual pass, and the theming system is rebuilt.
 
 ### Added
 - **Full keyboard triage.** New (rebindable) shortcuts: `r` reply, `f` forward,
-  `a` archive, `Delete` delete, `u` toggle read — `a`/`Delete`/`u` act on the
+  `a` archive, `Delete` delete, `u` toggle read - `a`/`Delete`/`u` act on the
   focused row, `r`/`f` on the open message or conversation. The `?` cheatsheet and
   Settings → Shortcuts cover them.
 - **One-click screening.** In the Screener, hovering a row now offers
-  **Approve / Block** directly — no need to open each first-time sender's mail.
+  **Approve / Block** directly - no need to open each first-time sender's mail.
 
 ### Performance
 - **Much lighter message queries.** Listing, searching, threads, bulk actions and
   the sync engine's flag reconcile no longer load the cached HTML/text bodies
-  they never used — previously every list page dragged up to 100 full bodies
+  they never used - previously every list page dragged up to 100 full bodies
   through the ORM, and every sync cycle re-read 400 per folder.
 - **Database tuned.** New composite (folder+date, category+date) and snooze
   indexes; a 128 MB shared memory-map for reads (per-connection heap cache
@@ -968,44 +968,44 @@ gets a visual pass, and the theming system is rebuilt.
   frozen out of garbage-collector scans; two unused libraries dropped from the
   bundle.
 
-## [0.3.3] — 2026-07-03
+## [0.3.3] - 2026-07-03
 
 ### Added
 - **Export .eml (Safe Export).** From a message's sender menu, download it as a
   `.eml` with internal routing headers (Received / X-Originating-IP / provider
   internals) and hidden tracking pixels stripped out first.
-- **S/MIME — end to end.** Building on the 0.3.2 foundation: the reader now shows
+- **S/MIME - end to end.** Building on the 0.3.2 foundation: the reader now shows
   an S/MIME shield for signed mail (with the signer) and decrypts encrypted mail
   with your imported certificate, and the composer gained **S/MIME sign / encrypt**
   toggles (shown once a certificate is set up) that send a proper signed/encrypted
   message. Sits alongside OpenPGP.
 
-## [0.3.2] — 2026-07-03
+## [0.3.2] - 2026-07-03
 
 ### Added
 - **Markdown compose.** A new **MD** button in the composer lets you write in
   Markdown (headings, bold/italic, inline + fenced code, links, lists, quotes);
   it's compiled to clean, inline-styled HTML on send, with a plain-text version
   attached automatically. Toggle back to rich text anytime.
-- **S/MIME (X.509) — foundation.** A new **Settings → S/MIME** tab imports your
+- **S/MIME (X.509) - foundation.** A new **Settings → S/MIME** tab imports your
   `.p12`/`.pfx` certificate + key and stores correspondents' certificates. Under
   the hood, the crypto engine (sign, encrypt, decrypt, inspect signed mail) is in
   place and unit-tested. Reading/writing S/MIME mail from the reader and composer
   is wired up in a follow-up.
 
-## [0.3.1] — 2026-07-03
+## [0.3.1] - 2026-07-03
 
 ### Added
 - **Multiple AI providers.** Settings → General → AI assistant now lets you pick
   Anthropic (Claude), OpenAI, or any OpenAI-compatible endpoint (Groq, OpenRouter,
-  Together, Ollama, LM Studio — with a base-URL field). Your key still stays local
+  Together, Ollama, LM Studio - with a base-URL field). Your key still stays local
   and calls go straight to the provider.
 - **Inline first-time screener.** Opening inbox mail from a sender you've never
   heard from now shows an "accept this sender?" bar right in the reader (Approve
-  adds them to contacts, Block creates a block rule) — no need to live in the
+  adds them to contacts, Block creates a block rule) - no need to live in the
   separate Screener view.
 - **Webhook & script rule actions.** Rules can now **POST to a webhook** (sends a
-  JSON summary of the message to a local URL — n8n / Node-RED / Home Assistant) or
+  JSON summary of the message to a local URL - n8n / Node-RED / Home Assistant) or
   **run a local script** (your command, with the mail details in `RAPLMAIL_*`
   environment variables). The mail is still delivered normally.
 - **Subscription Audit** (Settings → Utility). Lists every mailing list you get
@@ -1017,7 +1017,7 @@ gets a visual pass, and the theming system is rebuilt.
   from the body by default, so you don't re-arm the sender's trackers for whoever
   you forward to.
 
-## [0.3.0] — 2026-07-03
+## [0.3.0] - 2026-07-03
 
 ### Fixed
 - **Signature diacritics no longer mangled on send.** Outgoing mail was serialized
@@ -1030,7 +1030,7 @@ gets a visual pass, and the theming system is rebuilt.
   and inserts that account's signature automatically.
 - **Your reply shows up in the conversation.** Replies reliably thread onto the
   original (threaded via In-Reply-To), and the reader gained a **View conversation**
-  banner — works in Smart Inbox too — that live-updates when a sync lands, so a
+  banner - works in Smart Inbox too - that live-updates when a sync lands, so a
   reply you just sent appears without reopening the message.
 - **Smart Inbox groups stay put while you read.** Opening the last unread message
   of a group no longer makes the group card jump to the end of the day mid-read.
@@ -1039,7 +1039,7 @@ gets a visual pass, and the theming system is rebuilt.
 - **Link hygiene / tracking-parameter stripper.** Links in mail are cleaned before
   you click: `utm_*`, `fbclid`, `gclid`, `mc_eid`, `mkt_tok`, HubSpot/Meta/Matomo
   params, etc. are removed, and redirect wrappers (Google `/url?q=`, Outlook
-  SafeLinks, `l.facebook.com`, …) are unwrapped to — and hover-previewed as — the
+  SafeLinks, `l.facebook.com`, …) are unwrapped to - and hover-previewed as - the
   real destination. On by default; "Show original" leaves links untouched.
 - **Git patch / diff rendering in the reader.** `<pre>` blocks and pasted patches
   that look like a unified diff are auto-detected and color-coded (added / removed /
@@ -1050,7 +1050,7 @@ gets a visual pass, and the theming system is rebuilt.
   ≈ 10 MB, `temp_store=MEMORY`); idle IMAP pool connections are dropped after 10
   minutes instead of kept warm forever; the avatar warm-set is bounded.
 
-## [0.2.18] — 2026-07-03
+## [0.2.18] - 2026-07-03
 
 ### Added
 - **English + Czech localization.** A new in-app language setting (Auto / English
@@ -1066,7 +1066,7 @@ gets a visual pass, and the theming system is rebuilt.
   (ring + wordmark + dots) instead of a blank "Starting…" line while the backend
   warms up. Respects reduced-motion.
 - **"Mute notifications" mail rule.** A new rule action that lets mail arrive
-  normally but stops the ding + popup — mute by sender, domain, subject, or a
+  normally but stops the ding + popup - mute by sender, domain, subject, or a
   whole **category** (e.g. "mute notifications from newsletters"). Also a one-click
   **Mute notifications from sender** in the right-click menu. Different from "Mute
   sender", which hides the mail entirely.
@@ -1082,16 +1082,16 @@ gets a visual pass, and the theming system is rebuilt.
 
 ### Fixed
 - **No more empty notifications.** RaplMail sometimes popped a blank "New message"
-  with nothing new in the inbox — it was counting mail that landed in Sent /
+  with nothing new in the inbox - it was counting mail that landed in Sent /
   Archive / Junk / other folders (including copies synced from another device).
   Notifications now fire only for genuinely new **inbox** mail that you'll actually
   see (unread, not filtered away by a rule, not notification-muted).
 
-## [0.2.17] — 2026-07-02
+## [0.2.17] - 2026-07-02
 
 ### Changed
 - **"New" now means recent unread.** The Smart Inbox "N new" badge counts mail
-  that's **unread AND arrived in the last 3 days** — not every unread message
+  that's **unread AND arrived in the last 3 days** - not every unread message
   ever. So a group with 4 mails from today reads "4 new" instead of "75".
 - **Click the "N new" badge** to open just those new mails inline; a **"See all
   in this group"** link below them jumps to the whole category (read included).
@@ -1106,60 +1106,60 @@ gets a visual pass, and the theming system is rebuilt.
 
 ### Added
 - **New-mail sound.** A short chime plays when new mail arrives (even while the
-  app is focused). Pick from several tones — Ding, Chime, Marimba, Pop, Glass —
+  app is focused). Pick from several tones - Ding, Chime, Marimba, Pop, Glass -
   or turn it off, in Settings → General → Notifications, with a Play button to
   preview. Sounds are generated on the fly (no files, works offline).
 
-## [0.2.16] — 2026-07-02
+## [0.2.16] - 2026-07-02
 
 The design + deep-sweep release: a full design overhaul plus a logical sweep
-of the whole codebase (40 confirmed bugs fixed — several of them silent
+of the whole codebase (40 confirmed bugs fixed - several of them silent
 mail-loss or sync-breaking issues).
 
-### Fixed — smart groups & performance
+### Fixed - smart groups & performance
 - **Pressing `e` on a mail inside an expanded smart group marked the WHOLE
   group done.** Expanded group messages are now first-class rows: keyboard
   focus moves onto them, `↓`/`↑` walk through them, and `e` completes just the
   focused message. `e` on the group header itself still means "done all".
 - **Opening a smart group no longer loads the entire category.** It fetches
-  the newest 30, and a "Show more" control pages in the rest on demand —
+  the newest 30, and a "Show more" control pages in the rest on demand -
   expanding a 500-mail Newsletters group is instant now. Background sync
   refreshes only what's on screen, not the whole category.
 - **Scrolling feels light again.** The sticky date headers used a blur effect
-  that forced a repaint on every scroll frame — removed. Off-screen rows are
+  that forced a repaint on every scroll frame - removed. Off-screen rows are
   now skipped entirely by the renderer, the list mounts 30 rows and streams
   in more as you scroll, and sender logos load lazily.
 - **Mail-list actions no longer lag the whole app.** Two root causes: every
   settings change rebuilt the entire settings object (so even collapsing the
   sidebar recomputed hundreds of per-row values), and the list rendered *all*
   messages and measured every row for the removal animation on each triage
-  action. Settings updates are granular now — `e`-streaks, collapsing the
+  action. Settings updates are granular now - `e`-streaks, collapsing the
   sidebar, and view switches feel instant.
 - **Undoing a done inside a group** restores the message into the group (it
   used to stay hidden until a resync, or reappear in the wrong list).
 
-### Changed — smart group design
+### Changed - smart group design
 - Group headers are **flat and quiet** (Spark-style): a small icon, the group
-  name, a "N new" badge, the count, and one muted line of top senders — no
+  name, a "N new" badge, the count, and one muted line of top senders - no
   boxes, no chips. Expanded messages sit right under the header with a subtle
   accent guide, and a "Show more" control pages in older mail.
 
-### Changed — the 1.0 design
+### Changed - the 1.0 design
 - **New design system.** A refreshed dark palette (deeper background, cleaner
   surfaces, richer accent), a matching refined light theme, layered shadows,
   hairline borders, consistent focus rings, and fast, decisive animations
-  everywhere (90–200 ms — nothing floaty). Buttons, inputs, scrollbars, menus,
+  everywhere (90-200 ms - nothing floaty). Buttons, inputs, scrollbars, menus,
   and dialogs all share the same language now.
-- **Sidebar reworked.** Nav items are grouped into sections — your inboxes on
+- **Sidebar reworked.** Nav items are grouped into sections - your inboxes on
   top, then **Mail** (Drafts, Sent, Snoozed, Follow-ups, Paper Trail), then
-  **Tools** (Calendar, Tickets, Scheduled, Newsletter Feed) — instead of one
+  **Tools** (Calendar, Tickets, Scheduled, Newsletter Feed) - instead of one
   long flat list. The active item gets a clear accent pill, the Smart Inbox
   shows a live unread badge, folder unread counts are proper badges, sync/queue
   status moved to a compact strip at the bottom, and the footer is a tidy
   icon row (Sync · Layout · Settings). Compose shows its keyboard shortcut.
   Drag-reordering still works (within a section).
 - **Settings reworked.** The 15 horizontal tabs became a searchable vertical
-  sidebar — like every modern app — with the section title above the content.
+  sidebar - like every modern app - with the section title above the content.
 - **Smart Inbox cards** now show a bright "N new" badge when a group has unread
   mail (that's what floats it to the top), and expanded cards refresh live as
   new mail syncs instead of going stale.
@@ -1168,13 +1168,13 @@ mail-loss or sync-breaking issues).
   command palette) pop in with a blurred backdrop; empty states have friendly
   icon tiles; row action buttons spring in on hover.
 
-### Fixed (logical sweep — mail safety)
+### Fixed (logical sweep - mail safety)
 - **Sending two messages quickly could silently lose the first.** With undo-send
   on, queuing a second send while the first was still counting down overwrote
-  the first one's state — it was never delivered, with no error. Now the first
+  the first one's state - it was never delivered, with no error. Now the first
   message is flushed out immediately when a second send starts.
 - **The pop-out compose window could double-send.** A separate compose window
-  ran the full app boot, including "recover interrupted send" — which could
+  ran the full app boot, including "recover interrupted send" - which could
   deliver a message the main window was still counting down (you'd send twice,
   and Cancel did nothing). It also duplicated new-mail notifications.
 - **Sent messages no longer reappear in the compose Drafts menu.** Closing the
@@ -1182,9 +1182,9 @@ mail-loss or sync-breaking issues).
   draft, so the Drafts list slowly filled with already-sent mail.
 - **Signature and pasted images actually reach recipients again.** A regression
   dropped inline images from every normal send (they were only attached when
-  the mail carried a calendar invite — and even then to the wrong MIME part).
+  the mail carried a calendar invite - and even then to the wrong MIME part).
 
-### Fixed (logical sweep — sync & accounts)
+### Fixed (logical sweep - sync & accounts)
 - **The "FOREIGN KEY constraint failed" sync crash** after removing/re-adding
   an account: a sync already in flight kept inserting mail against the deleted
   account's folders. The sync now detects the deletion, rolls back cleanly and
@@ -1200,32 +1200,32 @@ mail-loss or sync-breaking issues).
   error retried 8× in the queue while the server-side move had already
   happened). Same root cause fixed in folder deletion.
 - **Body search now works with "encrypt cached mail" enabled** (it was matching
-  against ciphertext and finding nothing) — body terms go through the full-text
+  against ciphertext and finding nothing) - body terms go through the full-text
   index, which is built from plaintext.
 
-### Fixed (logical sweep — correctness & UX)
-- **Scheduled sends and read-receipt times showed in UTC** (2 h off in Prague) —
+### Fixed (logical sweep - correctness & UX)
+- **Scheduled sends and read-receipt times showed in UTC** (2 h off in Prague) -
   same bug the calendar had; they now carry the UTC marker.
 - **Fast navigation can no longer show the wrong list/message.** Every async
   load (message list, reader, conversation view, calendar grid, rule preview)
-  now ignores stale responses — previously a slow search could overwrite the
+  now ignores stale responses - previously a slow search could overwrite the
   folder you'd already switched to, and a slow message fetch could replace the
   message you were reading (Reply would then quote the wrong mail!).
 - **Confirm dialogs own the keyboard.** Pressing Enter in a "Delete folder?"
   dialog also opened the focused message; `e` marked mail done behind the
   dialog. All keys are now swallowed while a dialog is up.
 - **Swiping a row to Done no longer also opens it.**
-- **Sync button couldn't get stuck anymore** — one failing account aborted the
+- **Sync button couldn't get stuck anymore** - one failing account aborted the
   loop and left "Syncing…" spinning forever with the button disabled.
 - **A single-day all-day event was invisible** in the calendar, week strip, and
   Home (start == end with an exclusive end matched no day). New all-day events
   now store a proper exclusive end date.
 - **New mail arriving while the connection was briefly down was invisible until
-  the next sync** — the app now catches up automatically when the event stream
+  the next sync** - the app now catches up automatically when the event stream
   reconnects.
 - **A setting toggled right before quitting** could silently revert on the next
   launch (the save was debounced and lost); it's now flushed on exit.
-- **The remaining "tauri.localhost says" popups are gone** — "send without
+- **The remaining "tauri.localhost says" popups are gone** - "send without
   subject?" and "no attachment attached" now use the proper in-app dialog.
 - **More small fixes:** command-palette "Go to All Inboxes / Snoozed" now
   actually leaves Settings/Calendar; "Manage all rules →" opens the right
@@ -1241,7 +1241,7 @@ mail-loss or sync-breaking issues).
   change no longer silently breaks auto-unlock; two confirmation dialogs
   triggered back-to-back no longer hang the second one.
 
-## [0.2.15] — 2026-07-01
+## [0.2.15] - 2026-07-01
 
 ### Changed
 - **Smart Inbox groups behave properly now.** A group with **new (unread) mail
@@ -1255,7 +1255,7 @@ mail-loss or sync-breaking issues).
 - **Faster mail delivery.** The fallback sync poll dropped from 120s to 60s (on
   top of the instant IMAP IDLE push), so new mail shows up sooner.
 
-## [0.2.14] — 2026-07-01
+## [0.2.14] - 2026-07-01
 
 ### Fixed
 - **Calendar/Home event times were 2 hours off** (showing UTC instead of local).
@@ -1263,24 +1263,24 @@ mail-loss or sync-breaking issues).
   so the app read them as local time. They now carry a UTC offset and render in
   your local zone (both the Calendar and the Home tab's agenda).
 
-## [0.2.13] — 2026-07-01
+## [0.2.13] - 2026-07-01
 
 ### Fixed
 - **Sync broke** ("cannot DELETE from contentless fts5 table") when indexing new
-  mail into the search index — it aborted the folder on the first new message.
+  mail into the search index - it aborted the folder on the first new message.
   Indexing is now resilient on older databases (the replace-delete is wrapped in
   a savepoint so it can't break the message insert), and new databases create the
   search index with delete support so re-indexing is clean.
 
-## [0.2.12] — 2026-07-01
+## [0.2.12] - 2026-07-01
 
 ### Changed
 - When a Microsoft Graph send token can't be acquired, the Debug log now shows
   the exact reason from Microsoft (the `AADSTS…` code) instead of a generic
-  "re-authentication required" — so a consent vs propagation vs stale-token
+  "re-authentication required" - so a consent vs propagation vs stale-token
   problem can be told apart.
 
-## [0.2.11] — 2026-07-01
+## [0.2.11] - 2026-07-01
 
 ### Changed
 - **Microsoft 365 now sends via Graph first.** Instead of always attempting SMTP
@@ -1292,19 +1292,19 @@ mail-loss or sync-breaking issues).
 - SMTP protocol errors (e.g. the 535 "SMTP disabled") were being caught by the
   socket-error handler first (because `SMTPException` subclasses `OSError`), so
   the intended handling never ran. Reordered so send errors are classified
-  correctly — a genuine bad password is retried, a tenant-disabled/permission
+  correctly - a genuine bad password is retried, a tenant-disabled/permission
   error is reported clearly.
 
-## [0.2.10] — 2026-07-01
+## [0.2.10] - 2026-07-01
 
 ### Added
-- **Reorder accounts** in Settings → Accounts (▲/▼) — the order flows through to
+- **Reorder accounts** in Settings → Accounts (▲/▼) - the order flows through to
   the sidebar and unified views.
 - **Remove an account from the sidebar**: enter "Manage folders" and each account
   gets a remove (🗑) button, with an in-app confirm.
 
 ### Fixed
-- **Adding a Google account** failed with "could not determine account email" —
+- **Adding a Google account** failed with "could not determine account email" -
   the sign-in now requests the identity scopes needed to read your address, and
   tolerates Google's scope reordering that previously aborted the flow.
 - **Microsoft 365 send** with SMTP disabled: RaplMail now decides based on the
@@ -1313,30 +1313,30 @@ mail-loss or sync-breaking issues).
   queuing a doomed retry, and a Graph permission problem is reported rather than
   retried forever.
 
-## [0.2.9] — 2026-07-01
+## [0.2.9] - 2026-07-01
 
 ### Fixed
 - **Account removal still failed** on the full-text search index (`cannot DELETE
-  from contentless fts5 table`). Removal no longer touches that index — leftover
-  search entries for deleted mail are harmless (they simply stop resolving) — so
+  from contentless fts5 table`). Removal no longer touches that index - leftover
+  search entries for deleted mail are harmless (they simply stop resolving) - so
   accounts now delete cleanly.
 
-## [0.2.8] — 2026-07-01
+## [0.2.8] - 2026-07-01
 
 ### Fixed
 - **Account removal failing** ("Failed to fetch"). Deleting an account whose mail
   included calendar invites hit a foreign-key ordering bug (calendar events were
   removed after their messages). Deletion now happens in the correct dependency
   order inside one transaction, rolling back with a clear error if anything goes
-  wrong — so an account always removes cleanly.
+  wrong - so an account always removes cleanly.
 
-## [0.2.7] — 2026-07-01
+## [0.2.7] - 2026-07-01
 
 ### Changed
 - **Compose always opens a fresh message.** It no longer silently reopens your
   last draft. Instead, a **Drafts** menu in the compose header lists your recent
   drafts (by subject, or recipient when there's no subject) so you restore one on
-  demand — and can delete any from the list.
+  demand - and can delete any from the list.
 - **No more "tauri.localhost says" popups.** Confirmations (removing an account,
   applying a bulk rule, discarding a draft) now use a proper in-app dialog.
 
@@ -1346,7 +1346,7 @@ mail-loss or sync-breaking issues).
   Removal now cleanly deletes the account, its cached mail/folders/events, and
   its credentials regardless of token state.
 
-## [0.2.6] — 2026-07-01
+## [0.2.6] - 2026-07-01
 
 ### Added
 - **Drafts** now has its own sidebar item, showing draft messages across all
@@ -1357,8 +1357,8 @@ mail-loss or sync-breaking issues).
 ### Changed (Settings organization)
 - **Quick-action buttons** moved from General to **Appearance** (it's about how
   the UI looks).
-- **General** is now grouped under scannable headers — *Mail behavior*,
-  *Notifications & scheduling*, *Account & system*, *Security & privacy* —
+- **General** is now grouped under scannable headers - *Mail behavior*,
+  *Notifications & scheduling*, *Account & system*, *Security & privacy* -
   instead of one long list.
 
 ### Changed
@@ -1383,7 +1383,7 @@ mail-loss or sync-breaking issues).
   fix it (reconnect with "Sign in with Microsoft", or have the admin re-enable
   SMTP) instead of silently retrying a doomed send.
 
-## [0.2.5] — 2026-07-01
+## [0.2.5] - 2026-07-01
 
 ### Fixed
 - **Debug log now shows exception details.** Errors that carried a stack trace
@@ -1391,12 +1391,12 @@ mail-loss or sync-breaking issues).
   called a method that only exists on a `Formatter`). Tracebacks are now captured
   in full, and lines with mismatched format args no longer vanish.
 
-## [0.2.4] — 2026-07-01
+## [0.2.4] - 2026-07-01
 
 ### Added
 - **Debug window** (Settings → Debug): a live tail of the backend log with a
   level filter (All/INFO/WARNING/ERROR), pause, auto-scroll, copy-to-clipboard,
-  and clear — plus a per-account **health panel** (idle / syncing / ok / error
+  and clear - plus a per-account **health panel** (idle / syncing / ok / error
   dots, last-sync time, IDLE state, and the exact error text). Logs stay in
   memory only; nothing is written to disk or leaves the machine.
 - **Microsoft Graph send fallback.** When an M365 send is rejected with
@@ -1422,11 +1422,11 @@ mail-loss or sync-breaking issues).
 - Added INFO logging to the send and per-account sync paths (with timings), so
   stalls and failures are visible in the Debug window.
 
-## [0.2.3] — 2026-07-01
+## [0.2.3] - 2026-07-01
 
 ### Added
 - **RaplDesk API v2 integration.** The Tickets view now uses v2:
-  - Identity is resolved automatically via `GET /me` — no more hand-typing a
+  - Identity is resolved automatically via `GET /me` - no more hand-typing a
     numeric user id. Replies and new tickets post `user_id: "me"`.
   - Tabs driven by the key's identity: **All · My tickets · My dept · Unassigned
     · Created** (server-resolved `scope`, no ids sent from the client).
@@ -1440,9 +1440,9 @@ mail-loss or sync-breaking issues).
 
 Summarized from git history; these predate the detailed changelog.
 
-- **0.2.x** — auto-heal IMAP settings; M365 fixes and cross-device "Done" status
+- **0.2.x** - auto-heal IMAP settings; M365 fixes and cross-device "Done" status
   sync; settings redesign; calendar add-event.
-- **0.1.x** — encrypted full export/import (`.rmail`); macOS build fixes; Gmail
+- **0.1.x** - encrypted full export/import (`.rmail`); macOS build fixes; Gmail
   support; new-message bug fixes; build-script fixes (BOM/encoding); README;
   initial quality-of-life passes.
-- **0.1.0** — initial RaplMail commit.
+- **0.1.0** - initial RaplMail commit.

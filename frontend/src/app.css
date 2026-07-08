@@ -12,7 +12,7 @@
   --danger: #f26d79;
   --warning: #f5b83d;
 
-  /* ── Derived tones — computed from the palette so custom themes propagate ── */
+  /* ── Derived tones - computed from the palette so custom themes propagate ── */
   --faint: color-mix(in srgb, var(--muted) 64%, var(--bg));
   --accent-hover: color-mix(in srgb, var(--accent) 84%, #ffffff);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -34,7 +34,7 @@
   --radius: 11px;
   --radius-sm: 7px;
 
-  /* ── Motion — fast, decisive, never floaty ── */
+  /* ── Motion - fast, decisive, never floaty ── */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring: cubic-bezier(0.3, 1.25, 0.4, 1);
   --t-fast: 90ms;
@@ -100,7 +100,7 @@ input:focus, textarea:focus, select:focus {
 select option { background: var(--surface-2); color: var(--text); }
 input::placeholder, textarea::placeholder { color: var(--faint); }
 /* Checkboxes / radios must NOT inherit the text-input padding, border, or focus
-   ring above — that made them oversized and made the "Default" checkbox visibly
+   ring above - that made them oversized and made the "Default" checkbox visibly
    jump/re-ring on click. Render them as native accent-colored controls. */
 input[type="checkbox"], input[type="radio"] {
   width: auto; padding: 0; margin: 0; border: none; background: none;

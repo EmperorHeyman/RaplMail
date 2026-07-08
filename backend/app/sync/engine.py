@@ -77,7 +77,7 @@ def build_provider(account: Account) -> ImapSmtpProvider:
         imap_host, imap_port = account.imap_host, account.imap_port
         smtp_host, smtp_port = account.smtp_host, account.smtp_port
         # Heal missing server settings (e.g. an account imported without an SMTP
-        # host — the cause of "getaddrinfo failed" on send) from autodiscover.
+        # host - the cause of "getaddrinfo failed" on send) from autodiscover.
         if not smtp_host or not imap_host:
             try:
                 from app.providers.autodiscover import discover
@@ -304,7 +304,7 @@ class SyncManager:
         indexed messages each cycle. No-op unless the user turned semantic search
         on; index_pending() silently returns 0 if the embedding endpoint is down,
         so a stopped Ollama never spams errors. Bulk (re)indexing of a big backlog
-        is the explicit /ai/embed/reindex job — this tick just keeps up with new mail."""
+        is the explicit /ai/embed/reindex job - this tick just keeps up with new mail."""
         if not get_secret_store().is_unlocked:
             return
         loop = asyncio.get_running_loop()
@@ -336,7 +336,7 @@ class SyncManager:
             return  # cannot decrypt credentials yet
         with Session(get_engine()) as session:
             account_ids = list(session.exec(select(Account.id).where(Account.enabled == True)))  # noqa: E712
-        # Sync accounts concurrently (was one-at-a-time) — each runs in its own
+        # Sync accounts concurrently (was one-at-a-time) - each runs in its own
         # thread, so N mailboxes refresh in parallel instead of serially.
         await asyncio.gather(*(self.sync_account(aid) for aid in account_ids), return_exceptions=True)
         self._ensure_idle(account_ids)  # keep near-instant IDLE watchers in sync
@@ -398,7 +398,7 @@ class SyncManager:
                     try:
                         new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen)
                     except IntegrityError:
-                        # FK failure mid-sync — typically the account (or folder)
+                        # FK failure mid-sync - typically the account (or folder)
                         # was deleted while this sync was in flight. Roll back so
                         # the session isn't poisoned for the remaining folders.
                         fpath = folder.path  # read before rollback expires the object
@@ -411,7 +411,7 @@ class SyncManager:
                     except Exception as exc:
                         # A folder the server says doesn't exist / can't be selected
                         # (e.g. Gmail's "[Gmail]" \Noselect parent, stored by an
-                        # older build) — drop it so it stops erroring every sync.
+                        # older build) - drop it so it stops erroring every sync.
                         emsg = str(exc)
                         if "NONEXISTENT" in emsg or "Unknown Mailbox" in emsg:
                             log.info("pruning unselectable folder %r (account %s)", folder.path, account_id)
@@ -434,7 +434,7 @@ class SyncManager:
             finally:
                 provider.close()
             session.commit()
-            # Refresh the smart address book — throttled, since it scans all mail
+            # Refresh the smart address book - throttled, since it scans all mail
             # and we don't want it hogging the CPU on every sync tick.
             import time
             now = time.time()
@@ -480,7 +480,7 @@ class SyncManager:
             select(Folder).where(Folder.account_id == account.id))}
         for info in provider.list_folders():
             # The device-sync carrier folder is managed out-of-band and must stay
-            # invisible — never give it a Folder row (which would list it in the UI).
+            # invisible - never give it a Folder row (which would list it in the UI).
             if info.name == SYNC_FOLDER_DEFAULT or (info.path or "").endswith(SYNC_FOLDER_DEFAULT):
                 continue
             folder = existing.get(info.path)
@@ -513,7 +513,7 @@ class SyncManager:
             # Restore durable local state by Message-ID.
             self._restore_state(session, account, msg)
             # Muted conversation: auto-done new replies so they never hit the
-            # inbox — but only when the sender was part of the muted conversation
+            # inbox - but only when the sender was part of the muted conversation
             # (or it's a legacy subject-only mute with no recorded participants),
             # so a common subject line doesn't mute unrelated strangers.
             if muted and not msg.is_done and msg.thread_id in muted:
@@ -528,16 +528,16 @@ class SyncManager:
             notify_ok = True
             if folder.role in (FolderRole.inbox, FolderRole.other) and not msg.is_done:
                 # Domain blocklist quarantines on arrival; the heuristic screen only
-                # flags. A quarantined mail is gone from the inbox — skip rules +
+                # flags. A quarantined mail is gone from the inbox - skip rules +
                 # notification for it.
                 if self._screen_message(session, account, folder, msg, provider, screen):
                     continue
                 notify_ok = self._apply_rules(session, account, folder, msg, provider, rules)
-            # Collect a preview for desktop notifications — ONLY for mail the user
+            # Collect a preview for desktop notifications - ONLY for mail the user
             # will actually see arrive: a still-unread inbox message that survived
             # the rules (not moved/deleted/auto-done) and isn't notification-muted.
             # `previews` doubles as the notify count (len), so notifications track
-            # genuine inbox arrivals — not new mail that landed in Sent/Archive/Junk
+            # genuine inbox arrivals - not new mail that landed in Sent/Archive/Junk
             # or was filtered away, which used to fire empty "New message" popups.
             if (previews is not None and folder.role == FolderRole.inbox
                     and not msg.is_done and notify_ok):
@@ -567,7 +567,7 @@ class SyncManager:
         if server_uv is None:
             return
         if folder.uidvalidity is None:
-            folder.uidvalidity = server_uv        # first time we've seen it — record
+            folder.uidvalidity = server_uv        # first time we've seen it - record
             session.add(folder)
             return
         if server_uv == folder.uidvalidity:
@@ -584,7 +584,7 @@ class SyncManager:
     def _purge_folder_messages(self, session: Session, folder: Folder) -> None:
         """Delete a folder's cached messages (and their derived calendar events)
         but keep the Folder row. FTS is contentless (keyed by rowid), so orphaned
-        index entries simply don't resolve — harmless, same as account deletion."""
+        index entries simply don't resolve - harmless, same as account deletion."""
         from sqlalchemy import delete as sa_delete
 
         from app.models import CalendarEvent
@@ -596,7 +596,7 @@ class SyncManager:
     def _backfill_folder(self, session: Session, account: Account, folder: Folder,
                          provider, muted: dict | None = None, limit: int | None = None) -> int:
         """Page ONE window of older mail (below the current backfill cursor) into
-        the cache. Historical mail: no rules, no notifications — just upsert +
+        the cache. Historical mail: no rules, no notifications - just upsert +
         restore local state (+ honor muted threads). Returns the count fetched; 0
         (and sets backfill_done) once the folder is fully paged."""
         if folder.backfill_done:
@@ -610,7 +610,7 @@ class SyncManager:
             ).one()
             if not lowest:
                 # No mail in this folder at all. Forward sync already ran this cycle,
-                # so there's genuinely nothing older to page — mark it done so an
+                # so there's genuinely nothing older to page - mark it done so an
                 # empty folder (Trash/Junk/Drafts/an empty label…) can't hold overall
                 # progress below 100% forever.
                 folder.backfill_done = True
@@ -653,14 +653,14 @@ class SyncManager:
         """Page older history for one account if the user enabled it. Runs windows
         back-to-back within a wall-clock budget, then yields; re-runs each sync
         until every folder is fully paged. The per-folder cursor always descends,
-        so a window that fetches 0 NEW messages (already cached) still advances —
+        so a window that fetches 0 NEW messages (already cached) still advances -
         we only stop a folder when it marks itself done."""
         from app.api.settings import _get_blob
         if not _get_blob(session).get("backfillHistory"):
             return 0
         deadline = time.monotonic() + self.BACKFILL_SECONDS_PER_CYCLE
         fetched = 0
-        errored: set[int] = set()   # folders that errored THIS cycle — retry next sweep
+        errored: set[int] = set()   # folders that errored THIS cycle - retry next sweep
         while time.monotonic() < deadline:
             stmt = select(Folder).where(Folder.account_id == account.id,
                                         Folder.backfill_done == False)  # noqa: E712
@@ -689,7 +689,7 @@ class SyncManager:
     def _resync_flags(self, session: Session, account: Account, folder: Folder, provider) -> None:
         """Pull FLAGS for recent existing messages and reconcile seen/done state
         that may have changed on another device (e.g. the RaplMailDone keyword)."""
-        # Flag reconcile touches only flag columns — loading the cached bodies
+        # Flag reconcile touches only flag columns - loading the cached bodies
         # for 400 rows per folder per cycle was the sync loop's biggest churn.
         from sqlalchemy.orm import defer
         rows = session.exec(
@@ -708,7 +708,7 @@ class SyncManager:
             if flags is None:
                 continue
             # \Seen is a standard flag every server keeps, and we push local
-            # changes too — so the server copy is authoritative both ways and
+            # changes too - so the server copy is authoritative both ways and
             # read state converges across devices.
             server_seen = "\\Seen" in flags
             if server_seen != m.is_seen:
@@ -877,7 +877,7 @@ class SyncManager:
         """Anti-phishing screening on a freshly-synced inbox/other message.
 
         Returns True if the message was QUARANTINED (moved to Junk / deleted) by
-        the domain blocklist — the caller then skips rules + notification for it.
+        the domain blocklist - the caller then skips rules + notification for it.
         Otherwise returns False; if the heuristic screen is on and the headers look
         spoofed, the message is left in place but flagged `suspicious` (a badge)."""
         if not screen:
@@ -909,7 +909,7 @@ class SyncManager:
         A matched rule always suppresses the "you've got new mail" ding: the mail
         was moved/deleted/read/marked-done, or the user explicitly muted its
         notifications. `mute_notifications` is the only action that leaves the
-        message fully delivered (still unread, still in the inbox) — it just
+        message fully delivered (still unread, still in the inbox) - it just
         doesn't ping.
         """
         rule = first_matching_action(rules, MessageFields.from_message(msg))
@@ -1002,7 +1002,7 @@ class SyncManager:
             "RAPLMAIL_MESSAGE_ID": payload["message_id"],
         })
         try:
-            subprocess.Popen(cmd, shell=True, env=env,  # noqa: S602 — user-authored command
+            subprocess.Popen(cmd, shell=True, env=env,  # noqa: S602 - user-authored command
                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              stdin=subprocess.DEVNULL)
         except Exception:

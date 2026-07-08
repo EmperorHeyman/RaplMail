@@ -3,13 +3,13 @@
 Unlike the rest of the API (locked behind the per-launch token that only the Tauri
 shell knows), this endpoint is meant to be polled by other devices on your network.
 It is therefore:
-  * read-only — exposes counts only, never message content;
-  * opt-in — returns 404 unless you enable it in Settings;
+  * read-only - exposes counts only, never message content;
+  * opt-in - returns 404 unless you enable it in Settings;
   * authenticated by a *stable* API key you set (header `X-API-Key` or `?key=`),
     not the per-launch token, so a device can be configured once.
 
 To reach it from another machine the backend must also listen on the LAN
-interface — set RAPLMAIL_HOST=0.0.0.0 for the backend process.
+interface - set RAPLMAIL_HOST=0.0.0.0 for the backend process.
 """
 
 from __future__ import annotations

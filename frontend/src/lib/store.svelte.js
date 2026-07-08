@@ -41,7 +41,7 @@ const DEFAULT_SETTINGS = {
   ],
   theme: {},                     // CSS custom-property overrides: { "--accent": "#..." }
   radius: 11,                    // corner roundness (px)
-  uiScale: 1,                    // overall UI/font scale (0.85–1.3) via CSS zoom
+  uiScale: 1,                    // overall UI/font scale (0.85-1.3) via CSS zoom
   customCss: "",                 // user CSS injected app-wide
   sidebarWidth: 248,             // resizable layout (Customize mode)
   listWidth: 400,
@@ -72,7 +72,7 @@ const DEFAULT_SETTINGS = {
   ollamaKeepAlive: "5m",         // how long Ollama keeps the model in VRAM after a request ("30s".."-1")
   ollamaAutostart: false,        // start the local Ollama server when RaplMail launches
   ollamaManaged: true,           // Windows: run our OWN hidden `ollama serve` so the model-runner console windows never flash (routes traffic to it; leaves the tray Ollama idle)
-  semanticEnabled: false,        // local meaning-based search (embeddings) — opt-in
+  semanticEnabled: false,        // local meaning-based search (embeddings) - opt-in
   embedProvider: "ollama",       // embeddings source: "ollama" | "openai-compatible"
   embedBaseUrl: "",              // embeddings endpoint (blank → Ollama localhost:11434)
   embedModel: "",                // embedding model (blank → nomic-embed-text / text-embedding-3-small)
@@ -112,7 +112,7 @@ const DEFAULT_SETTINGS = {
   notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"|"custom:<id>"
   notifyCalendarSound: "chime",  // sound for calendar event reminders (separate from mail)
   customSounds: [],              // user clips: [{ id, name, data }] (data = WAV data URL, ~3s)
-  notifyVolume: 80,              // notification sound volume, 0–100
+  notifyVolume: 80,              // notification sound volume, 0-100
   notifyOnlyUnfocused: true,     // only notify when the RaplMail window isn't focused
   quietHoursEnabled: false,      // suppress notifications during a nightly window
   quietStart: 22,                // quiet hours start hour (local)
@@ -153,7 +153,7 @@ const DEFAULT_SETTINGS = {
 };
 
 // Stored keybinds replace the defaults wholesale (the settings merge is
-// shallow), so bindings added in later versions are missing from older saves —
+// shallow), so bindings added in later versions are missing from older saves -
 // always read keybinds through this merge.
 export const KB_DEFAULTS = DEFAULT_SETTINGS.keybinds;
 export function kbAll() {
@@ -173,21 +173,21 @@ export const app = $state({
   smartGroupData: {},            // category -> { count, latest, senders, more } for Smart Inbox
   selectedMessageId: null,
   threadKey: null,               // when viewing a conversation in the reader
-  readerCmd: null,               // { cmd, n } — keyboard-triggered reader action (reply/forward)
+  readerCmd: null,               // { cmd, n } - keyboard-triggered reader action (reply/forward)
   showDone: false,
   search: "",
   semantic: false,               // current search is meaning-based (local embeddings) vs keyword
   view: "mail",                  // "mail" | "settings" | "scheduled" | "newsfeed"
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
-  ruleModal: null,               // { message } — open the quick "New rule" modal
-  lab: null,                     // { id, subject, from } — message sent to the Security Lab
+  ruleModal: null,               // { message } - open the quick "New rule" modal
+  lab: null,                     // { id, subject, from } - message sent to the Security Lab
   composing: null,
   mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
   aiInboxOpen: false,            // AI inbox digest + priority triage dialog
   aiAssistantOpen: false,        // AI assistant: chat over emails added as context
   aiAssistantSeed: null,         // { messageId, threadId, threadKey } to preload context
-  aiChatContext: [],             // [{ id, from, subject, date }] — emails the assistant reasons over
+  aiChatContext: [],             // [{ id, from, subject, date }] - emails the assistant reasons over
   aiBusy: false,                 // an AI request is in flight (adaptive mode keeps the GPU warm while true)
   aiDigest: "",                  // last scheduled morning-brief text (shown in the assistant)
   pendingSend: null,             // { payload, seed, delay, label, timer } while undo-send counts down
@@ -198,7 +198,7 @@ export const app = $state({
   queueFailed: 0,
   customizing: false,            // layout-edit mode (resize columns)
   toast: null,
-  confirm: null,                 // { title, message, confirmLabel, danger, resolve } — in-app confirm dialog
+  confirm: null,                 // { title, message, confirmLabel, danger, resolve } - in-app confirm dialog
   syncTick: 0,                   // bumped on each sync:done so views can refresh live
   dragMessageIds: [],            // message ids being dragged (drag-onto-folder to move)
   dragAccountId: null,           // account of the dragged messages (moves stay in-account)
@@ -314,7 +314,7 @@ export function applyTheme() {
   // UI scale (font/zoom). WebView2/Chromium honors `zoom`, which scales the whole
   // px-based UI cleanly.
   const scale = app.settings.uiScale ?? 1;
-  // Only apply `zoom` when actually scaling — an explicit `zoom: 1` still forces
+  // Only apply `zoom` when actually scaling - an explicit `zoom: 1` still forces
   // Chromium/WebView2 off its fast-scroll path, which made long panes (Settings)
   // scroll sluggishly for no reason.
   if (scale && scale !== 1) root.style.setProperty("zoom", String(scale));
@@ -334,7 +334,7 @@ export function applyTheme() {
 async function doSend(payload) {
   try {
     const r = await compose.send(payload);
-    if (r && r.queued) notify("Couldn't reach the server — queued, will retry. See Settings/sidebar for details.", "error");
+    if (r && r.queued) notify("Couldn't reach the server - queued, will retry. See Settings/sidebar for details.", "error");
     else notify("Sent ✓");
     refreshQueue();
   } catch (e) {
@@ -343,7 +343,7 @@ async function doSend(payload) {
 }
 
 // During the undo-send delay the payload is also written to localStorage, so a
-// hard quit/kill within the (default 5s) window doesn't silently lose the mail —
+// hard quit/kill within the (default 5s) window doesn't silently lose the mail -
 // it's redelivered on the next boot (see recoverPendingSend).
 const PENDING_SEND_KEY = "raplmail.pendingSend";
 function persistPendingSend(payload) { try { localStorage.setItem(PENDING_SEND_KEY, JSON.stringify(payload)); } catch {} }
@@ -353,7 +353,7 @@ function clearPersistedPendingSend() { try { localStorage.removeItem(PENDING_SEN
 export function queueSend(payload, seed) {
   app.composing = null; // hide the compose window immediately
   // A second send while one is still counting down would overwrite the first
-  // timer's state and silently lose that mail — flush it out the door now
+  // timer's state and silently lose that mail - flush it out the door now
   // (its undo window just ends early).
   const prev = app.pendingSend;
   if (prev) {
@@ -398,7 +398,7 @@ export function recoverPendingSend() {
 }
 
 let _settingsTimer = null;
-// Keys the BACKEND owns inside the shared settings blob — never sent from the
+// Keys the BACKEND owns inside the shared settings blob - never sent from the
 // UI save (the backend merges its own), so a settings save can't wipe them.
 const _BACKEND_OWNED = ["raplDesk", "googleCalendarEmail"];
 function _pushSettings(opts) {
@@ -407,7 +407,7 @@ function _pushSettings(opts) {
   appSettings.put(out, opts).catch(() => {});
 }
 export function saveSettings(patch) {
-  // Mutate in place — replacing the whole settings object invalidated EVERY
+  // Mutate in place - replacing the whole settings object invalidated EVERY
   // settings-reading derived in the app (each mail row reads several), so any
   // toggle (e.g. collapsing the sidebar) recomputed hundreds of them and lagged
   // the UI. In-place assignment keeps Svelte's per-key tracking granular.
@@ -420,7 +420,7 @@ export function saveSettings(patch) {
   _settingsTimer = setTimeout(() => { _settingsTimer = null; _pushSettings(); }, 400);
 }
 // Quitting inside the 400ms debounce window would lose the last change (the
-// server copy wins on next boot) — flush it with a keepalive request.
+// server copy wins on next boot) - flush it with a keepalive request.
 function _flushSettingsSave() {
   if (!_settingsTimer) return;
   clearTimeout(_settingsTimer);
@@ -438,7 +438,7 @@ if (typeof window !== "undefined") {
 // it's empty (fresh install), seed it from whatever localStorage had.
 export async function initSettings() {
   // Read whatever the local copy has so we can backfill keys the server might be
-  // missing (e.g. an older/partial blob) — server stays authoritative per-key.
+  // missing (e.g. an older/partial blob) - server stays authoritative per-key.
   let local = {};
   try { local = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {}; } catch {}
   try {
@@ -455,7 +455,7 @@ export async function initSettings() {
     } else {
       appSettings.put(app.settings).catch(() => {});
     }
-  } catch { /* offline / not ready — localStorage value stands */ }
+  } catch { /* offline / not ready - localStorage value stands */ }
   // One-time migration: move the old default "afterN" to the new Spark-style
   // date sections. Guarded so it runs once and never overrides a later choice.
   if (!app.settings._placementMigrated) {
@@ -474,7 +474,7 @@ export async function importConfig(bundle) {
   return res;
 }
 
-// Full encrypted backup (.rmail) — includes accounts + credentials.
+// Full encrypted backup (.rmail) - includes accounts + credentials.
 export async function exportFullBackup() {
   return appSettings.exportFull();
 }
@@ -499,8 +499,8 @@ function extractEmail(s) {
 /**
  * Given a message row (its account_id + to/cc recipients), work out which account
  * it belongs to and which of that account's identities (primary address or an
- * alias) it was addressed to. Lets compose default the From — and therefore the
- * signature — to the address the mail actually arrived on, instead of account #1.
+ * alias) it was addressed to. Lets compose default the From - and therefore the
+ * signature - to the address the mail actually arrived on, instead of account #1.
  */
 export function identityForMessage(msg) {
   if (!msg) return {};
@@ -518,8 +518,8 @@ export function identityForMessage(msg) {
 export async function openCompose(seed = {}) {
   const merged = { ...seed };
   // Default the From (and therefore the signature) to the identity of the message
-  // you're currently reading: a reply — or a blank compose opened while a mail is
-  // open — should go out from the address it was addressed to, not always the
+  // you're currently reading: a reply - or a blank compose opened while a mail is
+  // open - should go out from the address it was addressed to, not always the
   // first account. Explicit seed fields (set by reply/forward) always win.
   const om = app.selectedMessageId ? app.messages.find((m) => m.id === app.selectedMessageId) : null;
   if (om) {
@@ -561,7 +561,7 @@ function cmpVersion(a, b) {
 
 // Serverless update check: ask the GitHub Releases API for the latest published
 // release and compare it to the running version. No update server, no signing
-// feed to maintain — if there's a newer release we point the user at its GitHub
+// feed to maintain - if there's a newer release we point the user at its GitHub
 // page to download the installer. (Works in the browser dev build too.)
 export async function checkForUpdates({ silent = false } = {}) {
   try {
@@ -595,7 +595,7 @@ export async function checkForUpdates({ silent = false } = {}) {
 }
 
 // LIFO stack of recent undoable actions. The toast only shows the latest, but
-// fast triage produces several — keeping a stack means each one stays reversible
+// fast triage produces several - keeping a stack means each one stays reversible
 // (via Ctrl+Z) instead of only the most recent surviving.
 const _undoStack = [];
 export function notify(message, kind = "info", undo = null) {
@@ -648,8 +648,8 @@ export async function updateBadge() {
   } catch {}
 }
 
-// Mark a message seen/unseen and reflect it EVERYWHERE instantly — the row,
-// the folder unread badge, and the Smart Inbox group counts — instead of
+// Mark a message seen/unseen and reflect it EVERYWHERE instantly - the row,
+// the folder unread badge, and the Smart Inbox group counts - instead of
 // waiting for the next sync to correct the numbers. The server call is
 // fire-and-forget; a sync later reconciles the exact counts.
 export function setMessageSeen(message, seen) {
@@ -696,7 +696,7 @@ export async function setAutostart(on) {
     if (on) await enable(); else await disable();
   } catch (e) { notify(`Couldn't change startup setting: ${e.message || e}`, "error"); }
 }
-// On boot, reconcile the saved preference with the OS autostart registration —
+// On boot, reconcile the saved preference with the OS autostart registration -
 // they're two sources of truth and can drift (e.g. the entry was removed
 // externally, or a prior enable() silently failed). The plugin's live state wins.
 export async function syncAutostart() {
@@ -708,7 +708,7 @@ export async function syncAutostart() {
     if (want === have) return;
     // The user's saved intent is authoritative; make the OS match it.
     if (want) await enable(); else await disable();
-  } catch { /* plugin unavailable (dev/browser) — ignore */ }
+  } catch { /* plugin unavailable (dev/browser) - ignore */ }
 }
 
 export async function loadAccountsAndFolders() {
@@ -858,7 +858,7 @@ export async function approveSender(message) {
   if (app.selectedMessageId === message.id) app.selectedMessageId = null;
   try {
     await contacts.create({ email: message.from_addr, name: message.from_name || "" });
-    notify(`Approved ${message.from_addr} — future mail lands in your inbox`);
+    notify(`Approved ${message.from_addr} - future mail lands in your inbox`);
   } catch (e) { notify("Couldn't approve", "error"); refreshMessages({ background: true }); }
 }
 
@@ -874,7 +874,7 @@ export async function blockSender(message) {
 }
 
 // Silence future desktop notifications from a sender WITHOUT touching the mail
-// itself — unlike "Mute sender" (which auto-marks it done), the message still
+// itself - unlike "Mute sender" (which auto-marks it done), the message still
 // arrives in the inbox, unread; it just doesn't ding. A "mute_notifications"
 // rule the sync engine honors when deciding whether new mail is notify-worthy.
 export async function muteNotificationsFromSender(message) {
@@ -888,7 +888,7 @@ export async function muteNotificationsFromSender(message) {
 }
 
 // The value a rule should match for a given field, pulled from the clicked
-// message — so picking "Subject" auto-fills the subject, "Sender domain" the
+// message - so picking "Subject" auto-fills the subject, "Sender domain" the
 // domain, etc. Body has no sensible single value, so it stays blank.
 export function ruleValueForField(field, message) {
   if (!message) return "";
@@ -933,7 +933,7 @@ export function createRuleFromSender(message) {
 }
 
 // Open the Security Lab (Settings → Security) with a full forensic report for
-// this message — reachable from the list/reader right-click menu. IT-admin /
+// this message - reachable from the list/reader right-click menu. IT-admin /
 // power-user triage: headers, hop chain, DNS, links, attachment hashes + one-tap
 // deep links to VirusTotal / urlscan / MXToolbox / AbuseIPDB / whois.
 export function sendToLab(message) {
@@ -1008,7 +1008,7 @@ export function presetWhen(at) {
 }
 
 // True if the view the user is looking at is still the one an undo closure was
-// created in — otherwise the optimistic re-insert would splice a foreign row
+// created in - otherwise the optimistic re-insert would splice a foreign row
 // into whatever list is currently displayed.
 function _viewKey() {
   return `${app.selectedKind}|${app.selectedFolderId}|${app.category}|${app.search}`;
@@ -1033,7 +1033,7 @@ export async function snoozeMessage(message, untilISO, presence = false) {
         // idx may be stale if the list changed during the undo window).
         messages.snooze(message.id, null, false)
           .then(() => refreshMessages({ background: true }))
-          .catch(() => notify("Couldn't undo the snooze — check your connection", "error"));
+          .catch(() => notify("Couldn't undo the snooze - check your connection", "error"));
       });
     } else {
       notify("Unsnoozed");
@@ -1062,7 +1062,7 @@ export function toggleVip(addrOrMsg) {
   notify(has ? "Removed from VIP" : "Marked as VIP ⭐");
 }
 
-// Senders the user has marked trusted — suppresses the spoof/lookalike warning.
+// Senders the user has marked trusted - suppresses the spoof/lookalike warning.
 export function isTrustedSender(addr) {
   return (app.settings.trustedSenders || []).includes((addr || "").toLowerCase().trim());
 }
@@ -1070,7 +1070,7 @@ export function trustSender(addr) {
   const a = (addr || "").toLowerCase().trim();
   if (!a || isTrustedSender(a)) return;
   saveSettings({ trustedSenders: [...(app.settings.trustedSenders || []), a] });
-  notify("Marked safe — this sender now shows a green check ✓");
+  notify("Marked safe - this sender now shows a green check ✓");
 }
 export function untrustSender(addr) {
   const a = (addr || "").toLowerCase().trim();
@@ -1119,7 +1119,7 @@ function _remindLabel(min) {
 }
 function _checkReminders() {
   const offsets = app.settings.calendarReminders || [];
-  // NB: calendar reminders are NOT gated by email quiet hours — a meeting
+  // NB: calendar reminders are NOT gated by email quiet hours - a meeting
   // reminder you explicitly set must still fire overnight/early. Quiet hours
   // only governs new-mail notifications.
   if (!offsets.length) return;
@@ -1130,10 +1130,10 @@ function _checkReminders() {
     for (const min of offsets) {
       const due = t - min * 60000;
       const key = `${e.id}:${min}`;
-      // Fire once past the lead time, up to the event start — a fixed 90s
+      // Fire once past the lead time, up to the event start - a fixed 90s
       // window silently skipped reminders when the machine slept across it.
       if (now >= due && now < t + 60000 && !_firedReminders.has(key)) {
-        // Keys older than the reminder window can never fire again — don't let
+        // Keys older than the reminder window can never fire again - don't let
         // a long-running session accumulate them forever.
         if (_firedReminders.size > 500) _firedReminders.clear();
         _firedReminders.add(key);
@@ -1206,7 +1206,7 @@ export async function openSandbox(payload) {
       const url = `${location.pathname}${location.search}#sandbox`;
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       new WebviewWindow(`sandbox-${Date.now()}`, {
-        url, title: `Sandbox — ${seed.name}`, width: 860, height: 720,
+        url, title: `Sandbox - ${seed.name}`, width: 860, height: 720,
         minWidth: 560, minHeight: 480, focus: true,
       });
       return;
@@ -1252,7 +1252,7 @@ export async function sandboxAttachment(messageId, att) {
 }
 
 // Pick a local file from disk and open it in the sandbox (analyze any file on
-// the PC, not just mail attachments). Uses a hidden file input — works in both
+// the PC, not just mail attachments). Uses a hidden file input - works in both
 // the Tauri webview and a browser, no extra plugin needed.
 export function sandboxPickFile() {
   const input = document.createElement("input");
@@ -1321,7 +1321,7 @@ export function startCalendarServices() {
 export async function pinMessage(message, value) {
   const v = value ?? !message.pinned;
   const item = app.messages.find((m) => m.id === message.id);
-  if (item) item.pinned = v;       // optimistic — list re-sorts immediately
+  if (item) item.pinned = v;       // optimistic - list re-sorts immediately
   message.pinned = v;
   try { await messages.pin(message.id, v); }
   catch (e) { notify("Couldn't pin", "error"); if (item) item.pinned = !v; message.pinned = !v; }
@@ -1365,7 +1365,7 @@ export function openThread(latest) {
 export const threadPrefetch = { key: null, msgs: null };
 
 // Route a keyboard shortcut to whichever reader surface is showing (single
-// message or conversation) — they own the bodies needed to build the quote.
+// message or conversation) - they own the bodies needed to build the quote.
 export function readerCommand(cmd) {
   app.readerCmd = { cmd, n: (app.readerCmd?.n || 0) + 1 };
 }
@@ -1390,7 +1390,7 @@ async function _removeMessage(message, action, label) {
     refreshQueue();
     refreshFoldersSoon();
   } catch (e) {
-    notify(`Couldn't ${action} — restoring`, "error");
+    notify(`Couldn't ${action} - restoring`, "error");
     refreshMessages({ background: true });
   }
 }
@@ -1412,7 +1412,7 @@ export function openMessageById(id) {
 
 // Merge a freshly-fetched list into an existing one WITHOUT swapping every row
 // object. Reuse the existing object (by id) for messages still present and copy
-// changed fields onto it in place — Svelte's $state proxy only notifies for
+// changed fields onto it in place - Svelte's $state proxy only notifies for
 // fields that actually changed, so an unchanged row doesn't re-render. That's
 // what stops the list from flickering on every background sync. New messages
 // pass through as-is; removed ones fall out (the keyed {#each} plays their
@@ -1477,7 +1477,7 @@ export async function refreshMessages({ background = false } = {}) {
       };
       app.aiBusy = true;
       try {
-        // 1. Local embedding index (best) — only if the user built one.
+        // 1. Local embedding index (best) - only if the user built one.
         if (app.settings.semanticEnabled) {
           const list = await ai.semantic(app.search, 80);
           if (!fresh()) return;
@@ -1642,18 +1642,18 @@ export async function markDone(message, done) {
       notify("Marked done", "info", () => {
         message.is_done = false;
         // idx < 0 = the message lives inside an expanded smart-group card, not
-        // the main list — flipping is_done un-hides it there; don't splice a
+        // the main list - flipping is_done un-hides it there; don't splice a
         // duplicate row into the main list.
         if (_viewKey() === originView && idx >= 0 && !app.messages.some((m) => m.id === message.id)) {
           app.messages = [...app.messages.slice(0, idx), message, ...app.messages.slice(idx)];
         }
         messages.setDone(message.id, false)
           .then(() => { refreshFoldersSoon(); refreshMessages({ background: true }); })
-          .catch(() => notify("Couldn't undo — check your connection", "error"));
+          .catch(() => notify("Couldn't undo - check your connection", "error"));
       });
     }
   } catch (e) {
-    notify("Couldn't update — restoring", "error");
+    notify("Couldn't update - restoring", "error");
     refreshMessages({ background: true });
   }
 }
@@ -1664,7 +1664,7 @@ export function toggleShowDone() {
   refreshMessages();
 }
 
-// Quick "show mail from this address" — uses the reliable from: operator.
+// Quick "show mail from this address" - uses the reliable from: operator.
 export function searchAddress(addr) {
   app.view = "mail";
   app.search = `from:${addr}`;
@@ -1682,7 +1682,7 @@ export function runSearch(query) {
 }
 
 // Whether AI actions/buttons should be shown. True when the user hasn't hidden
-// them AND a provider is usable — a cloud key is set, OR the provider is Ollama
+// them AND a provider is usable - a cloud key is set, OR the provider is Ollama
 // (local, keyless). This is the single source of truth so keyless Ollama no
 // longer hides every AI button for lack of an API key.
 export function aiEnabled() {
@@ -1712,7 +1712,7 @@ export function addToAiChat(m) {
 }
 
 // --- Adaptive Ollama: warm the model into VRAM while the app is focused, unload
-// it shortly after the app loses focus — unless the user is mid-AI-task. This is
+// it shortly after the app loses focus - unless the user is mid-AI-task. This is
 // the "adaptive" option in Settings → AI assistant → Free GPU after.
 function _adaptiveOn() {
   return app.settings.aiProvider === "ollama"
@@ -1765,7 +1765,7 @@ export function removeSavedSearch(id) {
 
 // --- desktop notifications -------------------------------------------------
 // In the Tauri shell we use the native notification plugin (the webview's web
-// Notification API is usually blocked and can't be re-enabled by the user —
+// Notification API is usually blocked and can't be re-enabled by the user -
 // that's the "blocked by the system" you saw). In a browser we fall back to the
 // web Notification API.
 async function _notifPlugin() {
@@ -1813,7 +1813,7 @@ export function inQuietHours() {
 }
 function desktopNotify(payload, count) {
   if (app.settings.notifyNewMail === false) return;
-  // Never fire without a real message preview — a notification with no sender/
+  // Never fire without a real message preview - a notification with no sender/
   // subject is the "empty notification" bug. Genuine new inbox mail always has
   // one now (the backend only counts notify-worthy inbox arrivals).
   if (!payload) return;
@@ -1821,7 +1821,7 @@ function desktopNotify(payload, count) {
   const vip = isVip(payload?.from_addr);
   if (!vip && inQuietHours()) return;
   // The ding plays even when the window is focused (audible feedback that mail
-  // landed) — only the OS notification honors the "only when unfocused" rule.
+  // landed) - only the OS notification honors the "only when unfocused" rule.
   playSound(app.settings.notifySound || "ding", (app.settings.notifyVolume ?? 80) / 100);
   if (!vip) {
     if (app.settings.notifyOnlyUnfocused !== false && typeof document !== "undefined"
@@ -1831,7 +1831,7 @@ function desktopNotify(payload, count) {
   let title, body;
   if (count > 1) {
     title = `${count} new messages`;
-    body = p.from ? `Latest: ${p.from} — ${p.subject || ""}` : "";
+    body = p.from ? `Latest: ${p.from} - ${p.subject || ""}` : "";
   } else {
     title = p.from || "New message";
     body = p.subject || "";
@@ -1845,7 +1845,7 @@ export async function testNotification() {
   const perm = await enableNotifications();
   if (perm === "unsupported") return { ok: false, reason: "unsupported" };
   if (perm !== "granted") return { ok: false, reason: "denied" };
-  const ok = await sendNative("RaplMail", "Test notification — you're all set ✓");
+  const ok = await sendNative("RaplMail", "Test notification - you're all set ✓");
   return ok ? { ok: true } : { ok: false, reason: "error" };
 }
 
@@ -1853,7 +1853,7 @@ let disconnect = null;
 export function startEvents() {
   if (disconnect) return;
   // Events emitted while the socket was down (backend restart, network blip)
-  // are gone — treat every reconnect as a missed sync:done and catch up.
+  // are gone - treat every reconnect as a missed sync:done and catch up.
   const onReconnect = () => {
     loadAccountsAndFolders();
     refreshMessages({ background: true });
@@ -1883,19 +1883,19 @@ export function startEvents() {
       app.queuePending = ev.payload?.pending ?? 0;
       app.queueFailed = ev.payload?.failed ?? 0;
     } else if (ev.event === "presence:back") {
-      // Returned to the desk — "until I'm back" mail was resurfaced server-side.
-      if (ev.payload?.count) notify(`Welcome back — ${ev.payload.count} message(s) resurfaced`);
+      // Returned to the desk - "until I'm back" mail was resurfaced server-side.
+      if (ev.payload?.count) notify(`Welcome back - ${ev.payload.count} message(s) resurfaced`);
       refreshMessages({ background: true });
     } else if (ev.event === "mail:opened") {
-      // A read-receipt tracking pixel fired — someone opened your message.
+      // A read-receipt tracking pixel fired - someone opened your message.
       const subj = ev.payload?.subject ? `“${ev.payload.subject}”` : "your message";
       notify(`📬 ${ev.payload?.recipient || "Someone"} opened ${subj}`);
     } else if (ev.event === "inbox:digest") {
-      // Scheduled morning briefing arrived — cache it and nudge the user.
+      // Scheduled morning briefing arrived - cache it and nudge the user.
       app.aiDigest = ev.payload?.digest || "";
       const first = (app.aiDigest.split("\n").find((l) => l.trim()) || "Your morning briefing is ready");
-      notify("☀️ Morning briefing ready — open the inbox assistant");
-      sendNative("RaplMail — morning briefing", first.slice(0, 180));
+      notify("☀️ Morning briefing ready - open the inbox assistant");
+      sendNative("RaplMail - morning briefing", first.slice(0, 180));
     }
   }, onReconnect);
   refreshQueue();

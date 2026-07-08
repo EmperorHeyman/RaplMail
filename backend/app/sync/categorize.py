@@ -4,7 +4,7 @@ Categories: primary | newsletters | social | updates | promotions
 - social      : notifications from social networks
 - promotions  : marketing / sales / deals
 - newsletters : bulk/automated senders, anything with unsubscribe wording
-- updates     : transactional — receipts, orders, security, code hosting, CI
+- updates     : transactional - receipts, orders, security, code hosting, CI
 - primary     : everything else (likely a real person)
 """
 
@@ -14,7 +14,7 @@ CATEGORIES = ["primary", "newsletters", "social", "updates", "promotions",
               "invitations", "invitation_responses"]
 
 _INV_RESP_PREFIX = ("accepted:", "declined:", "tentative:", "přijato:", "odmítnuto:",
-                    "předběžně přijato:", "accepted —", "declined —")
+                    "předběžně přijato:", "accepted -", "declined -")
 _INV_WORDS = ("invitation:", "invites you", "meeting invitation", "calendar invite",
               "you're invited", "you are invited", "you have been invited", "invited you",
               "pozvánka", "schůzka", "meeting invite", "updated invitation",

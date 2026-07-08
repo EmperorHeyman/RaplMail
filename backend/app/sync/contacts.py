@@ -7,7 +7,7 @@ Rules for adding a recipient seen in *sent* mail (first matching wins):
   2. Known domain (gmail, seznam, a123systems, …)         -> add
   3. They replied / we received mail from them (two-way)  -> add
   4. We emailed them more than once (deliberate)          -> add
-  5. Otherwise — a single cold send to an unknown domain  -> skip
+  5. Otherwise - a single cold send to an unknown domain  -> skip
 
 So a one-off to e.g. sales@xyzasd.it that never wrote back is skipped, but it
 gets added the moment they reply or you email them again. Known-domain and
@@ -109,7 +109,7 @@ def scan_contacts(session: Session) -> int:
     sent_counts: dict[str, int] = defaultdict(int)
     last_sent: dict[str, object] = {}
     if sent_folder_ids:
-        # Select only the needed columns — never load cached body blobs here.
+        # Select only the needed columns - never load cached body blobs here.
         rows = session.exec(
             select(Message.to_addrs, Message.cc_addrs, Message.date)
             .where(Message.folder_id.in_(sent_folder_ids))

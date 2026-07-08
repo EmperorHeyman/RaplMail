@@ -1,4 +1,4 @@
-"""POST /rules/apply — apply a rule to EXISTING mail (rules otherwise only run
+"""POST /rules/apply - apply a rule to EXISTING mail (rules otherwise only run
 on new arrivals). Focused on the subject-rule case the user hit: a daily report
 whose subject has a fixed part plus a changing date should be markable done.
 """
@@ -31,7 +31,7 @@ def _seed_subject(subject, n=1):
 
 
 def test_apply_subject_contains_mark_done(client):
-    aid, ids = _seed_subject("[ZERV] Daily Report — 2026-07-04 (FPY 0.0%)", n=2)
+    aid, ids = _seed_subject("[ZERV] Daily Report - 2026-07-04 (FPY 0.0%)", n=2)
     r = client.post("/rules/apply", json={"account_id": aid, "match_field": "subject",
                                           "match_op": "contains", "match_value": "[ZERV] Daily Report",
                                           "action": "mark_done"})
@@ -42,7 +42,7 @@ def test_apply_subject_contains_mark_done(client):
 
 
 def test_apply_subject_regex_mark_done(client):
-    aid, ids = _seed_subject("[ZERV] Daily Report — 2026-07-05 (FPY 12.3%)")
+    aid, ids = _seed_subject("[ZERV] Daily Report - 2026-07-05 (FPY 12.3%)")
     r = client.post("/rules/apply", json={"account_id": aid, "match_field": "subject",
                                           "match_op": "regex",
                                           "match_value": r"\[ZERV\] Daily Report .* \(FPY",
@@ -65,7 +65,7 @@ def test_preview_finds_match_among_many(client):
     # matching mail among a big pile was never looked at → 0. Now it matches in SQL
     # over the whole mailbox.
     aid, _ = _seed_subject("Noise subject A", n=30)
-    _seed_subject("[ZERV] Daily Report — 2026-07-06 (FPY 90.0%)")  # different account, recent
+    _seed_subject("[ZERV] Daily Report - 2026-07-06 (FPY 90.0%)")  # different account, recent
     # Preview a global (all-account) subject rule.
     r = client.post("/rules/preview", json={"match_field": "subject", "match_op": "contains",
                                             "match_value": "[ZERV] Daily Report", "action": "mark_done"})

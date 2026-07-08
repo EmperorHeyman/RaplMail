@@ -44,7 +44,7 @@ def list_contacts(q: str | None = None, limit: int = 50,
     if q:
         like = f"%{q.lower()}%"
         stmt = stmt.where(or_(Contact.email.ilike(like), Contact.name.ilike(like)))
-    # Most-contacted and favorites first — best autocomplete ordering.
+    # Most-contacted and favorites first - best autocomplete ordering.
     stmt = stmt.order_by(Contact.favorite.desc(), Contact.times_sent.desc(),
                          Contact.last_contacted.desc()).limit(limit)
     return [_to_out(c) for c in session.exec(stmt)]

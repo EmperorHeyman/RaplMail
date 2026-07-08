@@ -3,7 +3,7 @@
 
   const c = $derived(app.confirm);
   // Capture-phase listener while the dialog is up: Enter/Escape must resolve
-  // the dialog ONLY — without this, the mail list's window listener also saw
+  // the dialog ONLY - without this, the mail list's window listener also saw
   // the keystroke (Enter opened the focused message behind the veil).
   $effect(() => {
     if (!c) return;

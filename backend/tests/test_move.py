@@ -1,4 +1,4 @@
-"""POST /messages/move — move messages to an arbitrary folder (drag-to-folder).
+"""POST /messages/move - move messages to an arbitrary folder (drag-to-folder).
 
 The endpoint only queues the move + hides the rows optimistically; the real IMAP
 move runs in the background (and is skipped here since the test secret store is
@@ -99,7 +99,7 @@ def test_flush_move_to_deletes_row_after_move(client, monkeypatch):
         def close(self): calls["closed"] = True
 
     monkeypatch.setattr(mod, "build_provider", lambda acct: FakeProvider(), raising=False)
-    # build_provider is imported inside the function from app.sync.engine — patch there too.
+    # build_provider is imported inside the function from app.sync.engine - patch there too.
     import app.sync.engine as eng
     monkeypatch.setattr(eng, "build_provider", lambda acct: FakeProvider(), raising=False)
 

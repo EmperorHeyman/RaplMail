@@ -1,6 +1,6 @@
 // Reader / ThreadView catalog fragment. Flat "reader.key" → text.
 // {placeholders} are filled by t(key, { placeholder: value }).
-// en + cs kept in lockstep — every en key must also exist in cs.
+// en + cs kept in lockstep - every en key must also exist in cs.
 export default {
   en: {
     // Action buttons (reader + thread).
@@ -26,7 +26,7 @@ export default {
     "reader.suggestedReply": "Suggested reply",
     "reader.dismiss": "Dismiss",
     "reader.editAndSend": "Edit & send →",
-    "reader.reviewBeforeSending": "Review before sending — nothing is sent automatically.",
+    "reader.reviewBeforeSending": "Review before sending - nothing is sent automatically.",
 
     // Empty / loading states.
     "reader.selectMessage": "Select a message to read",
@@ -57,19 +57,19 @@ export default {
     "reader.undo": "Undo",
     "reader.removeSafeMarkTitle": "Remove the safe mark",
     "reader.markSafe": "Mark safe",
-    "reader.trustSenderTitle": "Trust this sender — show a green check, no more warnings",
+    "reader.trustSenderTitle": "Trust this sender - show a green check, no more warnings",
     "reader.pgpEncrypted": "PGP encrypted",
     "reader.pgpSigVerified": "· signature verified ({signer})",
     "reader.pgpDecryptedLocally": "· decrypted locally",
     "reader.pgpSignatureVerified": "PGP signature verified",
-    "reader.pgpSignatureUnverified": "PGP signature — couldn't verify",
+    "reader.pgpSignatureUnverified": "PGP signature - couldn't verify",
     "reader.importPublicKey": "import the sender's public key",
     "reader.smimeEncrypted": "S/MIME encrypted",
     "reader.smimeDecryptedLocally": "decrypted locally with your certificate",
     "reader.smimeNoKey": "import your S/MIME certificate to decrypt (Settings → S/MIME)",
     "reader.smimeSigned": "S/MIME signed",
     "reader.smimeUnknownSigner": "signer certificate present",
-    "reader.failedAuth": "Failed authentication — this message may be spoofed.",
+    "reader.failedAuth": "Failed authentication - this message may be spoofed.",
     "reader.failedAuthShort": "Failed auth",
     "reader.senderAuthenticated": "Sender authenticated",
     "reader.securityWarning": "Security warning",
@@ -81,11 +81,11 @@ export default {
     "reader.aiSuspicious": "AI: suspicious",
     "reader.aiDangerous": "AI: likely phishing",
     "reader.aiRecheck": "Check again",
-    "reader.aiScreenDisclaimer": "AI can and will make mistakes — treat this as a hint, not proof.",
+    "reader.aiScreenDisclaimer": "AI can and will make mistakes - treat this as a hint, not proof.",
 
     // Screener badge + expanded detail.
     "reader.newSenderBadge": "New sender",
-    "reader.firstTimeSender": "First-time sender — do you want mail from {addr}?",
+    "reader.firstTimeSender": "First-time sender - do you want mail from {addr}?",
     "reader.approve": "Approve",
     "reader.block": "Block",
 
@@ -94,14 +94,14 @@ export default {
     "reader.mailingList": "This looks like a mailing list.",
     "reader.unsubscribe": "Unsubscribe",
 
-    // Tracker bar (reader — full).
+    // Tracker bar (reader - full).
     "reader.blockedTrackerOne": "Blocked 1 tracking pixel · regular images are shown.",
     "reader.blockedTrackerN": "Blocked {n} tracking pixels · regular images are shown.",
     "reader.hide": "Hide",
     "reader.details": "Details",
     "reader.loadEverything": "Load everything",
 
-    // Tracker note (thread — short).
+    // Tracker note (thread - short).
     "reader.blockedPixelOne": "Blocked 1 tracking pixel",
     "reader.blockedPixelN": "Blocked {n} tracking pixels",
 
@@ -124,7 +124,7 @@ export default {
     "reader.couldntOpenAttachment": "Couldn't open attachment",
     "reader.couldntSaveAttachment": "Couldn't save attachment",
     "reader.couldntSaveAttachments": "Couldn't save attachments",
-    "reader.couldntAttachForwarded": "Couldn't attach the forwarded files — they may need re-attaching",
+    "reader.couldntAttachForwarded": "Couldn't attach the forwarded files - they may need re-attaching",
 
     // Address toasts.
     "reader.addressCopied": "Address copied",
@@ -174,7 +174,7 @@ export default {
     "reader.suggestedReply": "Navržená odpověď",
     "reader.dismiss": "Zavřít",
     "reader.editAndSend": "Upravit a odeslat →",
-    "reader.reviewBeforeSending": "Před odesláním zkontrolujte — nic se neodešle automaticky.",
+    "reader.reviewBeforeSending": "Před odesláním zkontrolujte - nic se neodešle automaticky.",
 
     // Prázdné stavy / načítání.
     "reader.selectMessage": "Vyberte zprávu ke čtení",
@@ -205,19 +205,19 @@ export default {
     "reader.undo": "Zpět",
     "reader.removeSafeMarkTitle": "Odebrat označení bezpečné",
     "reader.markSafe": "Označit jako bezpečné",
-    "reader.trustSenderTitle": "Důvěřovat tomuto odesílateli — zobrazí se zelená značka a žádná další varování",
+    "reader.trustSenderTitle": "Důvěřovat tomuto odesílateli - zobrazí se zelená značka a žádná další varování",
     "reader.pgpEncrypted": "Šifrováno pomocí PGP",
     "reader.pgpSigVerified": "· podpis ověřen ({signer})",
     "reader.pgpDecryptedLocally": "· dešifrováno lokálně",
     "reader.pgpSignatureVerified": "Podpis PGP ověřen",
-    "reader.pgpSignatureUnverified": "Podpis PGP — nelze ověřit",
+    "reader.pgpSignatureUnverified": "Podpis PGP - nelze ověřit",
     "reader.importPublicKey": "importujte veřejný klíč odesílatele",
     "reader.smimeEncrypted": "Šifrováno S/MIME",
     "reader.smimeDecryptedLocally": "dešifrováno lokálně vaším certifikátem",
     "reader.smimeNoKey": "pro dešifrování naimportujte svůj certifikát S/MIME (Nastavení → S/MIME)",
     "reader.smimeSigned": "Podepsáno S/MIME",
     "reader.smimeUnknownSigner": "certifikát podepisujícího je přítomen",
-    "reader.failedAuth": "Ověření selhalo — tato zpráva může být podvržená.",
+    "reader.failedAuth": "Ověření selhalo - tato zpráva může být podvržená.",
     "reader.failedAuthShort": "Ověření selhalo",
     "reader.senderAuthenticated": "Odesílatel ověřen",
     "reader.securityWarning": "Bezpečnostní varování",
@@ -229,11 +229,11 @@ export default {
     "reader.aiSuspicious": "AI: podezřelé",
     "reader.aiDangerous": "AI: pravděpodobně phishing",
     "reader.aiRecheck": "Zkontrolovat znovu",
-    "reader.aiScreenDisclaimer": "AI dělá a bude dělat chyby — berte to jako nápovědu, ne jako důkaz.",
+    "reader.aiScreenDisclaimer": "AI dělá a bude dělat chyby - berte to jako nápovědu, ne jako důkaz.",
 
     // Odznak prověřování + rozbalený detail.
     "reader.newSenderBadge": "Nový odesílatel",
-    "reader.firstTimeSender": "Odesílatel poprvé — chcete přijímat poštu od {addr}?",
+    "reader.firstTimeSender": "Odesílatel poprvé - chcete přijímat poštu od {addr}?",
     "reader.approve": "Schválit",
     "reader.block": "Blokovat",
 
@@ -242,14 +242,14 @@ export default {
     "reader.mailingList": "Vypadá to jako hromadná pošta.",
     "reader.unsubscribe": "Odhlásit odběr",
 
-    // Pruh sledovacích prvků (čtečka — plný).
+    // Pruh sledovacích prvků (čtečka - plný).
     "reader.blockedTrackerOne": "Zablokován 1 sledovací pixel · běžné obrázky se zobrazují.",
     "reader.blockedTrackerN": "Zablokováno {n} sledovacích pixelů · běžné obrázky se zobrazují.",
     "reader.hide": "Skrýt",
     "reader.details": "Podrobnosti",
     "reader.loadEverything": "Načíst vše",
 
-    // Poznámka o sledovacích prvcích (vlákno — krátká).
+    // Poznámka o sledovacích prvcích (vlákno - krátká).
     "reader.blockedPixelOne": "Zablokován 1 sledovací pixel",
     "reader.blockedPixelN": "Zablokováno {n} sledovacích pixelů",
 
@@ -272,7 +272,7 @@ export default {
     "reader.couldntOpenAttachment": "Přílohu se nepodařilo otevřít",
     "reader.couldntSaveAttachment": "Přílohu se nepodařilo uložit",
     "reader.couldntSaveAttachments": "Přílohy se nepodařilo uložit",
-    "reader.couldntAttachForwarded": "Přeposílané soubory se nepodařilo připojit — možná je bude třeba připojit znovu",
+    "reader.couldntAttachForwarded": "Přeposílané soubory se nepodařilo připojit - možná je bude třeba připojit znovu",
 
     // Hlášení o adrese.
     "reader.addressCopied": "Adresa zkopírována",

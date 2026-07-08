@@ -1,6 +1,6 @@
 """Link unfurl: fetch a URL's OpenGraph metadata for a preview card.
 
-Off by default (privacy) — the frontend only calls this when the user enables
+Off by default (privacy) - the frontend only calls this when the user enables
 "Rich link previews". Fetch is best-effort with a short timeout and size cap.
 """
 

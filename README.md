@@ -25,7 +25,7 @@ Grab the latest installer from the releases page and run it:
 - `RaplMail_x.y.z_x64-setup.exe` (NSIS), or
 - `RaplMail_x.y.z_x64_en-US.msi` (MSI)
 
-On first launch you choose a master password. It unlocks a local encrypted vault that seals your account credentials and keys. Add an account and RaplMail auto-discovers the server settings for you. Updates are delivered through a signed release feed and can self-install from Settings.
+On first launch you choose a master password. It unlocks a local encrypted vault that seals your account credentials and keys. Add an account and RaplMail auto-discovers the server settings for you. "Check for updates" in Settings queries the GitHub Releases API and points you at the newest installer to download; there is no update server in between.
 
 ## Accounts and sign-in
 
@@ -46,9 +46,10 @@ On first launch you choose a master password. It unlocks a local encrypted vault
 - **Mute sender** or **mute conversation** (the whole reply-all thread is auto-archived on arrival).
 - **Rules and blocking** by sender, domain, or subject, with actions to move, archive, delete, mark read, mark done, or block, and a live preview against existing mail.
 - **Screener** holds first-time senders for your approval.
+- **Subscription audit** (Settings > Utility): every mailing list you receive with its 30-day read rate, sorted so dormant and never-opened lists surface first. One-click unsubscribe (RFC 8058, with a browser fallback for confirmation-style links), a filter to show only senders you can actually leave, and a green marker on lists you have already unsubscribed from so you never re-click one. Auto-archive a whole list in one step.
 - **Drag a message onto a folder** to move it, single or multi-selected.
 - **Universal undo** toast for done, snooze, move, and bulk actions.
-- **Keyboard-first**, with a full customizable shortcut set and a searchable command palette (`Ctrl+K`). Arrow keys move through the list and open mail as you go.
+- **Keyboard-first**, with a full customizable shortcut set and a command palette (`Ctrl+K`) that also doubles as live search: start typing a `from:` / `subject:` / `is:` operator (or a `/regex/`) and it flips to matching mail you can open on the spot. Arrow keys move through the list and open mail as you go.
 
 ## Views
 
@@ -78,6 +79,18 @@ On first launch you choose a master password. It unlocks a local encrypted vault
 - **Anti-spoof shield**: a DMARC, DKIM, and SPF verdict read from your provider's Authentication-Results, plus homoglyph and punycode warnings and link-text-versus-href checks.
 - **PGP**: verify signatures and decrypt encrypted mail with your keys, shown as a badge in the reader.
 - Tracker-pixel blocking, collapsible long recipient lists, per-account color accents, and an adjustable reading width so long lines do not stretch across a wide screen.
+
+## Attachment safety
+
+RaplMail inspects risky attachments without ever running them. Every check is static: files are parsed, decoded, and byte-scanned, never executed.
+
+- **Pre-open warning.** Executables, macro documents, decoy double extensions (like `payroll.pdf.exe`), right-to-left-override filename spoofing, and files whose bytes do not match their extension are flagged before you open them, with a short countdown on "Open anyway".
+- **Content-based flagging.** A PDF or Office file with a clean name but active content inside (a `/Launch` action, embedded JavaScript, `/OpenAction`, embedded files, or VBA macros) is flagged on the same warning.
+- **Automatic background analysis.** Office, PDF, and archive attachments are analyzed as a message opens and get a verdict badge (Clean, Suspicious, or Dangerous). A high score escalates the pre-open warning even for a file whose name looked harmless.
+- **Macro de-obfuscation.** VBA macros are extracted and decoded (unwrapping `Chr()`, Base64, and hex tricks) so a disguised downloader is shown in plain language: auto-run triggers, behaviour, indicators such as URLs and dropped filenames, and the decoded source. Compressed PDF object streams are inflated and re-scanned so hidden content is not missed.
+- **Isolated inspection view.** Open any flagged file, or any file on your PC, in an isolated view that parses it inside a WebAssembly module with no access to your files, your network, or the backend. It lists everything the file would attempt (launch a program, run a script, contact a URL) as detected intents, next to a safe text preview and a raw hex view, and scores it from 0 to 100.
+
+This is deep static analysis and de-obfuscation, not detonation. RaplMail never runs the file in a virtual machine, so there is no code execution at any point.
 
 ## AI assistant
 
@@ -114,11 +127,12 @@ AI buttons stay hidden until a provider is usable and can be turned off entirely
 
 - **Email-derived calendar**: meeting invites are parsed from mail, with RSVP and a bulk scan.
 - **CalDAV and CardDAV**: sync external calendars and address books (Nextcloud, Fastmail, iCloud, Seznam, Radicale, and more) from Settings > Calendar and Contacts.
+- **Reminder windows and sounds**: event reminders can pop a small always-on-top window ("you have X until ...") with its own sound. New mail and calendar reminders have separate sounds, and you can upload an audio file and trim a short clip to use as your own notification sound.
 
 ## Appearance
 
 - A large set of themes grouped by category (Essentials, High contrast, Neutral, Color, Editor), including a true-black OLED theme and programmer favorites (One Dark, Dracula, Monokai, Nord, Gruvbox, Solarized, Tokyo Night, GitHub Dark).
-- Generate a full palette from a single accent color, or tune each color token by hand.
+- Generate a full palette from a single accent color, or tune each color token by hand, and save your custom palettes as named presets.
 - Light, dark, and automatic day-and-night modes, adjustable UI scale, corner roundness, message density, and optional custom CSS (which can also be applied inside email bodies).
 
 ## For power users and developers
@@ -131,7 +145,7 @@ AI buttons stay hidden until a provider is usable and can be turned off entirely
 
 - **System tray**: closing the window minimizes to the tray (IMAP IDLE and sync keep running), with an Open/Quit menu and a taskbar unread badge.
 - **Launch at login** (autostart).
-- **Auto-updater**: the Tauri updater checks a signed release feed, verifies the signature, and self-installs from Settings > Updates.
+- **Update check (serverless)**: "Check for updates" asks the GitHub Releases API for the newest published version, compares it to the running one, and opens the download page for the latest installer. No update server and no signing feed sit in the middle.
 - **Windows installers**: MSI and NSIS, signed. A macOS build (`.dmg`) is produced by the included GitHub Actions workflow.
 
 ## Building from source
@@ -162,8 +176,6 @@ cp dist/raplmail-backend.exe ../frontend/src-tauri/binaries/raplmail-backend-x86
 cd ../frontend && npx tauri build
 # installers land in frontend/src-tauri/target/release/bundle/
 ```
-
-**Auto-updater signing:** releases are signed with a minisign key (the private key is gitignored at `frontend/src-tauri/.tauri-updater.key`, the public key is baked into `tauri.conf.json`). Set `TAURI_SIGNING_PRIVATE_KEY` and its password when building to emit signed update artifacts, and publish them with a `latest.json` at the configured endpoint.
 
 ## Tests
 

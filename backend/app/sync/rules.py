@@ -4,7 +4,7 @@ Rules run against each newly-synced message. A rule has a single condition
 (field + operator + value) and a single action. Block rules mark the sender/
 domain blocked and quarantine the message (move to Junk, or delete).
 
-Matching is intentionally simple and predictable — the kind of thing a user can
+Matching is intentionally simple and predictable - the kind of thing a user can
 reason about from the Rules UI's live preview.
 """
 

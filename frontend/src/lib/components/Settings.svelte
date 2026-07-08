@@ -27,7 +27,7 @@
   let tab = $state(app.settingsTab || "accounts");
   if (app.settingsTab) app.settingsTab = null;
   // Deep-links (e.g. RuleModal → "Manage all rules") must also work while
-  // Settings is already mounted — consuming settingsTab only at init missed those.
+  // Settings is already mounted - consuming settingsTab only at init missed those.
   $effect(() => {
     if (app.settingsTab) { tab = app.settingsTab; app.settingsTab = null; }
   });
@@ -93,7 +93,7 @@
     });
   });
   const tabLabel = (id) => tabs.find((tb) => tb.id === id)?.label || id;
-  // Matching INDIVIDUAL settings — so search jumps to the exact control, not just
+  // Matching INDIVIDUAL settings - so search jumps to the exact control, not just
   // its category. Ranked so a label hit beats a keyword-only hit.
   const results = $derived.by(() => {
     const q = _norm(query);
@@ -112,14 +112,14 @@
       .slice(0, 24);
   });
   // If the current tab is filtered out, jump to the first match (only while the
-  // category list is what's showing — not while the user is scanning results).
+  // category list is what's showing - not while the user is scanning results).
   $effect(() => {
     if (query.trim()) return;
     if (filtered.length && !filtered.some((t) => t.id === tab)) tab = filtered[0].id;
   });
 
   // Jump to a specific setting: open its tab, clear the search, then briefly
-  // flash the matching control in the panel so the eye lands on it. Best-effort —
+  // flash the matching control in the panel so the eye lands on it. Best-effort -
   // if the label isn't found (e.g. localized text), we still land on the tab.
   function openSetting(r) {
     tab = r.tab;
@@ -198,7 +198,7 @@
 
 <style>
   .settings { display: flex; min-width: 0; overflow: hidden; }
-  /* Vertical settings nav — 15 sections don't fit a horizontal tab strip. */
+  /* Vertical settings nav - 15 sections don't fit a horizontal tab strip. */
   .snav {
     flex: none; width: 220px; display: flex; flex-direction: column; gap: 10px;
     padding: 16px 12px; border-right: 1px solid var(--hairline); background: var(--surface);

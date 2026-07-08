@@ -3,7 +3,7 @@
 // Why not a library: this is an offline desktop app behind a strict CSP; every
 // catalog must ship in-bundle regardless, and the app already has a clean
 // reactive settings model. A tiny `t()` reading a module-level $state gives us
-// live language switching (no reload, no network) for free — a component that
+// live language switching (no reload, no network) for free - a component that
 // calls t() in its markup re-runs automatically when the locale changes.
 //
 // The dictionaries are flat { "some.key": "text" } maps. Missing keys fall back
@@ -54,7 +54,7 @@ export function setLocale(pref) {
   if (typeof document !== "undefined") document.documentElement.lang = _locale;
 }
 
-/** The resolved locale code ("en" | "cs"). Reactive — read it to subscribe. */
+/** The resolved locale code ("en" | "cs"). Reactive - read it to subscribe. */
 export function currentLocale() {
   return _locale;
 }

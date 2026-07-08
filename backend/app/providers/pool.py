@@ -103,7 +103,7 @@ class ProviderPool:
                 continue
             try:
                 if now - e.last_used > IDLE_TIMEOUT:
-                    self._discard(e)  # idle too long — next fetch rebuilds on demand
+                    self._discard(e)  # idle too long - next fetch rebuilds on demand
                 else:
                     e.provider._imap().noop()
             except Exception:

@@ -1,13 +1,13 @@
 """Local semantic search: dense-vector embeddings + cosine ranking.
 
 Zero-cloud by default. Embeddings are produced by the user's own **local** model
-server — Ollama (`/api/embeddings`) or any OpenAI-compatible `/v1/embeddings`
+server - Ollama (`/api/embeddings`) or any OpenAI-compatible `/v1/embeddings`
 endpoint (LM Studio, llama.cpp server, vLLM, or a paid API if they insist). The
 vectors are stored in SQLite (one BLOB per message) and never leave the machine.
 
 Search is a brute-force cosine over the stored vectors. For a personal mailbox
-(thousands to low-tens-of-thousands of messages) that's a single matrix–vector
-product — milliseconds with numpy, still fine in pure Python as a fallback. This
+(thousands to low-tens-of-thousands of messages) that's a single matrix-vector
+product - milliseconds with numpy, still fine in pure Python as a fallback. This
 deliberately avoids a native vector-index extension (sqlite-vec) and a bundled
 ONNX runtime: both would bloat the frozen sidecar with hundreds of MB of native
 code, and the embedding endpoint we already need for "local intelligence"
@@ -45,7 +45,7 @@ def _note_embed_failure(exc: Exception) -> None:
     msg = str(exc)
     _health["fails"] += 1
     _health["error"] = msg
-    # Ollama answers 404 when the model isn't pulled — that won't fix itself, so
+    # Ollama answers 404 when the model isn't pulled - that won't fix itself, so
     # back off hard (10 min) rather than retry every sync tick. Transient network
     # errors get a short, escalating backoff instead.
     missing = "404" in msg
@@ -59,7 +59,7 @@ def _note_embed_success() -> None:
     if _health["fails"] or _health["error"]:
         _health.update({"error": "", "fails": 0, "next_try": 0.0, "model_missing": False})
 
-try:  # Fast path. Soft dependency — the pure-Python fallback keeps this working
+try:  # Fast path. Soft dependency - the pure-Python fallback keeps this working
     import numpy as _np  # (and tests green) in a numpy-less environment.
 except Exception:  # noqa: BLE001
     _np = None
@@ -118,7 +118,7 @@ def _http_json(url: str, body: dict, headers: dict, timeout: int = 60) -> dict:
 def _embed_ollama(base: str, model: str, texts: list[str]) -> list[list[float]]:
     # keep_alive "5m": keep the embed model resident during a sweep instead of
     # letting it fall out of VRAM every 30s (a reload per batch made indexing
-    # crawl — especially a heavy model like bge-m3).
+    # crawl - especially a heavy model like bge-m3).
     ka = "5m"
     # FAST path: /api/embed embeds the WHOLE batch in ONE request (far less
     # round-trip overhead and lets Ollama batch on the GPU). Falls back to the
@@ -129,7 +129,7 @@ def _embed_ollama(base: str, model: str, texts: list[str]) -> list[list[float]]:
         embs = payload.get("embeddings")
         if embs:
             return [[float(x) for x in v] for v in embs]
-    except Exception:  # noqa: BLE001 — old Ollama / endpoint missing → fall back
+    except Exception:  # noqa: BLE001 - old Ollama / endpoint missing → fall back
         pass
     out: list[list[float]] = []
     for txt in texts:
@@ -152,7 +152,7 @@ def _embed_batch(cfg: dict, texts: list[str]) -> list[list[float]]:
             return _embed_ollama(base, model, texts)
         except Exception:
             # Our hidden managed serve may not have the model (different models
-            # dir); the user's real serve — where they actually pulled it — does.
+            # dir); the user's real serve - where they actually pulled it - does.
             # Retry there before giving up.
             raw = cfg.get("base_raw")
             if raw and raw != base:
@@ -205,7 +205,7 @@ def _unpack(blob: bytes) -> array:
 
 
 def _content_sig(subject: str, snippet: str) -> str:
-    h = hashlib.sha1()  # noqa: S324 — not security; just change-detection
+    h = hashlib.sha1()  # noqa: S324 - not security; just change-detection
     h.update((subject or "").encode("utf-8", "ignore"))
     h.update(b"\x00")
     h.update((snippet or "").encode("utf-8", "ignore"))
@@ -215,7 +215,7 @@ def _content_sig(subject: str, snippet: str) -> str:
 def _message_text(m: Message) -> str:
     """The text we embed for a message: subject + sender + snippet.
 
-    Deliberately NOT the full body — that would mean decrypting every cached body
+    Deliberately NOT the full body - that would mean decrypting every cached body
     during a background sweep, and most messages are never body-fetched anyway, so
     an index mixing "subject+body" and "subject-only" rows would rank inconsistently.
     Subject + sender + snippet is uniform, always present, needs no decryption, and
@@ -370,7 +370,7 @@ def _load_matrix(session: Session, model: str):
     if _np is not None and rows:
         try:
             mat = _np.stack([_np.frombuffer(b, dtype=_np.float32) for b in rows])
-        except Exception:  # noqa: BLE001 — ragged rows (mixed dims) → per-row path
+        except Exception:  # noqa: BLE001 - ragged rows (mixed dims) → per-row path
             mat = [_unpack(b) for b in rows]
     else:
         mat = [_unpack(b) for b in rows]

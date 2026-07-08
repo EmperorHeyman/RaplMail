@@ -27,7 +27,7 @@ def thread_key(account_id: int, subject: str, uid: int = 0, folder_id: int = 0,
     """Stable thread id for a message.
 
     Subject threads carry the lowest participant address as a discriminator, so
-    a common subject ("Invoice") from unrelated senders doesn't merge — while a
+    a common subject ("Invoice") from unrelated senders doesn't merge - while a
     reply (which swaps From/To but keeps the same pair) still matches. Empty
     subjects fall back to a per-folder key (UIDs are only unique per folder).
     """

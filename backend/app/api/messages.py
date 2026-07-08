@@ -26,7 +26,7 @@ router = APIRouter(prefix="/messages", tags=["messages"], dependencies=[Depends(
 log = logging.getLogger("raplmail.messages")
 
 # List/thread responses never include the cached bodies, but a plain
-# select(Message) still dragged every row's full HTML+text through the ORM —
+# select(Message) still dragged every row's full HTML+text through the ORM -
 # megabytes per page. Deferred columns are only read if actually touched.
 _NO_BODY = (defer(Message.body_html), defer(Message.body_text))
 
@@ -135,7 +135,7 @@ def list_messages(
         except re.error:
             return []
         # Scan the whole mailbox in date-desc batches until we have `limit`
-        # matches or run out — instead of silently only looking at the newest
+        # matches or run out - instead of silently only looking at the newest
         # 4000 messages (which made /regex/ unable to find anything older).
         ids = []
         batch, off = 2000, 0
@@ -221,7 +221,7 @@ def list_messages(
 
     # Free text -> substring match across every visible field. Each whitespace-
     # separated term must appear somewhere (sender, recipients, subject, snippet,
-    # or cached body) — so partial words like "ertel" match "erteltrading@…".
+    # or cached body) - so partial words like "ertel" match "erteltrading@…".
     if free_text:
         from sqlalchemy import or_
         from sqlalchemy import text as sa_text
@@ -236,7 +236,7 @@ def list_messages(
                 func.lower(cast(Message.cc_addrs, String)).like(like),
                 func.lower(Message.body_text).like(like),
             ]
-            # Also match via FTS — indexed from plaintext, so bodies stay
+            # Also match via FTS - indexed from plaintext, so bodies stay
             # searchable even when the cached body column is sealed at rest.
             # The term is double-quoted (a literal FTS5 string); the probe query
             # catches any FTS error so we fall back to the LIKE clauses only.
@@ -280,10 +280,10 @@ def list_messages(
 
 @router.get("/followups", response_model=list[MessageOut])
 def followups(days: int = 3, session: Session = Depends(get_session)) -> list[MessageOut]:
-    """Sent messages >= `days` old with no reply yet — nudge to follow up.
+    """Sent messages >= `days` old with no reply yet - nudge to follow up.
     Declared before /{message_id} so the path isn't captured by the int route."""
     # Message.date is naive LOCAL time (imapclient normalises envelope dates to
-    # local), so these cutoffs must be local-naive too — not UTC.
+    # local), so these cutoffs must be local-naive too - not UTC.
     now = datetime.now()
     older_than = now - timedelta(days=days)
     recent = now - timedelta(days=30)
@@ -292,7 +292,7 @@ def followups(days: int = 3, session: Session = Depends(get_session)) -> list[Me
         return []
 
     inbound: dict[str, datetime] = {}
-    # A reply only counts if it's newer than a sent mail in the 30-day window —
+    # A reply only counts if it's newer than a sent mail in the 30-day window -
     # older inbound mail can never satisfy that, so don't scan the whole mailbox.
     for from_addr, date in session.exec(
         select(Message.from_addr, Message.date)
@@ -360,7 +360,7 @@ class QueueItem(BaseModel):
 
 @router.get("/queue/items", response_model=list[QueueItem])
 def queue_items(session: Session = Depends(get_session)) -> list[QueueItem]:
-    """The actual queued/failed actions, with their error and a human summary —
+    """The actual queued/failed actions, with their error and a human summary -
     so the UI can show *what* failed and *why* (e.g. a send that SMTP rejected)."""
     out: list[QueueItem] = []
     for a in session.exec(select(ActionQueue).order_by(ActionQueue.created_at.desc())):
@@ -433,7 +433,7 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
         .where(Message.is_seen == False)  # noqa: E712
         .group_by(Message.category)
     ).all())
-    # "New" = unread AND received within the last new_days days — what the badge
+    # "New" = unread AND received within the last new_days days - what the badge
     # shows and what the "N new" quick-filter opens.
     new_map = dict(session.exec(
         scoped(select(Message.category, func.count()))
@@ -453,7 +453,7 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
         ).one()
         senders = [{"email": addr, "name": decode_mime_words(nm) or addr, "count": sc}
                    for addr, nm, sc in sender_rows]
-        # Newest messages first — what the card shows "at a glance" so it reflects
+        # Newest messages first - what the card shows "at a glance" so it reflects
         # what just arrived, not the most prolific (and often oldest) senders.
         recent_rows = session.exec(
             scoped(select(Message.from_addr, Message.from_name, Message.subject, Message.date))
@@ -478,7 +478,7 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
 @router.get("/plus-aliases")
 def plus_aliases(session: Session = Depends(get_session)) -> list[dict]:
     """Detect sub-addresses (you+tag@domain) you've received mail on, and who's
-    been emailing each — so you can see which service leaked/shared your address."""
+    been emailing each - so you can see which service leaked/shared your address."""
     # Map each account's (localpart, domain) so we only match your own addresses.
     acct_parts: dict[tuple[str, str], int] = {}
     for a in session.exec(select(Account)):
@@ -537,7 +537,7 @@ def semantic_search(q: str, limit: int = 60,
                     session: Session = Depends(get_session)) -> list[MessageOut]:
     """Meaning-based search over the local embedding index (Settings → Semantic
     search). Returns messages ranked by similarity to `q`, best first. Empty when
-    semantic search is off, the embedding endpoint is down, or nothing is indexed —
+    semantic search is off, the embedding endpoint is down, or nothing is indexed -
     the frontend falls back to keyword search in that case. Declared before the
     /{message_id} route so 'semantic' isn't parsed as an id."""
     from app.sync import embeddings
@@ -553,7 +553,7 @@ def semantic_search(q: str, limit: int = 60,
     return [_to_out(m) for m in msgs]
 
 
-# Our own read-receipt pixel (see compose._embed_receipt) — stripped when
+# Our own read-receipt pixel (see compose._embed_receipt) - stripped when
 # rendering so viewing your own Sent copy doesn't register an "open".
 _RECEIPT_IMG_RE = re.compile(
     r'<img\b[^>]*\bsrc=["\']https?://[^"\']*/track/o/[^"\']+["\'][^>]*>', re.IGNORECASE)
@@ -571,7 +571,7 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         html, text_body = decrypt_field(msg.body_html), decrypt_field(msg.body_text)
         # Backfill (one raw fetch) for mail cached before attachments/auth existed,
         # OR when the cached body still carries unresolved `cid:` inline-image refs
-        # / blanked inline images (cached before or by a buggy embed) — re-fetch and
+        # / blanked inline images (cached before or by a buggy embed) - re-fetch and
         # re-embed so logos and pasted screenshots render without a full resync.
         stale_inline = bool(html) and ("cid:" in html.lower()
                                        or (msg.has_attachments and _has_blank_inline_img(html)))
@@ -582,11 +582,11 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
                 _h, _t, _u, _e, atts, a, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
                 if stale_inline and _h:
                     from app.core.atrest import encrypt_field
-                    # Re-cache the freshly cid-embedded body (never strip cid: refs —
+                    # Re-cache the freshly cid-embedded body (never strip cid: refs -
                     # a resolvable one must survive so a later open can embed it).
                     html = _h
                     msg.body_html = encrypt_field(_h)
-                # Refresh the attachment list too — an old list may have logged
+                # Refresh the attachment list too - an old list may have logged
                 # inline images as phantom attachments (now filtered out).
                 if atts:
                     msg.attachments = atts
@@ -611,12 +611,12 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         try:
             html, text_body, unsub, events, atts, auth, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
         except Exception as exc:
-            # Don't let one malformed/huge message break the whole open — return a
+            # Don't let one malformed/huge message break the whole open - return a
             # readable placeholder instead of failing the fetch.
             log.warning("body fetch failed for message %s: %s", msg.id, exc)
             base = _to_out(msg)
             return MessageDetail(**base.model_dump(),
-                                 html=f'<p style="color:#888">Couldn\'t load this message body ({type(exc).__name__}). It\'s still on the server — try again or open it in webmail.</p>',
+                                 html=f'<p style="color:#888">Couldn\'t load this message body ({type(exc).__name__}). It\'s still on the server - try again or open it in webmail.</p>',
                                  text="", cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe or "",
                                  attachments=[], auth={"status": msg.auth_status or "none"}, warnings=[])
         # Cache so re-opening is instant. Optionally seal the bodies at rest
@@ -655,7 +655,7 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
 
     # Derive a "brand" domain from the body's links so the avatar can fall back
     # to it when the sender's own domain has no favicon (computed from cached
-    # html — no extra IMAP round-trip).
+    # html - no extra IMAP round-trip).
     if html:
         bd = _brand_domain(html, msg.from_addr)
         if bd and bd != msg.brand_domain:
@@ -715,7 +715,7 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         smime_info = None
 
     # First-time sender: inbox mail from someone not in Contacts and not on a
-    # known domain — drives the inline "accept the sender?" prompt in the reader
+    # known domain - drives the inline "accept the sender?" prompt in the reader
     # (same definition as the Screener list filter, so they stay in sync).
     first_time = False
     try:
@@ -754,7 +754,7 @@ def _decode_att_payload(a: dict) -> "bytes | None":
 
 
 def _sniff_image_mime(data: bytes) -> "str | None":
-    """Detect an image type from its magic bytes — needed because some clients
+    """Detect an image type from its magic bytes - needed because some clients
     (e.g. Foxmail/Coremail) send inline images as application/octet-stream."""
     if not data or len(data) < 4:
         return None
@@ -778,7 +778,7 @@ _IMG_SRC_RE = re.compile(r"""src\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)""", re.IGNORE
 
 
 def _has_blank_inline_img(html: str) -> bool:
-    """True if the body has an <img> with a missing/empty src — the fingerprint
+    """True if the body has an <img> with a missing/empty src - the fingerprint
     of an inline image a buggy build blanked. Remote (http) images have a src, so
     this only trips on genuinely empty ones worth re-fetching to heal."""
     for tag in _IMG_TAG_RE.findall(html or ""):
@@ -819,7 +819,7 @@ def _attachment_meta(parsed) -> list[dict]:
         # as downloadable attachments (the "CBE34110@…" phantom attachments bug).
         if fname and cid_raw and (fname == cid_raw or fname == cid or fname.strip("<>") == cid):
             fname = ""
-        # Decode the bytes once — reused for inline detection, sizing and threat.
+        # Decode the bytes once - reused for inline detection, sizing and threat.
         data = _decode_att_payload(a)
         # An inline body image has a Content-ID, no real filename, and image bytes.
         # Don't trust the declared type: some clients label inline images as
@@ -829,7 +829,7 @@ def _attachment_meta(parsed) -> list[dict]:
             if not is_image:
                 is_image = bool(data) and _sniff_image_mime(data) is not None
             if is_image:
-                continue  # embedded body image — not a real attachment
+                continue  # embedded body image - not a real attachment
         display = fname or f"attachment-{i + 1}"
         # Pass a generous head so the PDF/Office content scan can find active
         # content that isn't in the first few KB (the catalog/OpenAction can sit
@@ -848,7 +848,7 @@ def _attachment_meta(parsed) -> list[dict]:
     return out
 
 
-# Link domains that are never a sender's "brand" — trackers, CDNs, ESPs, social.
+# Link domains that are never a sender's "brand" - trackers, CDNs, ESPs, social.
 _BRAND_BLOCK = (
     "google", "gstatic", "googleapis", "doubleclick", "ggpht", "youtube", "ytimg",
     "microsoft", "office", "office365", "outlook", "live.com", "msn", "bing",
@@ -875,7 +875,7 @@ def _brand_domain(html: str, sender_addr: str) -> str:
     counts: Counter = Counter()
     for host in _HREF_RE.findall(html):
         host = host.lower().split(":")[0].rstrip(".")
-        # Keep the FULL host (incl. subdomain) — e.g. hr.a123systems.cz has its own
+        # Keep the FULL host (incl. subdomain) - e.g. hr.a123systems.cz has its own
         # favicon even when the bare a123systems.cz doesn't. Only skip the sender's
         # exact bare domain (whose icon we already try as the primary avatar).
         if not re.match(r"^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$", host):
@@ -902,7 +902,7 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
     parsed = mailparser.parse_from_bytes(raw)
     html = "\n".join(parsed.text_html) if parsed.text_html else ""
     text_body = "\n".join(parsed.text_plain) if parsed.text_plain else ""
-    # Inline images are referenced as `cid:...`, which a webview can't resolve —
+    # Inline images are referenced as `cid:...`, which a webview can't resolve -
     # rewrite them to data: URIs so logos/snapshots render inline.
     try:
         html = _embed_inline_images(html, parsed)
@@ -951,7 +951,7 @@ def _embed_inline_images(html: str, parsed) -> str:
         data = _decode_att_payload(a)
         if not data or len(data) > 6_000_000:
             continue
-        # Trust the declared image type, else sniff the bytes — some clients send
+        # Trust the declared image type, else sniff the bytes - some clients send
         # inline images as application/octet-stream with a Content-ID.
         ctype = (a.get("mail_content_type") or "").lower()
         mime = ctype if ctype.startswith("image/") else _sniff_image_mime(data)
@@ -959,7 +959,7 @@ def _embed_inline_images(html: str, parsed) -> str:
             continue
         uri = f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}"
         # Key the image under every reference an HTML body might use: the full
-        # Content-ID, its local part (before "@"), and the filename — different
+        # Content-ID, its local part (before "@"), and the filename - different
         # clients reference inline images differently.
         for key in (cid, cid.split("@")[0] if cid else "", fname):
             if key:
@@ -1015,7 +1015,7 @@ async def download_attachment(message_id: int, index: int,
         log.warning("attachment fetch failed for message %s/%s: %s", message_id, index, detail)
         if "password" in detail.lower() or "authenticationfailed" in detail.lower() or "login" in detail.lower():
             raise HTTPException(status.HTTP_502_BAD_GATEWAY,
-                                f"Can't reach {account.email if account else 'this account'} — it has no saved/valid "
+                                f"Can't reach {account.email if account else 'this account'} - it has no saved/valid "
                                 "password. Re-add the account in Settings → Accounts.") from exc
         raise HTTPException(status.HTTP_502_BAD_GATEWAY,
                             f"Couldn't download the attachment from the server ({type(exc).__name__}).") from exc
@@ -1143,7 +1143,7 @@ _bg_tasks: set = set()
 
 def _push_done_keyword(account: Account, folder_path: str, uid: int, done: bool) -> None:
     """Mirror the local 'done' to the server as a custom IMAP keyword (best-effort)
-    so it syncs to other devices. Failures are swallowed — local state still holds."""
+    so it syncs to other devices. Failures are swallowed - local state still holds."""
     from app.providers.base import DONE_KEYWORD
     from app.providers.pool import pool
     try:
@@ -1226,7 +1226,7 @@ async def set_done(message_id: int, body: BoolValue, session: Session = Depends(
     session.add(msg)
     session.commit()
     session.refresh(msg)
-    # Mirror the done state to the server keyword in the BACKGROUND — don't make
+    # Mirror the done state to the server keyword in the BACKGROUND - don't make
     # the user wait on an IMAP STORE round-trip (that was the perceptible lag on
     # every "e"). Fire-and-forget; a failed push just isn't mirrored cross-device.
     if msg.account_id and msg.folder_id and msg.uid:
@@ -1357,7 +1357,7 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
 
     if a in ("archive", "delete"):
         # Queue it: hide the messages immediately, flush to IMAP in the background
-        # (offline-resilient — retried until the connection is back).
+        # (offline-resilient - retried until the connection is back).
         msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))).all()
         for m in msgs:
             m.pending_action = a
@@ -1381,7 +1381,7 @@ async def move_messages(body: MoveIn, request: Request, session: Session = Depen
     UI). Queued + flushed to IMAP in the background exactly like archive/delete:
     hide the rows now, move them on the server soon, retried until reachable. IMAP
     moves live within one account, so messages whose account differs from the
-    destination folder — or that are already in it — are skipped."""
+    destination folder - or that are already in it - are skipped."""
     dest = session.get(Folder, body.folder_id)
     if not dest:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Destination folder not found.")
@@ -1412,7 +1412,7 @@ def _persist_snooze(session: Session, msg: Message, until) -> None:
         state = MessageState(account_id=msg.account_id, message_id=msg.message_id)
         session.add(state)
     state.snooze_until = until
-    # A dated snooze replaces any "until I'm back" snooze — otherwise the
+    # A dated snooze replaces any "until I'm back" snooze - otherwise the
     # presence watcher would clear it the moment the user returns.
     state.snooze_presence = False
 
@@ -1447,7 +1447,7 @@ def _flush_move(ids: list[int], action: str) -> None:
                         provider.move(folder.path, m.uid, dest)
                     else:
                         provider.delete(folder.path, m.uid)
-                    # Extracted events reference the message (FK enforced) — they
+                    # Extracted events reference the message (FK enforced) - they
                     # must go first or the local delete fails forever.
                     session.exec(sa_delete(CalendarEvent).where(CalendarEvent.message_id == m.id))
                     session.delete(m)
@@ -1470,7 +1470,7 @@ def _flush_move_to(ids: list[int], folder_id: int) -> None:
     with Session(get_engine()) as session:
         dest = session.get(Folder, folder_id)
         if not dest:
-            return                       # folder deleted meanwhile — nothing to do
+            return                       # folder deleted meanwhile - nothing to do
         msgs = [m for m in session.exec(select(Message).where(Message.id.in_(ids)))
                 if m.account_id == dest.account_id and m.folder_id != dest.id]
         if not msgs:
@@ -1679,7 +1679,7 @@ async def set_seen(message_id: int, body: BoolValue, session: Session = Depends(
     session.add(msg)
     session.commit()
     session.refresh(msg)
-    # Mirror to the server's \Seen flag in the background — same fire-and-forget
+    # Mirror to the server's \Seen flag in the background - same fire-and-forget
     # pattern as the done keyword, so other devices see the read state too.
     if msg.account_id and msg.folder_id and msg.uid:
         import asyncio

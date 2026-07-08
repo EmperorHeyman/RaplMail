@@ -3,7 +3,7 @@
 Builds a correctly-nested message so that HTML, a plain-text fallback, inline
 signature/body images (referenced via ``cid:``), and file attachments all render
 properly in recipients' clients. Inline images use Content-ID + inline
-disposition — this is the fix for the "signature image won't show up" problem.
+disposition - this is the fix for the "signature image won't show up" problem.
 
 Structure produced (only the needed layers are created):
 
@@ -36,7 +36,7 @@ def _html_to_text(html: str) -> str:
 
 def build_mime(msg: OutgoingMessage) -> EmailMessage:
     # SMTP policy => linesep='\r\n'. Without it, quoted-printable soft line breaks
-    # serialize as bare '=\n', which strict QP decoders mis-parse — dropping the
+    # serialize as bare '=\n', which strict QP decoders mis-parse - dropping the
     # byte after each soft break and mangling UTF-8 diacritics/markup (e.g.
     # "Lukáš" -> "Luká…=A1", "Republic" -> "=epublic", "<span>" -> "<=pan>").
     root = EmailMessage(policy=SMTP_POLICY)
@@ -65,11 +65,11 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
     html_part = None
     if msg.html:
         root.add_alternative(msg.html, subtype="html")
-        # Capture the html part NOW — the calendar part added below becomes the
+        # Capture the html part NOW - the calendar part added below becomes the
         # new last payload element, so [-1] would grab the wrong part.
         html_part = root.get_payload()[-1]
     if cal:
-        # An iMIP text/calendar alternative with METHOD — Gmail/Outlook render an
+        # An iMIP text/calendar alternative with METHOD - Gmail/Outlook render an
         # RSVP box and drop the event onto the recipient's calendar.
         method = (getattr(msg, "calendar_method", "") or "REQUEST").upper()
         root.add_alternative(cal, subtype="calendar", charset="utf-8")
@@ -102,7 +102,7 @@ def _apply_smime(root: EmailMessage, msg: OutgoingMessage) -> EmailMessage:
     """Sign and/or encrypt the assembled body as S/MIME, moving the addressing
     headers onto the resulting multipart/signed or application/pkcs7-mime outer.
     The body entity (Content-Type + parts, without From/To/Subject) is what's
-    signed/encrypted — the standard S/MIME structure."""
+    signed/encrypted - the standard S/MIME structure."""
     import email as _email
 
     from app.sync import smime as _sm

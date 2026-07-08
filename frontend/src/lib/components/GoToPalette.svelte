@@ -4,7 +4,7 @@
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
-  // "Go to…" quick-jump bar — replaces the old invisible `g`+letter chord with a
+  // "Go to…" quick-jump bar - replaces the old invisible `g`+letter chord with a
   // VS Code-style palette (Ctrl+T feel). The single-letter accelerators still
   // work instantly (type a hint letter while the query is empty), so muscle
   // memory like `g i` survives, but new users get a discoverable, filterable

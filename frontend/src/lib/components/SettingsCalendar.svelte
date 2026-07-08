@@ -4,7 +4,7 @@
   import { calendar as calApi } from "../api.js";
   import { icons } from "../icons.js";
 
-  // Google Calendar write access (OAuth) — lets "New event" actually land on
+  // Google Calendar write access (OAuth) - lets "New event" actually land on
   // your Google Calendar (the iMIP email trick is unreliable for self-events).
   let gcal = $state({ connected: false, email: "" });
   let gcalBusy = $state(false);
@@ -66,7 +66,7 @@
   <section class="card">
     <h3>Write to Google Calendar</h3>
     <p class="hint">Subscribed iCal feeds are read-only. Connect your Google account once (calendar permission)
-      so events you create in RaplMail are written straight to your Google Calendar via the API — reliable,
+      so events you create in RaplMail are written straight to your Google Calendar via the API - reliable,
       unlike emailing yourself an invite.</p>
     {#if gcal.connected}
       <div class="rowbtns" style="align-items:center">
@@ -83,7 +83,7 @@
 
   <section class="card">
     <h3>Subscribed calendars (iCal / ICS)</h3>
-    <p class="hint">Paste iCal feed URLs — one per line — and RaplMail pulls their events into your calendar.
+    <p class="hint">Paste iCal feed URLs - one per line - and RaplMail pulls their events into your calendar.
       Works with Google's "Secret address in iCal format", Outlook published calendars, any <code>.ics</code> or
       <code>webcal://</code> link. Duplicates are merged by event ID and events removed from a feed are deleted on the
       next sync. Read-only.</p>
@@ -97,7 +97,7 @@
           <button class="rm" title="Remove feed" onclick={() => removeFeed(i)}>{@html icons.trash}</button>
         </div>
       {/each}
-      {#if feeds.length === 0}<p class="hint" style="margin:0">No feeds yet — add one below.</p>{/if}
+      {#if feeds.length === 0}<p class="hint" style="margin:0">No feeds yet - add one below.</p>{/if}
     </div>
     <div class="rowbtns">
       <button class="btn" onclick={addFeed}>＋ Add feed</button>
@@ -107,13 +107,13 @@
 
   <section class="card">
     <h3>Reminders &amp; auto-sync</h3>
-    <p class="hint">Desktop reminders before an event starts — pick any combination (e.g. 10 minutes <i>and</i> 1 day <i>and</i> 1 week). Respects Quiet hours.</p>
+    <p class="hint">Desktop reminders before an event starts - pick any combination (e.g. 10 minutes <i>and</i> 1 day <i>and</i> 1 week). Respects Quiet hours.</p>
     <div class="chips remind">
       {#each REMINDER_OPTS as o}
         <button class="rchip" class:on={reminders().includes(o.m)} onclick={() => toggleReminder(o.m)}>{o.t}</button>
       {/each}
     </div>
-    {#if reminders().length === 0}<p class="hint" style="margin:8px 0 0">No reminders — you won't be notified about events.</p>{/if}
+    {#if reminders().length === 0}<p class="hint" style="margin:8px 0 0">No reminders - you won't be notified about events.</p>{/if}
     <label class="fieldrow" style="margin-top:14px"><span>Auto-sync every</span>
       <select value={app.settings.icsSyncMinutes ?? 30} onchange={(e) => saveSettings({ icsSyncMinutes: Number(e.currentTarget.value) })}>
         <option value={15}>15 minutes</option>
@@ -158,12 +158,12 @@
       <li><b>Fastmail:</b> <code>https://caldav.fastmail.com/dav/calendars/user/&lt;you&gt;/</code> (use an app password)</li>
       <li><b>iCloud:</b> enable then use the per-account CalDAV URL from your Apple ID (app-specific password).</li>
     </ul>
-    <p class="hint">Tip: most servers also let you point at the account root (e.g. <code>…/dav/</code>) — RaplMail reads whatever events the URL returns.</p>
+    <p class="hint">Tip: most servers also let you point at the account root (e.g. <code>…/dav/</code>) - RaplMail reads whatever events the URL returns.</p>
   </section>
 
   <section class="card">
     <h3>Built-in calendar</h3>
-    <p class="hint">Separately from CalDAV, RaplMail already extracts meeting invites from your mail into the calendar view —
+    <p class="hint">Separately from CalDAV, RaplMail already extracts meeting invites from your mail into the calendar view -
       open <b>Calendar</b> from the sidebar. The “Scan” button there back-fills events from older invites.</p>
   </section>
 </div>

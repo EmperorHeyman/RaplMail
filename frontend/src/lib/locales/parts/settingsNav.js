@@ -1,6 +1,6 @@
 // Settings shell/nav (Settings.svelte) strings: tab labels, search placeholder,
 // heading, back button, footer. Flat "settingsNav.*" keys; mirror en in cs.
-// Tab `id` and `kw` (search keywords) stay in the component — only labels here.
+// Tab `id` and `kw` (search keywords) stay in the component - only labels here.
 export default {
   en: {
     "settingsNav.title": "Settings",
@@ -28,7 +28,7 @@ export default {
     "settingsNav.utility": "Utility",
     "settingsNav.general": "General",
     "settingsNav.debug": "Debug",
-    "settingsNav.debugUnlocked": "Developer mode enabled — Debug is now in the sidebar.",
+    "settingsNav.debugUnlocked": "Developer mode enabled - Debug is now in the sidebar.",
     "settingsNav.debugCountdown": "{n} more tap(s) to enable developer mode…",
     "settingsNav.debugHintTip": "Tap 5 times to unlock developer tools",
   },
@@ -58,7 +58,7 @@ export default {
     "settingsNav.utility": "Nástroje",
     "settingsNav.general": "Obecné",
     "settingsNav.debug": "Ladění",
-    "settingsNav.debugUnlocked": "Režim vývojáře zapnut — Ladění je nyní v postranním panelu.",
+    "settingsNav.debugUnlocked": "Režim vývojáře zapnut - Ladění je nyní v postranním panelu.",
     "settingsNav.debugCountdown": "Ještě {n} klepnutí k zapnutí režimu vývojáře…",
     "settingsNav.debugHintTip": "Klepněte 5× pro odemknutí vývojářských nástrojů",
   },

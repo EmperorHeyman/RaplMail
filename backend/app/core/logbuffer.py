@@ -19,7 +19,7 @@ _MAX = 800  # keep the last ~800 lines; plenty to diagnose a sync/send stall
 def _is_noise(record: logging.LogRecord, msg: str) -> bool:
     """Drop harmless churn that would only clutter the Debug window. The main one
     on Windows is asyncio's proactor logging every abrupt socket close (WinError
-    10054) when the webview drops an HTTP/WS connection — expected, not an error."""
+    10054) when the webview drops an HTTP/WS connection - expected, not an error."""
     if record.name.startswith("asyncio"):
         if "10054" in msg or "_call_connection_lost" in msg or "ConnectionResetError" in msg:
             return True
@@ -37,7 +37,7 @@ class RingBufferHandler(logging.Handler):
         try:
             msg = record.getMessage()
         except Exception:
-            # Bad %-args — keep the raw template rather than losing the line.
+            # Bad %-args - keep the raw template rather than losing the line.
             msg = str(record.msg)
         if record.exc_info:
             try:

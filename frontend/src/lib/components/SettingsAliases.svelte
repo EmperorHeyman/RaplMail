@@ -40,7 +40,7 @@
         match_field: "to", match_op: "contains", match_value: r.alias,
         action: "archive", action_arg: "", enabled: true,
       });
-      notify(`Muted ${r.alias} — new mail to it will be archived`);
+      notify(`Muted ${r.alias} - new mail to it will be archived`);
     } catch (e) { notify(e.message, "error"); }
   }
 </script>
@@ -49,7 +49,7 @@
   <section>
     <h3>Generate a tracking alias</h3>
     <p class="lead">Hand a unique <code>you+service@domain</code> address to each site. Mail still lands in your inbox,
-      but you can see exactly who you gave it to — and if it ever shows up elsewhere, you know who leaked it. Works on
+      but you can see exactly who you gave it to - and if it ever shows up elsewhere, you know who leaked it. Works on
       Gmail, Outlook/M365, Fastmail and most modern servers.</p>
     <div class="gen">
       {#if app.accounts.length > 1}
@@ -94,7 +94,7 @@
               {#if r.distinct_senders > r.senders.length}<span class="more">+{r.distinct_senders - r.senders.length}</span>{/if}
             </div>
             {#if r.distinct_senders > 1}
-              <div class="leak">⚠ More than one sender uses this alias — it may have been shared or leaked.</div>
+              <div class="leak">⚠ More than one sender uses this alias - it may have been shared or leaked.</div>
             {/if}
           </div>
         {/each}

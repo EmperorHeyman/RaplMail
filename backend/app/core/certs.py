@@ -31,7 +31,7 @@ def _candidate_paths() -> list[str]:
         # collect_data_files("certifi") lands here; the root copy is our fallback.
         paths.append(os.path.join(base, "certifi", "cacert.pem"))
         paths.append(os.path.join(base, "cacert.pem"))
-    # Whatever certifi itself thinks — works in dev, sometimes in frozen too.
+    # Whatever certifi itself thinks - works in dev, sometimes in frozen too.
     try:
         import certifi
 

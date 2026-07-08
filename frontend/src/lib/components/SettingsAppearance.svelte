@@ -10,7 +10,7 @@
 
   // Configurable quick-action buttons (which buttons show on rows / in the reader).
   const ROW_CHOICES = [
-    ["none", "— None —"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
+    ["none", "- None -"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
     ["read", "Read / unread"], ["archive", "Archive"], ["delete", "Delete"],
   ];
   const READER_CHOICES = [
@@ -91,7 +91,7 @@
 
   // --- Generate a whole palette from ONE accent color ------------------------
   // Pull the accent's hue, then build a low-saturation grey ramp on that hue for
-  // a dark or light base — so you don't hand-tune 11 tokens.
+  // a dark or light base - so you don't hand-tune 11 tokens.
   let genAccent = $state(app.settings.theme?.["--accent"] || "#5e8bff");
   let genBase = $state("dark");
   function hexToHsl(hex) {
@@ -211,7 +211,7 @@
 
   <section class="card" class:dim={auto}>
     <h3>Presets</h3>
-    <p class="hint">Each preview shows the actual background, panel and accent — pick a mood, then fine-tune below.</p>
+    <p class="hint">Each preview shows the actual background, panel and accent - pick a mood, then fine-tune below.</p>
     {#if userPresets.length}
       <div class="preset-cat">Yours</div>
       <div class="presets">
@@ -263,7 +263,7 @@
       </div>
       <button class="btn" onclick={applyGenerated}>Generate palette</button>
     </div>
-    <p class="hint">Or tune each token below — every one is a CSS variable used across the whole app.</p>
+    <p class="hint">Or tune each token below - every one is a CSS variable used across the whole app.</p>
     <div class="tokens">
       {#each THEME_TOKENS as [token, def]}
         <label class="token">
@@ -314,9 +314,9 @@
       <span class="fhint">How tightly rows are packed in the message list.</span>
       <div class="seg">
         {#each [
-          { v: "compact", t: "Compact", d: "Tightest — fit the most messages on screen." },
+          { v: "compact", t: "Compact", d: "Tightest - fit the most messages on screen." },
           { v: "comfortable", t: "Comfortable", d: "The default balance of density and breathing room." },
-          { v: "cozy", t: "Cozy", d: "Roomiest — extra padding and a larger avatar." },
+          { v: "cozy", t: "Cozy", d: "Roomiest - extra padding and a larger avatar." },
         ] as o}
           <button class="segbtn" class:on={(app.settings.density || "comfortable") === o.v} title={o.d}
             onclick={() => { saveSettings({ density: o.v }); applyTheme(); }}>{o.t}</button>
@@ -340,7 +340,7 @@
       <span class="fhint">How email bodies are rendered in a dark theme.</span>
       <div class="seg">
         {#each [
-          { v: "dark", t: "Dark", d: "Force a dark background on every email — no white, ever." },
+          { v: "dark", t: "Dark", d: "Force a dark background on every email - no white, ever." },
           { v: "adaptive", t: "Adaptive", d: "Dark pane for plain mail; branded mail keeps its own design." },
           { v: "original", t: "Original", d: "Show every email exactly as the sender designed it (white)." },
         ] as o}
@@ -348,7 +348,7 @@
             onclick={() => saveSettings({ emailTheme: o.v })}>{o.t}</button>
         {/each}
       </div>
-      <span class="fhint">{emailMode === "dark" ? "Near-white backgrounds are recolored to your theme; saturated brand colors are kept." : emailMode === "adaptive" ? "Plain emails get a dark pane; designed emails are left untouched on white." : "No adaptation — emails render on a white reading pane as authored."}</span>
+      <span class="fhint">{emailMode === "dark" ? "Near-white backgrounds are recolored to your theme; saturated brand colors are kept." : emailMode === "adaptive" ? "Plain emails get a dark pane; designed emails are left untouched on white." : "No adaptation - emails render on a white reading pane as authored."}</span>
     </div>
     <div class="field">
       <b>Reply / action buttons</b>
@@ -371,7 +371,7 @@
         onchange={(e) => saveSettings({ linkUnfurls: e.currentTarget.checked })} />
       <div>
         <b>Rich link previews</b>
-        <span>Show a preview card (title, image) for the main link in a message. Off by default — enabling fetches the linked page from your machine.</span>
+        <span>Show a preview card (title, image) for the main link in a message. Off by default - enabling fetches the linked page from your machine.</span>
       </div>
     </label>
     <label class="check">
@@ -395,7 +395,7 @@
         onchange={(e) => saveSettings({ senderAvatars: e.currentTarget.checked })} />
       <div>
         <b>Sender logos as avatars</b>
-        <span>Show each sender's brand logo by fetching their domain's favicon (cached locally after the first time). Falls back to initials. Off = always initials — and no domain lookups leave your machine.</span>
+        <span>Show each sender's brand logo by fetching their domain's favicon (cached locally after the first time). Falls back to initials. Off = always initials - and no domain lookups leave your machine.</span>
       </div>
     </label>
     <p class="hint" style="margin:12px 0 0">Tip: turn on <b>Customize layout</b> (lock icon in the sidebar) to drag-resize the columns.</p>
@@ -425,7 +425,7 @@
 
   <section class="card">
     <h3>Custom CSS</h3>
-    <p class="hint">Power-user escape hatch — applied app-wide and live. Target the classes and
+    <p class="hint">Power-user escape hatch - applied app-wide and live. Target the classes and
       CSS variables in the reference below.</p>
     <textarea class="css" spellcheck="false" placeholder={'.btn.primary { border-radius: 999px; }\n.row { font-size: 15px; }\n:root { --accent: #ff5d8f; }'}
       value={app.settings.customCss} oninput={(e) => setCss(e.currentTarget.value)}></textarea>
@@ -440,7 +440,7 @@
     </label>
 
     <details class="docs">
-      <summary>Reference — selectors &amp; variables</summary>
+      <summary>Reference - selectors &amp; variables</summary>
       <p class="dh">Elements</p>
       <table>
         <tbody>
@@ -511,7 +511,7 @@
   .preset:hover { border-color: var(--accent); transform: translateY(-1px); }
   .preset.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft-2); }
   /* Mini live-preview of the theme: real background, a panel bar, an accent dot,
-     and a "text" line — so light/dark/black read at a glance. */
+     and a "text" line - so light/dark/black read at a glance. */
   .chip { position: relative; display: block; height: 46px; border: 1px solid; border-radius: 8px; overflow: hidden; }
   .chip-bar { position: absolute; left: 7px; top: 7px; width: 42%; height: 32px; border-radius: 5px; }
   .chip-dot { position: absolute; right: 8px; top: 9px; width: 11px; height: 11px; border-radius: 50%; }

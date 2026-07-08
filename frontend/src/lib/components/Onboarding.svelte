@@ -42,7 +42,7 @@
     { icon: icons.keyboard, title: t("onboarding.hlKeysTitle"), body: t("onboarding.hlKeysBody") },
   ]);
 
-  // The settings areas the user can tailor — tapping a card jumps straight there.
+  // The settings areas the user can tailor - tapping a card jumps straight there.
   const SETTINGS_AREAS = $derived.by(() => [
     { tab: "accounts", icon: icons.accounts, title: t("settingsNav.accounts"), body: t("onboarding.setAccounts") },
     { tab: "appearance", icon: icons.palette, title: t("settingsNav.appearance"), body: t("onboarding.setAppearance") },
@@ -69,7 +69,7 @@
   }
   function skip() { saveSettings({ onboarded: true }); }
 
-  // Own the keyboard while the wizard is up — arrows/enter drive the flow and
+  // Own the keyboard while the wizard is up - arrows/enter drive the flow and
   // e/j/k must not leak to the mail list behind the veil.
   $effect(() => {
     function onKey(e) {

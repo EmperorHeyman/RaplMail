@@ -5,7 +5,7 @@ When you enable a read receipt on a message, the body gets an <img> pointing at
 the open here and pushes a live "mail:opened" event. Privacy note: this only
 works if the recipient can actually reach this backend (i.e. it's exposed on the
 LAN/internet, RAPLMAIL_HOST=0.0.0.0). The pixel endpoint is intentionally
-unauthenticated — anyone with the opaque token can register an open.
+unauthenticated - anyone with the opaque token can register an open.
 """
 
 from __future__ import annotations
@@ -51,7 +51,7 @@ async def open_pixel(token: str, request: Request, session: Session = Depends(ge
 
 
 def _iso_utc(v: datetime | None) -> str | None:
-    """Stored UTC but SQLite drops the tzinfo — stamp the offset so the frontend
+    """Stored UTC but SQLite drops the tzinfo - stamp the offset so the frontend
     doesn't read the UTC wall-clock as local time."""
     if v is None:
         return None

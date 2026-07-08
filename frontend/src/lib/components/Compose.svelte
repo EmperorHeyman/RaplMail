@@ -7,7 +7,7 @@
   import { t, currentLocale } from "../i18n.svelte.js";
   import { mdToHtml } from "../markdown.js";
 
-  // Native spell-check (WebView2/Chromium + OS dictionaries). One attribute — no
+  // Native spell-check (WebView2/Chromium + OS dictionaries). One attribute - no
   // dependency, works offline. `lang` steers the dictionary. WebView2 checks one
   // language at a time, so the composer has a language switcher (persisted) for
   // people who write in more than one language (e.g. English UI, Czech mail).
@@ -147,8 +147,8 @@
   let seededQuote = "";             // reply/forward quoted block, kept aside in md mode
 
   function defaultSigFor(acctId) {
-    // This account's OWN signature always wins — its default first, then any of
-    // its signatures — before falling back to a global (all-accounts) one. The
+    // This account's OWN signature always wins - its default first, then any of
+    // its signatures - before falling back to a global (all-accounts) one. The
     // old code fell through to sigs[0], so writing from A123 grabbed the
     // rapl-group signature just because it happened to be first / the global
     // default. Never borrow another account's signature.
@@ -247,7 +247,7 @@
   }
 
   // Local autosave keeps a *list* of recent drafts (newest first). Compose always
-  // opens NEW — you restore a previous draft from the "Drafts" menu in the header,
+  // opens NEW - you restore a previous draft from the "Drafts" menu in the header,
   // rather than having one silently reappear.
   const DRAFTS_KEY = "raplmail.drafts";
   const DRAFTS_MAX = 8;
@@ -283,7 +283,7 @@
     return !!clone.innerText.trim();
   }
   function saveDraft() {
-    // `closed` = this compose finished (sent/scheduled/discarded) — the
+    // `closed` = this compose finished (sent/scheduled/discarded) - the
     // onDestroy flush must not resurrect it into the drafts list.
     if (standalone || closed) return;
     const list = loadRecentDrafts().filter((d) => d.id !== draftId);
@@ -330,7 +330,7 @@
     }
     if (c.cc) showCc = true;
     if (Array.isArray(c.attachments)) attachments = c.attachments;
-    seededQuote = c.html || "";   // reply/forward quote — re-appended after markdown on send
+    seededQuote = c.html || "";   // reply/forward quote - re-appended after markdown on send
     if (editor && c.html) editor.innerHTML = c.html;
     try {
       sigs = await sigApi.list();
@@ -339,7 +339,7 @@
     } catch {}
     applySignature();
 
-    // Always open a fresh message. Previous drafts are never auto-restored — they
+    // Always open a fresh message. Previous drafts are never auto-restored - they
     // live in the "Drafts" menu in the header, restored on demand.
     draftId = (crypto.randomUUID ? crypto.randomUUID() : `d${Date.now()}${Math.random()}`);
     loadRecentDrafts();

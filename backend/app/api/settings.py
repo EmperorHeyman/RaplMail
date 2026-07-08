@@ -97,7 +97,7 @@ def import_bundle(bundle: dict, session: Session = Depends(get_session)) -> Impo
 
 def _apply_config(session: Session, bundle: dict) -> ImportResult:
     """Restore the re-syncable config (settings, rules, signatures, sender tags).
-    Does NOT commit — the caller commits. Shared by /import and /import-full."""
+    Does NOT commit - the caller commits. Shared by /import and /import-full."""
     res = ImportResult(settings=False, rules=0, signatures=0, sender_categories=0)
 
     if isinstance(bundle.get("settings"), dict):

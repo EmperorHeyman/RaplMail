@@ -1,5 +1,5 @@
 <script>
-  // A SOLID, non-fragile search window — built like the compose / AI windows:
+  // A SOLID, non-fragile search window - built like the compose / AI windows:
   // a floating, draggable, resizable panel that only closes on an explicit
   // action (Esc, the X, running a search, or opening a result). It never closes
   // on an outside click, and it KEEPS whatever you typed across close/reopen, so
@@ -24,7 +24,7 @@
   const VALUE_OPS = new Set(["from:", "to:", "cc:", "subject:"]);
   const CONTACT_OPS = new Set(["from:", "to:", "cc:"]);
 
-  // --- query state (persists across open/close — the component isn't destroyed) --
+  // --- query state (persists across open/close - the component isn't destroyed) --
   let chips = $state([]);        // completed operator chips: from:x, is:unread …
   let pendingOp = $state("");    // a value operator being filled: "from:" / ""
   let text = $state("");         // input contents: the pending value, or free text
@@ -63,7 +63,7 @@
     try { localStorage.setItem(RECENT_KEY, JSON.stringify(next)); } catch {}
   }
 
-  // Seed from the bar ONLY when opening with an empty draft — otherwise keep what
+  // Seed from the bar ONLY when opening with an empty draft - otherwise keep what
   // the user already had (so reopening never wipes their in-progress query). Only
   // `open`/`initial` are tracked; the seeding reads/writes state untracked so it
   // can't re-run on every keystroke (that bug made the palette impossible to type
@@ -98,7 +98,7 @@
       sugg = pool.filter((c) => c.email).slice(0, 8)
         .map((c) => ({ kind: "contact", label: c.name || c.email, sub: c.email, value: c.email }));
     } else if (pendingOp) {
-      sugg = [];   // subject: — free value, nothing to suggest
+      sugg = [];   // subject: - free value, nothing to suggest
     } else {
       const cur = (text.trim().split(/\s+/).pop() || "").toLowerCase();
       sugg = OPERATORS.filter((o) => !cur || o.token.toLowerCase().startsWith(cur))
@@ -185,7 +185,7 @@
     finally { if (seq === fetchSeq) loading = false; }
   }
 
-  // Smart (meaning-based) search runs on demand — it's expensive (embeddings / an
+  // Smart (meaning-based) search runs on demand - it's expensive (embeddings / an
   // AI call), so never per keystroke. Results show IN the panel, same as keyword
   // mode. Pipeline mirrors the store: local embeddings → AI keyword extraction →
   // plain keyword, so you always get *something* rather than an empty close.
@@ -217,7 +217,7 @@
   function commit() {
     if (pendingOp && text.trim()) commitPending();
     const q = query.trim();
-    // Smart search shows results IN the panel (doesn't close) — you pick a result
+    // Smart search shows results IN the panel (doesn't close) - you pick a result
     // to open, or Esc/X to dismiss. Keyword search applies to the inbox + closes.
     if (smart) { if (q) runSmart(); return; }
     pushRecent(q);
@@ -234,7 +234,7 @@
     if (pendingOp && text.trim()) commitPending();
     const q = query.trim();
     pushRecent(q);
-    // Leave the inbox filtered behind the opened mail — by meaning for smart mode,
+    // Leave the inbox filtered behind the opened mail - by meaning for smart mode,
     // by keyword otherwise.
     if (smart) onsemantic?.(q); else onsearch?.(q);
     onopen?.(msg);
@@ -478,7 +478,7 @@
   .modeseg button { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; color: var(--muted); }
   .modeseg button.on { background: var(--accent); color: #fff; }
 
-  /* The query field — a real, styled input surface (chips + text inside it). */
+  /* The query field - a real, styled input surface (chips + text inside it). */
   .field { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 14px 0;
     padding: 9px 10px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
     transition: border-color var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }

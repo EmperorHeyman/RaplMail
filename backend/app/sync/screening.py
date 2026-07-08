@@ -3,9 +3,9 @@
 Two independent, user-controlled layers:
 
 * A **domain/TLD blocklist** the user configures (Settings → Security). Mail whose
-  sender domain matches is quarantined on arrival (moved to Junk, or deleted) —
+  sender domain matches is quarantined on arrival (moved to Junk, or deleted) -
   the same hard action a "block" rule takes.
-* **Header spoof heuristics** — a subset of `authcheck.spoof_warnings` that needs
+* **Header spoof heuristics** - a subset of `authcheck.spoof_warnings` that needs
   no message body (lookalike/IDN domain, display-name/domain mismatch, brand
   impersonation). When enabled, a matching inbox mail is *flagged* suspicious
   (a warning badge); it is never auto-deleted, so a false positive costs nothing.

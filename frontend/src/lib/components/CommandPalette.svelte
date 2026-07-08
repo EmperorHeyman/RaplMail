@@ -16,7 +16,7 @@
 
   // The palette doubles as a search bar: as soon as the query looks like a mail
   // search (a from:/subject:/… operator, or a /regex/), it flips to showing live
-  // message results instead of commands — same backend as the search modal, just
+  // message results instead of commands - same backend as the search modal, just
   // rendered inline here.
   const searchMode = $derived(
     /(^|\s)(from|to|cc|bcc|subject|has|is)\s*:/i.test(query) || /^\/.+\/$/.test(query.trim())
@@ -37,7 +37,7 @@
     return () => clearTimeout(tmr);
   });
   // NB: run() closes the palette first (which clears `query`), so these must NOT
-  // re-read `query` — the search term is captured into `q` when searchItems is
+  // re-read `query` - the search term is captured into `q` when searchItems is
   // built and passed in. Reading query.trim() here would see the cleared "".
   function applySearchQ(q) {
     app.view = "mail"; app.search = q; app.semantic = false;
@@ -65,7 +65,7 @@
     const cmds = [
       { icon: icons.compose, label: t("cmd.composeNew"), run: () => openCompose({ to: "", subject: "", html: "" }) },
       { icon: icons.sent, label: t("cmd.mailMerge"), run: () => (app.mailMergeOpen = true) },
-      // Navigation — each "Go to" must actually leave the current view.
+      // Navigation - each "Go to" must actually leave the current view.
       { icon: icons.home || icons.unified, label: t("cmd.goHome"), run: () => (app.view = "dashboard") },
       { icon: icons.smart || icons.unified, label: t("cmd.goSmartInbox"), run: goMail(selectSmartInbox) },
       { icon: icons.unified, label: t("cmd.goAllInboxes"), run: goMail(selectUnifiedInbox) },

@@ -18,7 +18,7 @@ from app.sync.ics import parse_events
 
 
 def _ssl_context() -> ssl.SSLContext:
-    """Verify TLS certs + hostname by DEFAULT — credentials travel over HTTP Basic,
+    """Verify TLS certs + hostname by DEFAULT - credentials travel over HTTP Basic,
     so disabling verification globally exposed them to MITM on hostile networks.
     Self-hosted boxes with self-signed certs can opt out via an env var."""
     ctx = ssl.create_default_context()

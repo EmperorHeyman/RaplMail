@@ -26,7 +26,7 @@
     busy = true;
     try {
       const r = await api.rescan();
-      notify(`Address book updated — ${r.scanned} contacts from your sent mail`);
+      notify(`Address book updated - ${r.scanned} contacts from your sent mail`);
       await load();
     } catch (e) { notify(e.message, "error"); } finally { busy = false; }
   }
@@ -50,7 +50,7 @@
   }
 
   function fmtDate(iso) {
-    return iso ? new Date(iso).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }) : "—";
+    return iso ? new Date(iso).toLocaleDateString([], { year: "numeric", month: "short", day: "numeric" }) : "-";
   }
 </script>
 

@@ -104,7 +104,7 @@ async def call(iid: str, body: CallIn, session: Session = Depends(get_session)) 
         raise HTTPException(status.HTTP_404_NOT_FOUND, "instance not found")
     key = store.get(_KEY + iid) if store.is_unlocked else None
     if not key:
-        raise HTTPException(status.HTTP_409_CONFLICT, "No API key for this instance — re-add it.")
+        raise HTTPException(status.HTTP_409_CONFLICT, "No API key for this instance - re-add it.")
     method = (body.method or "GET").upper()
     if method not in ("GET", "POST", "PUT", "DELETE"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported method")
@@ -113,7 +113,7 @@ async def call(iid: str, body: CallIn, session: Session = Depends(get_session)) 
     headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
 
     def _do():
-        import httpx  # deferred — only loaded when a RaplDesk instance is actually used
+        import httpx  # deferred - only loaded when a RaplDesk instance is actually used
         return httpx.request(method, base, params=params, headers=headers,
                              json=body.body if method in ("POST", "PUT") else None,
                              timeout=30, follow_redirects=True)
@@ -124,14 +124,14 @@ async def call(iid: str, body: CallIn, session: Session = Depends(get_session)) 
     try:
         data = r.json()
     except Exception:
-        # Non-JSON (e.g. an nginx 404 HTML page) — surface the URL we hit so a
+        # Non-JSON (e.g. an nginx 404 HTML page) - surface the URL we hit so a
         # wrong base URL is obvious.
         data = {"status": "error", "message": f"Non-JSON response (HTTP {r.status_code}) from {r.request.url}"}
     return {"http": r.status_code, "url": str(r.request.url), "data": data}
 
 
 def _api_base(url: str) -> str:
-    """Resolve the v2 api.php endpoint from whatever the user entered — bare domain
+    """Resolve the v2 api.php endpoint from whatever the user entered - bare domain
     or any /admin/addons/api[/vN]/api.php path (always normalized to v2)."""
     u = (url or "").strip().rstrip("/")
     if "/admin/addons/api" in u:

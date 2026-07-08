@@ -46,7 +46,7 @@
 
   // Customize mode: drag column dividers to resize (locked unless enabled).
   // During a drag we update a transient width (cheap, rAF-throttled) and only
-  // persist to settings ONCE on release — calling saveSettings() per pointermove
+  // persist to settings ONCE on release - calling saveSettings() per pointermove
   // (full settings reassign + localStorage write + app-wide reactivity) made the
   // resize unusably laggy.
   let resizing = $state(null);
@@ -54,7 +54,7 @@
   let lastX = 0;
   let dragW = $state({ sidebar: null, list: null });
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  // Effective sidebar width — collapsed rail is a fixed 60px regardless of the stored width.
+  // Effective sidebar width - collapsed rail is a fixed 60px regardless of the stored width.
   const effSidebarW = () => (app.settings.sidebarCollapsed ? 60 : (dragW.sidebar ?? app.settings.sidebarWidth));
   function startResize(which, e) {
     resizing = which; e.preventDefault();
@@ -103,7 +103,7 @@
   onMount(() => {
     applyTheme();
     // A separate #compose / #reminder / #sandbox window must NOT run the app
-    // services (events, calendar, pending-send recovery) — that duplicated
+    // services (events, calendar, pending-send recovery) - that duplicated
     // notifications and could redeliver a send the main window was still
     // counting down. The sandbox window has no backend access at all, so it
     // doesn't even pull settings (i18n/theme are seeded from localStorage).
@@ -155,7 +155,7 @@
       e.preventDefault();
       return;
     }
-    // Ctrl+1..9 switch workspace, Ctrl+0 = All (fixed). Not while typing —
+    // Ctrl+1..9 switch workspace, Ctrl+0 = All (fixed). Not while typing -
     // text fields use Ctrl+digit too.
     if ((e.ctrlKey || e.metaKey) && /^[0-9]$/.test(e.key) && !isTyping(e)) {
       const ws = app.settings.workspaces || [];
@@ -168,7 +168,7 @@
     else if (combo === kb.compose && !isTyping(e)) { openCompose({ to: "", subject: "", html: "" }); e.preventDefault(); }
   }
 
-  // Open any external (http/https) link in the OS browser — the desktop webview
+  // Open any external (http/https) link in the OS browser - the desktop webview
   // doesn't navigate target=_blank anchors on its own.
   function onDocClick(e) {
     const a = e.target?.closest?.("a[href]");
@@ -251,7 +251,7 @@
              onpointerdown={(e) => startResize("list", e)}></div>
       {/if}
       <div class="customize-banner">
-        {@html icons.customize} Customize mode — drag the dividers to resize columns.
+        {@html icons.customize} Customize mode - drag the dividers to resize columns.
         <button class="btn primary sm" onclick={() => (app.customizing = false)}>Done</button>
       </div>
     {/if}
@@ -296,7 +296,7 @@
   }
   .app.customizing { user-select: none; }
   /* While dragging a divider, stop the message iframe (and other panes) from
-     capturing pointer events — otherwise the drag stalls over the reader. */
+     capturing pointer events - otherwise the drag stalls over the reader. */
   .app.resizing :global(iframe) { pointer-events: none; }
   .app.resizing { cursor: col-resize; }
   .resizer {

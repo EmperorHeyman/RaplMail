@@ -98,8 +98,8 @@
       try {
         const bundle = JSON.parse(await file.text());
         const r = await importConfig(bundle);
-        notify(`Imported: settings ${r.settings ? "✓" : "–"} · ${r.rules} rules · ${r.signatures} signatures · ${r.sender_categories} sender tags`);
-      } catch { notify("Import failed — invalid file", "error"); }
+        notify(`Imported: settings ${r.settings ? "✓" : "-"} · ${r.rules} rules · ${r.signatures} signatures · ${r.sender_categories} sender tags`);
+      } catch { notify("Import failed - invalid file", "error"); }
     }
     e.currentTarget.value = "";
   }
@@ -135,7 +135,7 @@
     if (!pw) return;
     try {
       const r = await importFullBackup(blob, pw);
-      notify(`Restored: ${r.accounts} account(s) · settings ${r.settings ? "✓" : "–"} · ${r.rules} rules · ${r.signatures} signatures. Syncing…`);
+      notify(`Restored: ${r.accounts} account(s) · settings ${r.settings ? "✓" : "-"} · ${r.rules} rules · ${r.signatures} signatures. Syncing…`);
     } catch (err) {
       notify(err?.status === 400 ? "Wrong password or corrupt backup" : (err?.message || "Restore failed"), "error");
     }
@@ -163,8 +163,8 @@
   async function sendTest() {
     const res = await testNotification();
     await refreshPerm();
-    if (res.ok) notify("Test notification sent — check your desktop");
-    else if (res.reason === "denied") notify("Blocked — allow notifications for this app in Windows Settings → Notifications (and turn off Focus Assist)", "error");
+    if (res.ok) notify("Test notification sent - check your desktop");
+    else if (res.reason === "denied") notify("Blocked - allow notifications for this app in Windows Settings → Notifications (and turn off Focus Assist)", "error");
     else if (res.reason === "unsupported") notify("Notifications aren't supported here", "error");
     else notify("Couldn't show notification: " + res.reason, "error");
   }
@@ -224,7 +224,7 @@
     <label class="radio">
       <input type="radio" name="cmode" value="panel" checked={app.settings.composeMode === "panel"}
         onchange={() => setCompose({ composeMode: "panel" })} />
-      <div><b>Docked panel</b><span>Opens in a corner, non-blocking — keep reading and clicking while you write (like Spark).</span></div>
+      <div><b>Docked panel</b><span>Opens in a corner, non-blocking - keep reading and clicking while you write (like Spark).</span></div>
     </label>
     <label class="radio">
       <input type="radio" name="cmode" value="window" checked={app.settings.composeMode === "window"}
@@ -242,7 +242,7 @@
     {/if}
     <label class="check" style="margin-top:6px">
       <input type="checkbox" checked={app.settings.spellCheck !== false} onchange={(e) => setCompose({ spellCheck: e.currentTarget.checked })} />
-      <div><b>Spell check</b><span>Underline misspellings as you type in the subject and message body, with right-click corrections. Uses your operating system's dictionaries for the current language — fully offline.</span></div>
+      <div><b>Spell check</b><span>Underline misspellings as you type in the subject and message body, with right-click corrections. Uses your operating system's dictionaries for the current language - fully offline.</span></div>
     </label>
   </section>
 
@@ -250,7 +250,7 @@
     <h3>Sending</h3>
     <label class="check">
       <input type="checkbox" checked={app.settings.undoSend} onchange={(e) => setCompose({ undoSend: e.currentTarget.checked })} />
-      <div><b>Undo send</b><span>After hitting Send, hold the message briefly so you can cancel — it shows a “Sending…” bar with a Cancel button.</span></div>
+      <div><b>Undo send</b><span>After hitting Send, hold the message briefly so you can cancel - it shows a “Sending…” bar with a Cancel button.</span></div>
     </label>
     {#if app.settings.undoSend}
       <label class="inline">Cancel window
@@ -267,7 +267,7 @@
     <h3>Inbox</h3>
     <label class="check">
       <input type="checkbox" checked={app.settings.openNextOnDone} onchange={(e) => setCompose({ openNextOnDone: e.currentTarget.checked })} />
-      <div><b>Open next after Done</b><span>When you mark the open message done, immediately open the next one — fast keyboard triage.</span></div>
+      <div><b>Open next after Done</b><span>When you mark the open message done, immediately open the next one - fast keyboard triage.</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.unifiedInbox} onchange={toggleUnified} />
@@ -304,14 +304,14 @@
         <option value="modal">Search window (modal)</option>
       </select>
     </label>
-    <span class="hint" style="margin:2px 0 0 2px">Which surface the search key ({app.settings.keybinds?.search || "/"}) opens. The command palette also doubles as search — type an operator like <code>from:</code> in it.</span>
+    <span class="hint" style="margin:2px 0 0 2px">Which surface the search key ({app.settings.keybinds?.search || "/"}) opens. The command palette also doubles as search - type an operator like <code>from:</code> in it.</span>
   </section>
 
   <section class="card">
     <h3>Smart Inbox</h3>
     <label class="check">
       <input type="checkbox" checked={app.settings.smartInbox} onchange={(e) => setCompose({ smartInbox: e.currentTarget.checked })} />
-      <div><b>Enable Smart Inbox</b><span>Replaces “All Inboxes” (and inbox folders) with a focused list — important mail stays in the main flow while the categories you pick collapse into expandable groups with live counts.</span></div>
+      <div><b>Enable Smart Inbox</b><span>Replaces “All Inboxes” (and inbox folders) with a focused list - important mail stays in the main flow while the categories you pick collapse into expandable groups with live counts.</span></div>
     </label>
     {#if app.settings.smartInbox}
       <p class="hint" style="margin-top:10px">Group these (unchecked = left inline so you won't miss them):</p>
@@ -328,7 +328,7 @@
       </label>
 
       <p class="hint" style="margin-top:14px">Where the groups sit</p>
-      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "dateSections") === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections (Spark-style)</b> — Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "dateSections") === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections (Spark-style)</b> - Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "timeline"} onchange={() => setPlacement("timeline")} /> <span>Float by activity (group rises with its newest mail; newer mail pushes it down)</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "top"} onchange={() => setPlacement("top")} /> <span>Always at the top</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "afterN"} onchange={() => setPlacement("afterN")} /> <span>After
@@ -363,7 +363,7 @@
 
   <section class="card">
     <h3>Auto-BCC</h3>
-    <p class="hint">Automatically BCC outgoing mail by the recipient's domain — e.g. blind-copy your CRM or ticketing system. Use <code>*</code> to match every recipient.</p>
+    <p class="hint">Automatically BCC outgoing mail by the recipient's domain - e.g. blind-copy your CRM or ticketing system. Use <code>*</code> to match every recipient.</p>
     {#each bccRules as r, i}
       <div class="bccrow">
         <input placeholder="domain (client.com or *)" bind:value={r.domain} />
@@ -380,15 +380,15 @@
   <h2 class="group-head">Account &amp; system</h2>
   <section class="card">
     <h3>Backup &amp; migrate</h3>
-    <p class="hint"><b>Full backup (.rmail)</b> — the easy one. Includes <b>everything</b>: your accounts, passwords,
+    <p class="hint"><b>Full backup (.rmail)</b> - the easy one. Includes <b>everything</b>: your accounts, passwords,
       calendars, rules, signatures and settings, all encrypted with your master password. Move the file to another
-      computer, install RaplMail, set the <b>same master password</b>, and import — you're fully set up, no re-adding accounts.</p>
+      computer, install RaplMail, set the <b>same master password</b>, and import - you're fully set up, no re-adding accounts.</p>
     <div class="rowbtns">
       <button class="btn primary" onclick={doExportFull} disabled={backingUp}>{@html icons.lock} {backingUp ? "Backing up…" : "Export full backup (.rmail)"}</button>
       <button class="btn" onclick={() => rmailFile.click()}>Restore from .rmail…</button>
       <input bind:this={rmailFile} type="file" accept=".rmail,application/octet-stream" hidden onchange={doImportFull} />
     </div>
-    <p class="hint" style="margin-top:14px">Or a lighter <b>config-only</b> export (settings, rules, signatures, sender tags — no accounts or passwords) as plain JSON.</p>
+    <p class="hint" style="margin-top:14px">Or a lighter <b>config-only</b> export (settings, rules, signatures, sender tags - no accounts or passwords) as plain JSON.</p>
     <div class="rowbtns">
       <button class="btn" onclick={doExport}>{@html icons.sent} Export config</button>
       <button class="btn" onclick={() => importFile.click()}>Import config…</button>
@@ -399,7 +399,7 @@
   <section class="card">
     <h3>Local API <span class="tag">developer</span></h3>
     <p class="hint">Expose a read-only mailbox metrics endpoint for dashboards and home-automation
-      (Home Assistant, ESP32, Grafana). It returns counts only — never message content — and is
+      (Home Assistant, ESP32, Grafana). It returns counts only - never message content - and is
       protected by the API key below.</p>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.localApiEnabled}
@@ -413,7 +413,7 @@
           <button class="btn ghost" onclick={() => copyText(metricsUrl)}>Copy</button>
         </div>
         <div class="kv"><span>API key</span>
-          <code class="key">{app.settings.localApiKey || "—"}</code>
+          <code class="key">{app.settings.localApiKey || "-"}</code>
           <button class="btn ghost" onclick={() => copyText(app.settings.localApiKey)}>Copy</button>
           <button class="btn ghost" onclick={regenKey}>Regenerate</button>
         </div>
@@ -452,7 +452,7 @@
         onchange={(e) => setAutostart(e.currentTarget.checked)} />
       <div><b>Launch at login</b><span>Start RaplMail automatically when you sign in (into the tray).</span></div>
     </label>
-    <p class="hint">These take effect in the installed app — not in the browser dev view.</p>
+    <p class="hint">These take effect in the installed app - not in the browser dev view.</p>
   </section>
 
   <h2 class="group-head">Notifications &amp; scheduling</h2>
@@ -464,7 +464,7 @@
           onchange={(e) => toggleNotify(e.currentTarget.checked)} />
         <div>
           <b>Desktop notification for new mail</b>
-          <span>Pops a system notification with the sender and subject when mail arrives.{#if notifPerm === "denied"} <em>Currently blocked in your OS/browser settings — re-enable it there first.</em>{/if}</span>
+          <span>Pops a system notification with the sender and subject when mail arrives.{#if notifPerm === "denied"} <em>Currently blocked in your OS/browser settings - re-enable it there first.</em>{/if}</span>
         </div>
       </label>
       <label class="check">

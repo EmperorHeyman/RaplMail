@@ -16,6 +16,6 @@ export function keyCombo(e) {
 
 const SYM = { ArrowDown: "↓", ArrowUp: "↑", ArrowLeft: "←", ArrowRight: "→", Enter: "↵", Escape: "Esc" };
 export function comboLabel(combo) {
-  if (!combo) return "—";
+  if (!combo) return "-";
   return combo.split("+").map((p) => SYM[p] || (p.length === 1 ? p.toUpperCase() : p)).join("+");
 }

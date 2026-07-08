@@ -1,6 +1,6 @@
 """Composer rewrite (/ai/rewrite) and context Q&A (/ai/ask).
 
-The provider call (_call_chat) is monkeypatched so no network/model is needed —
+The provider call (_call_chat) is monkeypatched so no network/model is needed -
 we assert the request the endpoints build (system prompt, context transcript,
 history) and the keyless-Ollama gating, which is the logic worth pinning down.
 """

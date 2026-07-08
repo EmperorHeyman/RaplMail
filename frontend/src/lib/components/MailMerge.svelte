@@ -71,7 +71,7 @@
     for (const tpl of [subjectTpl, bodyTpl]) { let m; while ((m = re.exec(tpl || ""))) set.add(m[1].toLowerCase()); }
     return [...set];
   });
-  // Referenced placeholders with no matching CSV column — these render empty for
+  // Referenced placeholders with no matching CSV column - these render empty for
   // EVERYONE (e.g. a typo'd {{naem}}). Surfaced so it's not discovered post-send.
   const missingVars = $derived(usedVars.filter((v) => v !== "email" && !vars.includes(v)));
   // How many recipients have a blank value for a referenced (and existing) column.
@@ -113,7 +113,7 @@
       progress = { ...progress };
     }
     sending = false;
-    notify(`Mail merge done — ${progress.done - progress.failed} sent${progress.failed ? `, ${progress.failed} failed` : ""}`);
+    notify(`Mail merge done - ${progress.done - progress.failed} sent${progress.failed ? `, ${progress.failed} failed` : ""}`);
     if (!progress.failed) app.mailMergeOpen = false;
   }
 </script>
@@ -135,9 +135,9 @@
         <label class="f"><span>Subject</span>
           <input bind:value={subjectTpl} placeholder="Hi {'{{'}name{'}}'}, your update" />
         </label>
-        <label class="lbl">Body — use <code>{'{{'}name{'}}'}</code> etc. for columns from your list</label>
+        <label class="lbl">Body - use <code>{'{{'}name{'}}'}</code> etc. for columns from your list</label>
         <textarea class="bodyta" bind:value={bodyTpl} rows="8"
-          placeholder={"Hi {{name}},\n\nThanks for…\n\n— Me"}></textarea>
+          placeholder={"Hi {{name}},\n\nThanks for…\n\n- Me"}></textarea>
         <label class="check">
           <input type="checkbox" bind:checked={useSignature} />
           <span>Append my default signature</span>
@@ -145,7 +145,7 @@
       </div>
 
       <div class="col">
-        <label class="lbl">Recipients — paste a CSV (with an <code>email</code> header) or one address per line</label>
+        <label class="lbl">Recipients - paste a CSV (with an <code>email</code> header) or one address per line</label>
         <textarea class="recipta" bind:value={recipientsRaw} rows="8"
           placeholder={"email,name\nalice@x.com,Alice\nbob@y.com,Bob"}></textarea>
         <div class="status">
@@ -153,10 +153,10 @@
           {#if vars.length}· columns: {#each vars as v}<code class="vchip">{'{{'}{v}{'}}'}</code>{/each}{/if}
         </div>
         {#if missingVars.length}
-          <div class="mm-warn">⚠ No column for {#each missingVars as v}<code>{'{{'}{v}{'}}'}</code> {/each}— these render empty for every recipient.</div>
+          <div class="mm-warn">⚠ No column for {#each missingVars as v}<code>{'{{'}{v}{'}}'}</code> {/each}- these render empty for every recipient.</div>
         {/if}
         {#if rowsMissingData}
-          <div class="mm-warn">⚠ {rowsMissingData} recipient{rowsMissingData === 1 ? "" : "s"} have a blank value for a column you use — they'll get gaps (e.g. "Hi ,").</div>
+          <div class="mm-warn">⚠ {rowsMissingData} recipient{rowsMissingData === 1 ? "" : "s"} have a blank value for a column you use - they'll get gaps (e.g. "Hi ,").</div>
         {/if}
         {#if preview}
           <div class="preview">

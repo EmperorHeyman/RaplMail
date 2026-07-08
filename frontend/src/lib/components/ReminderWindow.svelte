@@ -2,7 +2,7 @@
   // Standalone calendar-reminder window ("You've got X till …"). Opened by the
   // store's fireReminder() as a separate #reminder WebviewWindow; reads its event
   // from localStorage (same seed pattern as the compose window) and can close
-  // itself. Purely presentational — runs no app services.
+  // itself. Purely presentational - runs no app services.
   import { onMount } from "svelte";
   import { icons } from "./../icons.js";
 

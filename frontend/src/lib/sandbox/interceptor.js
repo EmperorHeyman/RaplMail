@@ -7,7 +7,7 @@
 // IMPORTANT nuance: the sandbox page is the RaplMail bundle itself, so on load
 // it (and the webview/Tauri runtime) legitimately makes same-origin, `ipc:`,
 // `tauri:`, `blob:` and relative requests for its own assets. Those are NOT the
-// analyzed file — the file only ever runs inside WebAssembly, which has zero
+// analyzed file - the file only ever runs inside WebAssembly, which has zero
 // network access. So we only *flag and block* requests to a DIFFERENT external
 // origin (the only thing that would mean "this is trying to phone home"); we let
 // the framework's own internal requests through, or the window couldn't even
@@ -16,7 +16,7 @@
 
 // True only for an absolute http(s)/ws(s) URL pointing at a real external host.
 // Same-origin, relative, blob:, data:, ipc:, tauri: and loopback/localhost
-// (the local backend) are all treated as internal framework traffic — the
+// (the local backend) are all treated as internal framework traffic - the
 // analyzed file can never trigger any of these (it runs only inside wasm), so
 // the only thing worth flagging as a "phone-home" is a genuine public host.
 function isLoopback(host) {

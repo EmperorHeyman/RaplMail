@@ -1,4 +1,4 @@
-"""Generate the 1024x1024 RaplMail app-icon source PNG — the "Stack" concept.
+"""Generate the 1024x1024 RaplMail app-icon source PNG - the "Stack" concept.
 
 Layered cards resolving into one front envelope (the unified inbox), on a
 diagonal violet gradient. Mirrors frontend/src/lib/icons.js styling.

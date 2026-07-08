@@ -103,7 +103,7 @@ def test_backfill_pages_all_older_mail(client):
 
 
 def test_backfill_marks_empty_folder_done(client):
-    # An empty folder (no mail at all) must be marked done, not left pending —
+    # An empty folder (no mail at all) must be marked done, not left pending -
     # otherwise it holds overall progress below 100% forever (the "stuck at 44/69"
     # bug: empty Trash/Junk/Drafts folders never completing).
     acct_id, folder_id = _mk_account_folder("bf2@example.com")

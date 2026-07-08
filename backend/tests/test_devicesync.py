@@ -69,7 +69,7 @@ def test_apply_states_last_writer_wins(client):
         m = s.exec(select(Message).where(Message.message_id == mid)).first()
         assert m.is_done is True                          # live row reflected too
 
-    # An OLDER op must be ignored — our copy is newer.
+    # An OLDER op must be ignored - our copy is newer.
     with _s() as s:
         devicesync.apply_states(s, [{"email": email, "mid": mid, "done": False, "snooze": None,
                                      "presence": False, "pinned": False, "ts": datetime(2025, 6, 1).isoformat()}])

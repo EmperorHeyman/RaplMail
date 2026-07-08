@@ -4,13 +4,13 @@ export default {
   en: {
     "settingsNav.sync": "Device sync",
 
-    "dsync.intro": "Keep two (or more) RaplMail installs in step without a cloud account. One of your own mailboxes carries the data — every change is encrypted with a passphrase that never leaves your devices and stored in a hidden folder. Your 'done', snooze and pins sync automatically; settings move only when you push or pull them (below). Read/flag already sync via IMAP.",
+    "dsync.intro": "Keep two (or more) RaplMail installs in step without a cloud account. One of your own mailboxes carries the data - every change is encrypted with a passphrase that never leaves your devices and stored in a hidden folder. Your 'done', snooze and pins sync automatically; settings move only when you push or pull them (below). Read/flag already sync via IMAP.",
     "dsync.loading": "Loading…",
 
     "dsync.enable": "Sync this device",
     "dsync.enableHint": "Publish and pick up changes through the carrier mailbox below.",
     "dsync.account": "Carrier account",
-    "dsync.accountHint": "The account that carries the sync data — must be configured on every device you're linking (same mailbox).",
+    "dsync.accountHint": "The account that carries the sync data - must be configured on every device you're linking (same mailbox).",
     "dsync.passphrase": "Sync passphrase",
     "dsync.passphraseHint": "Enter the SAME passphrase on every device. It encrypts the sync data; your provider only ever sees ciphertext. At least 8 characters.",
     "dsync.passphraseSet": "Passphrase set",
@@ -23,7 +23,7 @@ export default {
     "dsync.syncNow": "Sync now",
     "dsync.syncingNow": "Syncing…",
     "dsync.syncedNow": "Synced",
-    "dsync.syncedWithError": "Sync ran, but reported a problem — see the status below.",
+    "dsync.syncedWithError": "Sync ran, but reported a problem - see the status below.",
 
     "dsync.needAccount": "Choose a carrier account first.",
     "dsync.needPassphrase": "Set a sync passphrase first.",
@@ -36,7 +36,7 @@ export default {
     "dsync.stDevice": "This device",
 
     "dsync.cfgTitle": "Settings, rules & signatures",
-    "dsync.cfgIntro": "Statuses (done, snooze, pins) sync automatically. Your settings, rules, signatures and sender tags do NOT move on their own — so a device that hasn't been set up can never overwrite one that has. Push yours to the other devices, or pull another device's when you want.",
+    "dsync.cfgIntro": "Statuses (done, snooze, pins) sync automatically. Your settings, rules, signatures and sender tags do NOT move on their own - so a device that hasn't been set up can never overwrite one that has. Push yours to the other devices, or pull another device's when you want.",
     "dsync.pushBtn": "Push my settings",
     "dsync.pushing": "Pushing…",
     "dsync.pushed": "Your settings were published as a snapshot. On your other device, open this screen and hit \"Pull from a device\".",
@@ -55,7 +55,7 @@ export default {
     "dsync.close": "Close",
 
     "dsync.howTitle": "How it works",
-    "dsync.how1": "Your statuses (done, snooze, pins) publish automatically as encrypted messages in a hidden \"RaplMail Sync\" folder in the carrier mailbox, and every device picks them up — newest change wins.",
+    "dsync.how1": "Your statuses (done, snooze, pins) publish automatically as encrypted messages in a hidden \"RaplMail Sync\" folder in the carrier mailbox, and every device picks them up - newest change wins.",
     "dsync.how2": "Settings, rules and signatures only move when you Push or Pull them here, so they never overwrite silently. Each push is a snapshot you can choose from later.",
     "dsync.how3": "Nothing goes to a third party. Everything is encrypted with your passphrase; if you ever see a sync message in another mail app, it's safe to ignore or delete.",
     "dsync.how4": "Use the same carrier account and the same passphrase on each device you link.",
@@ -63,13 +63,13 @@ export default {
   cs: {
     "settingsNav.sync": "Synchronizace zařízení",
 
-    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek — každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení a připnutí se synchronizují automaticky; nastavení se přenáší jen když ho odešlete nebo stáhnete (níže). Přečteno/vlajka se už synchronizují přes IMAP.",
+    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek - každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení a připnutí se synchronizují automaticky; nastavení se přenáší jen když ho odešlete nebo stáhnete (níže). Přečteno/vlajka se už synchronizují přes IMAP.",
     "dsync.loading": "Načítání…",
 
     "dsync.enable": "Synchronizovat toto zařízení",
     "dsync.enableHint": "Odesílat a přijímat změny přes níže zvolenou schránku.",
     "dsync.account": "Přenosový účet",
-    "dsync.accountHint": "Účet, který přenáší synchronizovaná data — musí být nastaven na každém propojovaném zařízení (stejná schránka).",
+    "dsync.accountHint": "Účet, který přenáší synchronizovaná data - musí být nastaven na každém propojovaném zařízení (stejná schránka).",
     "dsync.passphrase": "Synchronizační heslo",
     "dsync.passphraseHint": "Zadejte STEJNÉ heslo na každém zařízení. Šifruje synchronizovaná data; váš poskytovatel vidí jen šifrovaný text. Alespoň 8 znaků.",
     "dsync.passphraseSet": "Heslo nastaveno",
@@ -82,7 +82,7 @@ export default {
     "dsync.syncNow": "Synchronizovat nyní",
     "dsync.syncingNow": "Synchronizuji…",
     "dsync.syncedNow": "Synchronizováno",
-    "dsync.syncedWithError": "Synchronizace proběhla, ale hlásí problém — viz stav níže.",
+    "dsync.syncedWithError": "Synchronizace proběhla, ale hlásí problém - viz stav níže.",
 
     "dsync.needAccount": "Nejprve zvolte přenosový účet.",
     "dsync.needPassphrase": "Nejprve nastavte synchronizační heslo.",
@@ -95,7 +95,7 @@ export default {
     "dsync.stDevice": "Toto zařízení",
 
     "dsync.cfgTitle": "Nastavení, pravidla a podpisy",
-    "dsync.cfgIntro": "Stavy (hotovo, odložení, připnutí) se synchronizují automaticky. Vaše nastavení, pravidla, podpisy a štítky odesílatelů se samy NEPŘENÁŠÍ — takže zařízení, které ještě není nastavené, nikdy nepřepíše to nastavené. Odešlete své nastavení na ostatní zařízení, nebo si podle potřeby stáhněte nastavení z jiného zařízení.",
+    "dsync.cfgIntro": "Stavy (hotovo, odložení, připnutí) se synchronizují automaticky. Vaše nastavení, pravidla, podpisy a štítky odesílatelů se samy NEPŘENÁŠÍ - takže zařízení, které ještě není nastavené, nikdy nepřepíše to nastavené. Odešlete své nastavení na ostatní zařízení, nebo si podle potřeby stáhněte nastavení z jiného zařízení.",
     "dsync.pushBtn": "Odeslat moje nastavení",
     "dsync.pushing": "Odesílám…",
     "dsync.pushed": "Vaše nastavení bylo publikováno jako snímek. Na druhém zařízení otevřete tuto obrazovku a klepněte na „Stáhnout ze zařízení“.",
@@ -114,7 +114,7 @@ export default {
     "dsync.close": "Zavřít",
 
     "dsync.howTitle": "Jak to funguje",
-    "dsync.how1": "Vaše stavy (hotovo, odložení, připnutí) se automaticky publikují jako zašifrované zprávy ve skryté složce „RaplMail Sync“ v přenosové schránce a každé zařízení si je vyzvedne — vyhrává nejnovější změna.",
+    "dsync.how1": "Vaše stavy (hotovo, odložení, připnutí) se automaticky publikují jako zašifrované zprávy ve skryté složce „RaplMail Sync“ v přenosové schránce a každé zařízení si je vyzvedne - vyhrává nejnovější změna.",
     "dsync.how2": "Nastavení, pravidla a podpisy se přenáší jen když je zde odešlete nebo stáhnete, takže se nikdy nepřepíšou potichu. Každé odeslání je snímek, ze kterého si můžete později vybrat.",
     "dsync.how3": "Nic neputuje třetí straně. Vše je zašifrováno vaším heslem; pokud synchronizační zprávu někdy uvidíte v jiné aplikaci, můžete ji klidně ignorovat nebo smazat.",
     "dsync.how4": "Na každém propojeném zařízení použijte stejný přenosový účet a stejné heslo.",

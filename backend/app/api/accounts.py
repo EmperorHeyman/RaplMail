@@ -129,7 +129,7 @@ def _verify_imap_login(host: str, port: int, ssl_flag: bool, user: str, password
     try:
         client = IMAPClient(host, port=port, ssl=ssl_flag, use_uid=True, timeout=15)
     except Exception as exc:
-        raise ValueError(f"Could not connect to {host}:{port} — {exc}") from exc
+        raise ValueError(f"Could not connect to {host}:{port} - {exc}") from exc
     try:
         client.login(user, password)
         client.list_folders()
@@ -304,7 +304,7 @@ async def reconnect(account_id: int, body: ReconnectIn, request: Request,
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
     if account.use_oauth or account.provider != Provider.imap:
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "This account signs in with OAuth — use Sign in with Microsoft/Google instead.")
+                            "This account signs in with OAuth - use Sign in with Microsoft/Google instead.")
     if not body.password:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Enter your password.")
     try:
@@ -392,7 +392,7 @@ def delete_account(account_id: int, store: SecretStore = Depends(require_unlocke
         # NB: message_fts is a contentless FTS5 table (content=''), which rejects
         # plain DELETEs, so we intentionally don't touch it here. Its entries are
         # keyed by message rowid; once the messages are gone, a search hit simply
-        # doesn't resolve to a row and is dropped — harmless orphans, no crash.
+        # doesn't resolve to a row and is dropped - harmless orphans, no crash.
         session.exec(sa_delete(CalendarEvent).where(CalendarEvent.account_id == account_id))
         session.exec(sa_delete(MessageState).where(MessageState.account_id == account_id))
         session.exec(sa_delete(Message).where(Message.account_id == account_id))
@@ -401,7 +401,7 @@ def delete_account(account_id: int, store: SecretStore = Depends(require_unlocke
         # Rules/signatures scoped to this account only (account_id IS NULL = global).
         session.exec(sa_delete(Rule).where(Rule.account_id == account_id))
         session.exec(sa_delete(Signature).where(Signature.account_id == account_id))
-        # Credential removal is best-effort — an M365 account with an empty token
+        # Credential removal is best-effort - an M365 account with an empty token
         # cache still removes cleanly.
         try:
             if account.secret_key:

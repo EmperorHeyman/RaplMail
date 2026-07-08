@@ -3,7 +3,7 @@
 Privacy-first: there is no RaplMail server. The user's own API key lives in the
 local settings blob and calls go straight from this backend to the provider the
 user chose. Nothing is sent anywhere unless the user explicitly asks for it and
-has configured a key. Uses stdlib urllib — no SDK dependency.
+has configured a key. Uses stdlib urllib - no SDK dependency.
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ log = logging.getLogger("raplmail.ai")
 # BYOK, any provider. Default model per provider (used when the user leaves the
 # model field blank). "openai-compatible" covers Groq / OpenRouter / Together /
 # LM Studio / vLLM etc.; "ollama" is a first-class, keyless local server that also
-# speaks the OpenAI chat API (at /v1/chat/completions) — both fully offline.
+# speaks the OpenAI chat API (at /v1/chat/completions) - both fully offline.
 DEFAULT_MODELS = {
     "anthropic": "claude-haiku-4-5-20251001",
     "openai": "gpt-4o-mini",
@@ -78,7 +78,7 @@ def _ai_config(session: Session) -> dict:
 
 def _keep_alive(setting: str):
     """Ollama's keep_alive: duration strings ("30s", "5m") must keep their unit,
-    but 0 / -1 have to be sent as JSON *numbers* — "0"/"-1" as strings fail with
+    but 0 / -1 have to be sent as JSON *numbers* - "0"/"-1" as strings fail with
     'missing unit in duration'. "adaptive" keeps the model loaded (-1); the app
     unloads it on blur. Returns an int for 0/-1, else the duration string."""
     if setting in ("adaptive", "-1"):
@@ -118,7 +118,7 @@ def _call_chat(cfg: dict, system: str, turns: list[dict], max_tokens: int = 700)
             "model": model, "max_tokens": max_tokens, "system": system, "messages": turns,
         }).encode("utf-8")
     elif provider == "ollama":
-        # Native /api/chat (not the OpenAI-compat shim) so we can pass keep_alive —
+        # Native /api/chat (not the OpenAI-compat shim) so we can pass keep_alive -
         # the lever that frees the GPU after a short idle instead of Ollama's 5-min
         # default. Keyless on the loopback; send Authorization only if one is set.
         base = cfg.get("base_url") or _OLLAMA_URL
@@ -237,7 +237,7 @@ def _thread_text(session: Session, thread_id: str, fallback_id: int | None) -> t
 
 def _context_text(session: Session, message_ids: list[int], thread_id: str = "") -> str:
     """Build a transcript from an explicit set of messages (the AI assistant's
-    context tray) and/or a whole thread — oldest first. Fetches + caches missing
+    context tray) and/or a whole thread - oldest first. Fetches + caches missing
     bodies (capped) so the assistant sees real content, not just subject/snippet."""
     msgs: dict[int, Message] = {}
     for mid in (message_ids or []):
@@ -311,7 +311,7 @@ _SCREEN_VERDICTS = ("safe", "suspicious", "dangerous")
 def _parse_screen(raw: str) -> tuple[str, str]:
     """Pull a (verdict, reason) out of the model's reply. Robust to models that
     ignore the exact format: falls back to keyword sniffing, defaulting to 'safe'
-    (conservative — we don't want a chatty model to flag normal mail)."""
+    (conservative - we don't want a chatty model to flag normal mail)."""
     text = raw or ""
     vm = re.search(r"verdict\s*[:\-]?\s*(safe|suspicious|dangerous)", text, re.I)
     verdict = vm.group(1).lower() if vm else ""
@@ -354,7 +354,7 @@ def screen_message(body: ScreenIn, session: Session = Depends(get_session)) -> d
         "failed authentication, false urgency or threats, requests for credentials / "
         "payments / gift cards, and links whose visible text differs from their "
         "target. Reply with EXACTLY two lines: 'VERDICT: <safe|suspicious|dangerous>' "
-        "then 'REASON: <one short sentence>'. Be conservative — normal legitimate "
+        "then 'REASON: <one short sentence>'. Be conservative - normal legitimate "
         "mail is 'safe'." + _LANG_RULE
     )
     raw = _call_provider(cfg, system, header + "\n" + (text or "")[:8000], max_tokens=200)
@@ -372,11 +372,11 @@ def cfg_model(session: Session) -> str:
         return ""
 
 
-# Small local models rarely emit the exact "###CHIPS###" marker we ask for —
+# Small local models rarely emit the exact "###CHIPS###" marker we ask for -
 # they write "###CHIPS|", "## CHIPS:", "CHIPS: ", etc. Match those forms (marker
 # must have a '#' prefix OR a ':'/'|' right after, so a reply that merely contains
 # the word "chips" isn't truncated) so the chips never leak into the reply body.
-_CHIPS_RE = re.compile(r"(?:#{1,3}\s*CHIPS|CHIPS\s*[:|])[#:\-–—|\s]*", re.IGNORECASE)
+_CHIPS_RE = re.compile(r"(?:#{1,3}\s*CHIPS|CHIPS\s*[:|])[#:\---|\s]*", re.IGNORECASE)
 
 
 def _split_chips(raw: str) -> tuple[str, list[str]]:
@@ -386,7 +386,7 @@ def _split_chips(raw: str) -> tuple[str, list[str]]:
         return (raw or "").strip(), []
     draft = raw[:m.start()].strip()
     chip_str = raw[m.end():]
-    chips = [c.strip(" -–—|*•\t") for c in re.split(r"[|\n]", chip_str)]
+    chips = [c.strip(" ---|*•\t") for c in re.split(r"[|\n]", chip_str)]
     chips = [c for c in chips if c][:3]
     return draft, chips
 
@@ -405,7 +405,7 @@ _QUOTE_PAIRS = (('"', '"'), ("'", "'"), ("“", "”"), ("„", "“"), ("«", "
 def _unwrap_output(text: str) -> str:
     """Strip the wrappers small models add around an 'output only X' reply: a
     fenced code block, a single leading preamble line, and matched surrounding
-    quotes. Conservative — only removes obvious, whole-output wrappers."""
+    quotes. Conservative - only removes obvious, whole-output wrappers."""
     if not text:
         return text
     s = text.strip()
@@ -436,7 +436,7 @@ def draft_reply(body: DraftIn, session: Session = Depends(get_session)) -> dict:
     steer = f"\n\nThe user wants the reply to: {body.instruction}" if body.instruction.strip() else ""
     system = (
         "You draft email replies for the user (the most recent recipient of the thread). "
-        "Write a complete, ready-to-send reply body — natural, concise, matching the thread's "
+        "Write a complete, ready-to-send reply body - natural, concise, matching the thread's "
         "tone. IMPORTANT: write the reply in the SAME LANGUAGE as the email you're replying to "
         "(e.g. reply in Czech to a Czech email). Do NOT include a subject line, quoted history, "
         "or a signature. After the reply, add a line that starts with the token CHIPS: followed "
@@ -460,11 +460,11 @@ def build_inbox_digest(session: Session, cfg: dict) -> dict:
         ).order_by(Message.date.desc()).limit(40)
     ).all()
     if not rows:
-        return {"digest": "Your inbox is clear — no unread mail. 🎉", "count": 0, "model": cfg["model"]}
+        return {"digest": "Your inbox is clear - no unread mail. 🎉", "count": 0, "model": cfg["model"]}
     lines = []
     for m in rows:
         who = m.from_name or m.from_addr or "?"
-        lines.append(f"- [{m.id}] {who}: {m.subject} — {(m.snippet or '')[:160]}")
+        lines.append(f"- [{m.id}] {who}: {m.subject} - {(m.snippet or '')[:160]}")
     system = (
         "You are triaging a busy person's unread inbox. Given the list of unread messages, "
         "produce a short briefing: group by urgency. Start with '🔴 Needs attention' (things "
@@ -514,7 +514,7 @@ def triage_priority(body: TriageIn, session: Session = Depends(get_session)) -> 
     ).all()
     if not rows:
         return {"scores": [], "model": cfg["model"]}
-    lines = [f"[{m.id}] from {m.from_name or m.from_addr}: {m.subject} — {(m.snippet or '')[:140]}"
+    lines = [f"[{m.id}] from {m.from_name or m.from_addr}: {m.subject} - {(m.snippet or '')[:140]}"
              for m in rows]
     system = (
         "Score each email's importance 0-100 for a busy professional (100 = urgent/personal, "
@@ -538,7 +538,7 @@ def triage_priority(body: TriageIn, session: Session = Depends(get_session)) -> 
 _REWRITE_ACTIONS = {
     "rephrase":     "Rephrase the text so it reads better while keeping the same meaning and tone.",
     "improve":      "Improve the writing: clearer, more natural and polished, same meaning and intent.",
-    "shorten":      "Make the text more concise — cut the fluff, keep every important point.",
+    "shorten":      "Make the text more concise - cut the fluff, keep every important point.",
     "expand":       "Expand the text with a little more detail and courtesy, without padding or repetition.",
     "grammar":      "Fix spelling, grammar and punctuation only. Do NOT change wording, tone or meaning otherwise.",
     "professional": "Rewrite in a polished, professional tone.",
@@ -575,7 +575,7 @@ def rewrite(body: RewriteIn, session: Session = Depends(get_session)) -> dict:
     system = (
         "You are a writing assistant editing an email the user is composing. "
         f"{task}\n\n"
-        "Rules: reply with ONLY the resulting text — no preamble, no explanations, no "
+        "Rules: reply with ONLY the resulting text - no preamble, no explanations, no "
         "surrounding quotes, no markdown code fences. Preserve the original language "
         "unless asked to translate. Keep any greeting/sign-off the user already wrote. "
         "Do not invent facts, names, links, dates or numbers that aren't in the input."
@@ -640,7 +640,7 @@ def ai_search(body: AiSearchIn, session: Session = Depends(get_session)) -> dict
     system = (
         "You convert a user's natural-language request to FIND an email into a short "
         "search query for a mail client. Output ONLY the 2-6 most distinctive keywords "
-        "(the names, subjects, and nouns most likely to appear in that email) — no "
+        "(the names, subjects, and nouns most likely to appear in that email) - no "
         "explanation, no quotes, no sentence. You MAY use these operators if clearly "
         "implied: from:NAME, subject:WORD, has:attachment, is:unread. Keep the original "
         "language of the keywords. Example: request 'najdi email kde se jedná o audi "
@@ -655,13 +655,13 @@ def ai_search(body: AiSearchIn, session: Session = Depends(get_session)) -> dict
 # ---------------------------------------------------------------------------
 # Agent: answer questions about RaplMail AND run mailbox actions on request
 # ---------------------------------------------------------------------------
-# A short guide the assistant can quote when the user asks how to use the app —
+# A short guide the assistant can quote when the user asks how to use the app -
 # so "how do I mark something done?" gets a real answer, not a shrug.
 _APP_GUIDE = (
     "RaplMail is a fast, local-first desktop email client (this very app). It runs "
     "entirely on the user's machine; mail and the AI key never leave it.\n"
     "How to use it:\n"
-    "- Triage (Spark-style): press E to mark a message DONE — it leaves the inbox view "
+    "- Triage (Spark-style): press E to mark a message DONE - it leaves the inbox view "
     "but stays on the server. The 'Show done' switch at the top of the list brings it back.\n"
     "- Keyboard: Up/Down move through the list and open the mail, Enter opens, R reply, "
     "F forward, A archive, U toggle read/unread, Delete deletes, / focuses search, "
@@ -928,10 +928,10 @@ def ollama_status(base: str = "", session: Session = Depends(get_session)) -> di
     are pulled. Drives the one-click setup card in Settings."""
     b = _ollama_base(session, base)
     installed = shutil.which("ollama") is not None
-    # Union the models visible on the serve we'd actually use (b — maybe our hidden
+    # Union the models visible on the serve we'd actually use (b - maybe our hidden
     # managed serve) AND the user's raw configured/tray serve. Otherwise a model
     # pulled to the real Ollama shows as "not installed" whenever the managed serve
-    # reads a different models directory — the "I pulled it but it says not pulled"
+    # reads a different models directory - the "I pulled it but it says not pulled"
     # bug. Model presence must not depend on which of the two local serves answers.
     bases = [b]
     if not base.strip():
@@ -985,7 +985,7 @@ def _ollama_app_path() -> str | None:
     """Path to the Ollama desktop app ('ollama app.exe'), which runs the server as
     a proper windowless background service. `ollama serve` from the CLI, by
     contrast, spawns model-runner subprocesses that pop up black console windows
-    on Windows — so we prefer the app when it's installed."""
+    on Windows - so we prefer the app when it's installed."""
     if os.name != "nt":
         return None
     exe = shutil.which("ollama")
@@ -1057,7 +1057,7 @@ def start_ollama(base: str, wait: float = 8.0) -> bool:
 def _stop_ollama() -> None:
     """Kill the running Ollama processes (used by restart). Includes the model
     runner (llama-server.exe): killing `ollama.exe` alone ORPHANS the runner it
-    spawned — it keeps holding VRAM — so we kill it too."""
+    spawned - it keeps holding VRAM - so we kill it too."""
     if os.name == "nt":
         for name in ("ollama app.exe", "ollama.exe", "llama-server.exe"):
             try:
@@ -1074,15 +1074,15 @@ def _stop_ollama() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Managed hidden Ollama server — kills the model-runner console-window flashes
+# Managed hidden Ollama server - kills the model-runner console-window flashes
 # ---------------------------------------------------------------------------
 # On Windows, Ollama's model runner (llama-server.exe) briefly FLASHES a console
-# window every time a model loads into / unloads from VRAM — but only when the
+# window every time a model loads into / unloads from VRAM - but only when the
 # `ollama serve` that spawned it was itself launched with a visible console, which
 # the Ollama desktop tray app (auto-started at login) does. A serve WE launch with
 # CREATE_NO_WINDOW spawns the runner into a hidden console, so nothing flashes.
 # So for a LOCAL Ollama we run our own hidden serve on a private port and route all
-# of RaplMail's traffic to it, leaving the user's tray Ollama untouched — it just
+# of RaplMail's traffic to it, leaving the user's tray Ollama untouched - it just
 # goes idle, and idle = no runner = no flash. Toggle via the "ollamaManaged"
 # setting (default on; no-op off-Windows / for a remote Ollama).
 _MANAGED_PORT = 11500          # preferred private port; falls back to a free one
@@ -1116,7 +1116,7 @@ def _free_loopback_port() -> int:
 
 
 def _kill_pid_tree(pid: int | None) -> None:
-    """Kill a PID and its children — our serve plus the llama-server runner it
+    """Kill a PID and its children - our serve plus the llama-server runner it
     spawned (which would otherwise orphan). Hidden, best-effort."""
     if not pid:
         return
@@ -1214,7 +1214,7 @@ def _process_env(pid: int) -> dict:
 
 def _running_ollama_env() -> dict:
     """The explicitly-set OLLAMA_* env of the already-running Ollama serve, so our
-    hidden serve behaves identically — same models directory (OLLAMA_MODELS), GPU
+    hidden serve behaves identically - same models directory (OLLAMA_MODELS), GPU
     backend (OLLAMA_VULKAN), context length, etc. Excludes OLLAMA_HOST (we set the
     port). {} if it can't be read (then we just inherit our own environment)."""
     for pid in _running_ollama_pids():
@@ -1261,7 +1261,7 @@ def start_managed_ollama(configured_base: str = "") -> bool:
     `_managed["base"]` at it so traffic reroutes there. Idempotent. Windows-only.
 
     Safety net: only adopt the hidden serve if it can see the same models the
-    user's configured serve has — otherwise a custom OLLAMA_MODELS the tray app
+    user's configured serve has - otherwise a custom OLLAMA_MODELS the tray app
     knows about (but we didn't inherit) would make models silently disappear. In
     that case we leave the configured serve in charge (flashes, but correct)."""
     if os.name != "nt" or not shutil.which("ollama"):
@@ -1271,10 +1271,10 @@ def start_managed_ollama(configured_base: str = "") -> bool:
     base, pid = None, None
     reuse = f"http://127.0.0.1:{_MANAGED_PORT}"
     if _ollama_is_up(reuse):
-        base = reuse   # a hidden serve left from a previous RaplMail run — reuse it
+        base = reuse   # a hidden serve left from a previous RaplMail run - reuse it
     else:
         # Replicate the running serve's OLLAMA_* config (models dir, GPU backend…)
-        # so our hidden serve sees the SAME models — even a custom OLLAMA_MODELS the
+        # so our hidden serve sees the SAME models - even a custom OLLAMA_MODELS the
         # tray app injected from its own settings (not our environment).
         serve_env = _running_ollama_env()
         for port in (_MANAGED_PORT, _free_loopback_port()):
@@ -1304,10 +1304,10 @@ def start_managed_ollama(configured_base: str = "") -> bool:
             # Either our hidden serve is missing models the real serve has, or the
             # real serve was unreachable so we couldn't confirm the model
             # directories match. Rerouting anyway is what made models "vanish"
-            # depending on boot order, so we DON'T — the real serve stays in charge
+            # depending on boot order, so we DON'T - the real serve stays in charge
             # (it may flash a console, but a model that disappears is far worse).
             missing = sorted(theirs - ours) if (theirs and ours) else "unverified"
-            log.info("not adopting hidden Ollama serve %s (missing/%s vs real %s) — "
+            log.info("not adopting hidden Ollama serve %s (missing/%s vs real %s) - "
                      "using %s instead.", base, missing, real_base, real_base)
             _kill_pid_tree(pid)   # don't leave the just-spawned serve orphaned
             return False          # fall back to the real serve (correctness first)
@@ -1380,7 +1380,7 @@ def autostart_ollama_if_configured() -> None:
         base = str(data.get("aiBaseUrl") or "").strip().rstrip("/")
         if data.get("ollamaManaged", True) and os.name == "nt" and _is_local_base(base):
             if start_managed_ollama(base):
-                return   # hidden serve adopted — done
+                return   # hidden serve adopted - done
             # couldn't take over (spawn failed / models mismatch): fall through so
             # AI still works via the configured/tray serve.
         if data.get("ollamaAutostart"):
@@ -1409,10 +1409,10 @@ def _fetch_text(url: str, timeout: int = 8) -> str:
 
 @router.get("/ollama/search")
 def ollama_search(q: str = "") -> dict:
-    """Search Ollama's model library LIVE (so it's never stale — gemma3, gemma4,
+    """Search Ollama's model library LIVE (so it's never stale - gemma3, gemma4,
     etc. show up as they're published). Scrapes ollama.com/search and returns the
     matching model names. Best-effort: returns [] (with an error note) if the site
-    can't be reached — the curated recommendations still cover the offline case."""
+    can't be reached - the curated recommendations still cover the offline case."""
     q = q.strip()
     if not q:
         return {"models": []}
@@ -1477,7 +1477,7 @@ def ollama_pull(body: OllamaPullIn, session: Session = Depends(get_session)) -> 
     base = _ollama_base(session, body.base)
     # Download into the user's REAL serve when it's reachable, so the model lands
     # in the directory their Ollama actually reads (and survives restarts) rather
-    # than our hidden serve's possibly-different directory — which is what made
+    # than our hidden serve's possibly-different directory - which is what made
     # freshly pulled models "disappear".
     if not body.base.strip():
         raw = _raw_ollama_base(session) or _OLLAMA_URL
@@ -1504,13 +1504,13 @@ def _winget_worker(action: str) -> None:
         # surface a UAC prompt; if winget is absent or declines, the UI falls back
         # to the manual download link.
         job["status"] = f"running winget {verb}…"
-        proc = subprocess.run(  # noqa: S603,S607 — fixed, non-user args
+        proc = subprocess.run(  # noqa: S603,S607 - fixed, non-user args
             ["winget", verb, "--id", "Ollama.Ollama", "-e", "--silent",
              "--accept-source-agreements", "--accept-package-agreements"],
             capture_output=True, text=True, timeout=900, **_no_window_kwargs())
         out = (proc.stdout or "") + (proc.stderr or "")
         # `winget upgrade` returns non-zero (0x8A15002B) when nothing needs
-        # upgrading — treat "no applicable upgrade / newest version" as success.
+        # upgrading - treat "no applicable upgrade / newest version" as success.
         if proc.returncode == 0:
             job["ok"] = True
             job["status"] = "installed" if verb == "install" else "updated"
@@ -1535,7 +1535,7 @@ def _start_winget(action: str) -> dict:
     import sys
     if not sys.platform.startswith("win"):
         raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            "Automatic install/update is Windows-only — get Ollama from ollama.com.")
+                            "Automatic install/update is Windows-only - get Ollama from ollama.com.")
     if _jobs["install"].get("active"):
         raise HTTPException(status.HTTP_409_CONFLICT, "An install/update is already running.")
     threading.Thread(target=_winget_worker, args=(action,), daemon=True,
@@ -1576,7 +1576,7 @@ def ollama_unload(session: Session = Depends(get_session)) -> dict:
     except Exception:  # noqa: BLE001
         loaded = []
     # ONLY unload what /api/ps says is actually loaded. The old fallback pinged the
-    # configured model when nothing was loaded — but a generate request LOADS the
+    # configured model when nothing was loaded - but a generate request LOADS the
     # model (spawning a runner process, i.e. a console window flash) just to unload
     # it again. If nothing's loaded there's nothing to free.
     unloaded = []
@@ -1601,7 +1601,7 @@ def ollama_warm(session: Session = Depends(get_session)) -> dict:
     if cfg["provider"] != "ollama" or not cfg["model"]:
         return {"warmed": False}
     # If we manage a hidden serve but it isn't up yet (startup race), DON'T warm via
-    # the configured/tray serve — that would flash a runner window AND pin the model
+    # the configured/tray serve - that would flash a runner window AND pin the model
     # in the tray's VRAM (keep_alive=-1). Skip; our serve comes up momentarily.
     row = session.get(Setting, 1)
     data = dict(row.data) if row and row.data else {}
@@ -1612,7 +1612,7 @@ def ollama_warm(session: Session = Depends(get_session)) -> dict:
     b = _ollama_base(session, "")
     try:
         # /api/generate with a model + no prompt just loads it; keep_alive=-1 (a
-        # NUMBER — "-1" as a string fails with 'missing unit') keeps it resident
+        # NUMBER - "-1" as a string fails with 'missing unit') keeps it resident
         # until we explicitly unload on blur.
         body = json.dumps({"model": cfg["model"], "keep_alive": -1}).encode("utf-8")
         req = urllib.request.Request(f"{b}/api/generate", data=body, method="POST",

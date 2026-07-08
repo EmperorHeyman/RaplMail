@@ -47,7 +47,7 @@
   }
 
   const fmtTs = (ts) => { try { return new Date(ts).toLocaleTimeString(); } catch { return ts; } };
-  const fmtWhen = (iso) => { if (!iso) return "—"; try { return new Date(iso).toLocaleString(); } catch { return iso; } };
+  const fmtWhen = (iso) => { if (!iso) return "-"; try { return new Date(iso).toLocaleString(); } catch { return iso; } };
   const lvlClass = (l) => `lvl-${(l || "").toLowerCase()}`;
 
   onMount(async () => {
@@ -59,7 +59,7 @@
 
   // --- Developer tools -------------------------------------------------------
   function copyDiagnostics() {
-    // A copy-pasteable snapshot for bug reports — health/system + a redacted
+    // A copy-pasteable snapshot for bug reports - health/system + a redacted
     // settings dump (secrets/keys stripped) so nothing sensitive leaks.
     const SECRET = /(key|token|password|secret|pgp|smime|cert|refresh|caldav|carddav)/i;
     const redacted = {};
@@ -79,7 +79,7 @@
     saveSettings({ debugUnlocked: false });
     notify("Developer mode hidden. Tap the version 5× to re-enable.");
   }
-  const base = (() => { try { return backendBase(); } catch { return "—"; } })();
+  const base = (() => { try { return backendBase(); } catch { return "-"; } })();
 </script>
 
 <div class="wrap">

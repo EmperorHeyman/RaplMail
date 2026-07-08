@@ -4,7 +4,7 @@ Aimed at IT admins / power users triaging a suspicious mail: the full raw
 headers, the parsed Received hop chain and originating IP, sender-domain DNS
 intelligence (MX / A / SPF / DMARC), SPF/DKIM/DMARC verdicts, every link and its
 domain, attachment SHA-256 hashes (for a VirusTotal hash lookup), and our own
-heuristic findings. All passive — no active scanning of third-party hosts. The UI
+heuristic findings. All passive - no active scanning of third-party hosts. The UI
 turns the returned facts (domains, IPs, URLs, hashes) into one-click deep links to
 external tools (VirusTotal, urlscan, MXToolbox, AbuseIPDB, whois).
 """
@@ -63,7 +63,7 @@ def _extract_ip(text: str) -> str:
 def _is_public_ip(ip: str) -> bool:
     """Coarse RFC1918 / loopback / link-local filter so 'originating IP' is the
     first genuinely external hop, not the mailbox provider's internal relays."""
-    if ":" in ip:                       # IPv6 — treat non-local as public
+    if ":" in ip:                       # IPv6 - treat non-local as public
         return not ip.lower().startswith(("::1", "fe80", "fc", "fd"))
     parts = ip.split(".")
     if len(parts) != 4 or not all(p.isdigit() for p in parts):
@@ -107,7 +107,7 @@ def _links(html: str) -> list[dict]:
         if key in seen:
             continue
         seen.add(key)
-        # Punycode / non-ASCII (homograph) host — a classic lookalike carrier.
+        # Punycode / non-ASCII (homograph) host - a classic lookalike carrier.
         puny = host.startswith("xn--") or "xn--" in host or any(ord(c) > 127 for c in host)
         final = ""
         if _reg_domain(host) in _SHORTENERS and unshortened < 6:
@@ -212,7 +212,7 @@ def _attachments(msg: EmailMessage) -> list[dict]:
             "filename": name,
             "content_type": part.get_content_type(),
             "size": len(payload),
-            "md5": hashlib.md5(payload).hexdigest() if payload else "",       # noqa: S324 — file id for VT, not security
+            "md5": hashlib.md5(payload).hexdigest() if payload else "",       # noqa: S324 - file id for VT, not security
             "sha1": hashlib.sha1(payload).hexdigest() if payload else "",     # noqa: S324
             "sha256": hashlib.sha256(payload).hexdigest() if payload else "",
             "magic": _magic_family(payload),
@@ -264,7 +264,7 @@ def _dns_intel(domain: str) -> dict:
 
 def _http_json(url: str, timeout: float = 3.0) -> dict | None:
     """GET a small JSON body with a tight timeout (keyless public APIs). None on
-    any failure — every caller treats missing intel as simply 'unknown'."""
+    any failure - every caller treats missing intel as simply 'unknown'."""
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "RaplMail-Lab",
                                                    "Accept": "application/json"})
@@ -394,7 +394,7 @@ def _clock_skew(date_hdr: str, hops: list[dict]) -> dict:
     return out
 
 
-# Known URL shorteners — only these are followed to reveal the true destination
+# Known URL shorteners - only these are followed to reveal the true destination
 # (following every link would be slow and noisy).
 _SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "goo.gl", "ow.ly", "is.gd", "buff.ly",
                "rebrand.ly", "cutt.ly", "lnkd.in", "rb.gy", "shorturl.at", "t.ly"}
@@ -421,7 +421,7 @@ def _analyze(raw: bytes, msg_row: Message) -> dict:
     from_addr = msg_row.from_addr or ""
     from_dom = from_addr.split("@")[-1].lower() if "@" in from_addr else ""
 
-    # HTML body (for link extraction) — prefer the parsed MIME's text/html part.
+    # HTML body (for link extraction) - prefer the parsed MIME's text/html part.
     html = ""
     for part in parsed.walk():
         if part.get_content_type() == "text/html" and not part.is_multipart():

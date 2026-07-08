@@ -54,7 +54,7 @@
 
   const collapsed = $derived(app.settings.sidebarCollapsed);
   const hasInbox = $derived(app.folders.some((f) => f.role === "inbox"));
-  // Total unread across all inboxes — badge on the Smart Inbox / All Inboxes item.
+  // Total unread across all inboxes - badge on the Smart Inbox / All Inboxes item.
   const inboxUnread = $derived(
     app.folders.filter((f) => f.role === "inbox").reduce((n, f) => n + (f.unread_count || 0), 0)
   );
@@ -309,7 +309,7 @@
             ondragleave={() => { if (dropTarget === f.id) dropTarget = null; if (dropBad === f.id) dropBad = null; }}
             ondrop={(e) => onFolderDrop(e, f)}>
             {#if manage && !collapsed}<span class="grip" title={t("nav.dragToReorder")}>⠿</span>{/if}
-            <button class="nav-it" title={collapsed ? `${f.name} — ${g.account.email}` : f.name}
+            <button class="nav-it" title={collapsed ? `${f.name} - ${g.account.email}` : f.name}
               class:active={app.selectedKind === "folder" && app.selectedFolderId === f.id && app.view === "mail"}
               onclick={() => { if (!manage) openFolder(f); }}>
               <span class="ic">{@html folderIcon(f.role)}</span>
@@ -498,10 +498,10 @@
   .folder-row.dim { opacity: 0.5; }
   .folder-row.gone { display: none; }
   .folder-row.dragtarget { outline: 1px dashed var(--border); }
-  /* A message is being dragged onto this folder — highlight it as a drop target. */
+  /* A message is being dragged onto this folder - highlight it as a drop target. */
   .folder-row.dropok { background: var(--accent-soft); box-shadow: inset 0 0 0 2px var(--accent); }
   .folder-row.dropok :global(.nav-it) { color: var(--accent); }
-  /* Hovering a folder in another account — a move can't cross accounts. */
+  /* Hovering a folder in another account - a move can't cross accounts. */
   .folder-row.dropbad { background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
   .folder-row.dropbad :global(.nav-it) { color: var(--danger); cursor: no-drop; }
   .grip { cursor: grab; color: var(--faint); padding: 0 2px; }

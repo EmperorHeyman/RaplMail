@@ -1,4 +1,4 @@
-"""Minimal Google Calendar API v3 client — enough to create/delete events.
+"""Minimal Google Calendar API v3 client - enough to create/delete events.
 
 Reading still happens via the subscribed iCal feed; this is purely for *writing*
 events to the user's Google Calendar with a properly OAuth-scoped token, which

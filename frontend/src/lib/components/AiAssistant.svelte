@@ -7,7 +7,7 @@
   // A NON-modal, docked chat window (like the compose panel): you keep clicking
   // and reading the app while it's open, drag it around, and can minimize it into
   // a floating "AI" circle that reopens it (conversation preserved). It answers
-  // over emails you add as CONTEXT — the open message, a whole conversation, or
+  // over emails you add as CONTEXT - the open message, a whole conversation, or
   // the current list. Nothing is ever sent.
   // Context lives in the store so "Add to AI chat" (right-click a message) can add
   // to it whether or not the window is already open.
@@ -212,7 +212,7 @@
   function openCtx(id) { openMessageById?.(id); }
   function close() {
     app.aiAssistantOpen = false; app.aiAssistantSeed = null; app.aiChatContext = [];
-    // Free the GPU right away — closing the assistant means we're done for now.
+    // Free the GPU right away - closing the assistant means we're done for now.
     if ((app.settings.aiProvider || "") === "ollama") ai.ollamaUnload().catch(() => {});
   }
 
@@ -231,7 +231,7 @@
       <span class="title">{@html icons.bolt} AI assistant</span>
       <div class="hbtns">
         {#if conv.length}<button class="hb" title="Clear the conversation (start fresh)" onclick={clearConv}>{@html icons.trash || "🗑"}</button>{/if}
-        <button class="hb" title="Minimize to a circle" onclick={() => (minimized = true)}>–</button>
+        <button class="hb" title="Minimize to a circle" onclick={() => (minimized = true)}>-</button>
         <button class="hb" title="Close" onclick={close}>{@html icons.close}</button>
       </div>
     </header>
@@ -247,13 +247,13 @@
         <div class="chips">
           {#each context as c (c.id)}
             <span class="chip" title={c.subject}>
-              <button class="chip-open" onclick={() => openCtx(c.id)}>{@html icons.mail} {c.from} — {c.subject}</button>
+              <button class="chip-open" onclick={() => openCtx(c.id)}>{@html icons.mail} {c.from} - {c.subject}</button>
               <button class="chip-x" title="Remove" onclick={() => removeCtx(c.id)}>{@html icons.close}</button>
             </span>
           {/each}
         </div>
       {:else}
-        <p class="ctx-empty">Add emails as context, then ask — or just tell me what to do: “mark all unread as read”, “archive everything from noreply@…”, or “how do I snooze a mail?”</p>
+        <p class="ctx-empty">Add emails as context, then ask - or just tell me what to do: “mark all unread as read”, “archive everything from noreply@…”, or “how do I snooze a mail?”</p>
       {/if}
     </div>
 
@@ -270,7 +270,7 @@
               <div class="act-head">{@html icons.bolt} {m.content}</div>
               {#if m.action.sample?.length}
                 <ul class="act-sample">
-                  {#each m.action.sample as s}<li><b>{s.from}</b> — {s.subject || "(no subject)"}</li>{/each}
+                  {#each m.action.sample as s}<li><b>{s.from}</b> - {s.subject || "(no subject)"}</li>{/each}
                   {#if m.action.count > m.action.sample.length}<li class="more">…and {m.action.count - m.action.sample.length} more</li>{/if}
                 </ul>
               {/if}
@@ -295,7 +295,7 @@
               {#if m.rule.count != null}
                 <div class="act-affect">
                   {m.rule.count === 0
-                    ? "No emails you already have match this — it would only apply to future mail. Double-check the wording?"
+                    ? "No emails you already have match this - it would only apply to future mail. Double-check the wording?"
                     : `This would affect ${m.rule.count} email${m.rule.count === 1 ? "" : "s"} you already have, plus future mail.`}
                 </div>
                 {#if m.rule.sample?.length}

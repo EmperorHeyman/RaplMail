@@ -50,7 +50,7 @@
       {busy ? "…" : isNew ? "Create vault" : "Unlock"}
     </button>
     {#if isNew}
-      <p class="hint">There's no recovery — if you forget this, your stored credentials are gone.</p>
+      <p class="hint">There's no recovery - if you forget this, your stored credentials are gone.</p>
     {/if}
   </form>
 </div>

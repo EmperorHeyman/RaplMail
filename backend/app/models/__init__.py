@@ -142,12 +142,12 @@ class Message(SQLModel, table=True):
     brand_domain: str = ""       # a prominent link domain from the body (Spark-style avatar fallback)
     auth_status: str = ""        # sender-auth verdict: ""=unchecked, pass|fail|none (anti-spoof shield)
     attachments: list = Field(default_factory=list, sa_column=Column(JSON))  # metadata, filled on body fetch
-    snooze_presence: bool = False  # snoozed "until I'm back" — resurfaced by the idle monitor
+    snooze_presence: bool = False  # snoozed "until I'm back" - resurfaced by the idle monitor
     pinned: bool = False         # pinned to the top of the list (durable via MessageState)
-    pending_action: str = Field(default="", index=True)  # queued archive/delete — hidden until flushed
+    pending_action: str = Field(default="", index=True)  # queued archive/delete - hidden until flushed
     # Anti-phishing screening. `suspicious` is set at sync by the header spoof
     # heuristics (brand impersonation, lookalike/mismatched domain) when the
-    # screen is enabled — surfaced as a warning badge, never auto-deleted.
+    # screen is enabled - surfaced as a warning badge, never auto-deleted.
     # `ai_verdict`/`ai_reason` cache the last AI screening result so "automatic"
     # mode doesn't re-spend tokens re-checking a mail every time it's opened.
     suspicious: bool = False
@@ -183,21 +183,21 @@ class MessageEmbedding(SQLModel, table=True):
     (Ollama) or OpenAI-compatible embeddings endpoint. See app/sync/embeddings.py.
     """
     # ON DELETE CASCADE: when a message is pruned (folder cleanup, rule move/
-    # delete) its embedding must go with it — otherwise, with foreign_keys=ON,
+    # delete) its embedding must go with it - otherwise, with foreign_keys=ON,
     # the orphaned reference would block the message delete.
     message_id: int = Field(
         sa_column=Column(Integer, ForeignKey("message.id", ondelete="CASCADE"), primary_key=True))
     model: str = Field(default="", index=True)
     dim: int = 0
     vec: bytes = Field(default=b"", sa_column=Column(LargeBinary))
-    # Sync-content signature (hash of subject+snippet) — lets the indexer skip a
+    # Sync-content signature (hash of subject+snippet) - lets the indexer skip a
     # message whose embeddable text hasn't changed since it was last embedded.
     sig: str = ""
     updated_at: datetime = Field(default_factory=utcnow)
 
 
 class MutedThread(SQLModel, table=True):
-    """A conversation the user muted — new mail in it is auto-archived on arrival."""
+    """A conversation the user muted - new mail in it is auto-archived on arrival."""
     id: int | None = Field(default=None, primary_key=True)
     thread_key: str = Field(index=True, unique=True)
     # Lowercased sender addresses seen in the muted conversation, comma-joined.
@@ -227,7 +227,7 @@ class Signature(SQLModel, table=True):
     account_id: int | None = Field(default=None, foreign_key="account.id", index=True)
     name: str = "Default"
     html: str = ""
-    # Inline images referenced by the html via cid: — stored as a list of
+    # Inline images referenced by the html via cid: - stored as a list of
     # {"cid": str, "filename": str, "content_type": str, "data_b64": str}.
     inline_images: list = Field(default_factory=list, sa_column=Column(JSON))
     is_default: bool = True

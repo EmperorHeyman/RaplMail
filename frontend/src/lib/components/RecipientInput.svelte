@@ -42,7 +42,7 @@
     lastEmitted = value;
   }
 
-  // Outlook uses ';', pastes bring newlines/tabs — treat them all as separators.
+  // Outlook uses ';', pastes bring newlines/tabs - treat them all as separators.
   const SPLIT = /[;,\n\t]+/;
   // Re-parse when `value` changes from OUTSIDE (reply/forward prefill, clear).
   $effect(() => {

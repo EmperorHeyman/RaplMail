@@ -216,8 +216,8 @@ def test_model_installed_unions_both_serves(monkeypatch):
     # because the managed serve reads a different models dir. model_installed must
     # treat it as present if EITHER serve has it.
     tags = {
-        "http://127.0.0.1:9999": {"other"},          # managed serve — missing it
-        "http://127.0.0.1:11434": {"bge-m3", "x"},   # real serve — has it
+        "http://127.0.0.1:9999": {"other"},          # managed serve - missing it
+        "http://127.0.0.1:11434": {"bge-m3", "x"},   # real serve - has it
     }
     monkeypatch.setattr(embeddings, "_tags_basenames", lambda b: tags.get(b))
     cfg = {"provider": "ollama", "model": "bge-m3",

@@ -65,7 +65,7 @@ def _fix_folder_mojibake(name: str) -> str:
 
     Some servers (notably Office 365) return UTF-8 folder names, but imapclient
     decodes them as modified UTF-7, which for plain UTF-8 bytes degrades to a
-    latin-1 read — e.g. "Svátky" -> "SvÃ¡tky". Reverse it when it round-trips
+    latin-1 read - e.g. "Svátky" -> "SvÃ¡tky". Reverse it when it round-trips
     cleanly back to valid UTF-8.
     """
     try:
@@ -115,7 +115,7 @@ class ImapSmtpProvider:
         out: list[FolderInfo] = []
         for flags, _delim, name in self._imap().list_folders():
             # Skip container-only folders that can't be selected (e.g. Gmail's
-            # "[Gmail]" parent is \Noselect) — trying to fetch them errors with
+            # "[Gmail]" parent is \Noselect) - trying to fetch them errors with
             # "[NONEXISTENT] Unknown Mailbox".
             if any(f in (b"\\Noselect", b"\\NonExistent") for f in flags):
                 continue
@@ -155,7 +155,7 @@ class ImapSmtpProvider:
         # to the real range so a backfill window can't spill past its bounds.
         uids = [u for u in uids if u >= min_uid and (max_uid is None or u <= max_uid)]
         if limit:
-            # Newest `limit` UIDs in the range — for backfill that's the window
+            # Newest `limit` UIDs in the range - for backfill that's the window
             # just below the current cursor, so paging walks steadily older.
             uids = sorted(uids)[-limit:]
         if not uids:
@@ -186,7 +186,7 @@ class ImapSmtpProvider:
         return out
 
     def fetch_flags(self, folder_path: str, uids: list[int]) -> dict[int, list[str]]:
-        """Just the FLAGS for known UIDs — used to resync read/done state that
+        """Just the FLAGS for known UIDs - used to resync read/done state that
         changed on another device, without re-downloading whole messages."""
         if not uids:
             return {}

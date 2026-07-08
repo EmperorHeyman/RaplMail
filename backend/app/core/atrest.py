@@ -57,7 +57,7 @@ def decrypt_field(value: str | None) -> str:
         return value or ""
     cipher = _cipher()
     if cipher is None:
-        return ""  # locked — can't read the encrypted body right now
+        return ""  # locked - can't read the encrypted body right now
     try:
         return cipher.decrypt(value[len(_PREFIX):].encode("ascii")).decode("utf-8")
     except Exception:

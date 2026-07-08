@@ -29,7 +29,7 @@ extern "C" {
     /// auxiliary count/severity.
     fn host_emit(kind: u32, ptr: *const u8, len: usize, num: u32);
     /// Report an *attempted action* the payload tried to take (network, exec,
-    /// script eval). The host logs it and returns a blocked/fake result — the
+    /// script eval). The host logs it and returns a blocked/fake result - the
     /// action never happens. Kept separate so the UI can style intents as the
     /// live "what is it trying to do" feed.
     fn host_intent(kind: u32, ptr: *const u8, len: usize);
@@ -42,7 +42,7 @@ const K_KEYWORD: u32 = 6; // suspicious keyword hit (num = count)
 const K_PREVIEW: u32 = 7; // extracted printable text run
 const K_NOTE: u32 = 8; // general note
 
-// Intent kinds (host_intent) — the live activity feed.
+// Intent kinds (host_intent) - the live activity feed.
 const I_NET: u32 = 1; // wants to reach a URL
 const I_EXEC: u32 = 2; // wants to launch/execute
 const I_SCRIPT: u32 = 3; // carries embedded script/js

@@ -146,12 +146,12 @@
 
     {#if status?.enabled}
       <div class="card statuscard">
-        <div class="st"><span>{t("dsync.stAccount")}</span><b>{acctEmail(status.account_id) || "—"}</b></div>
+        <div class="st"><span>{t("dsync.stAccount")}</span><b>{acctEmail(status.account_id) || "-"}</b></div>
         <div class="st"><span>{t("dsync.stLastSynced")}</span><b>{fmt(status.last_at)}</b></div>
         {#if status.last_error}
           <div class="st err"><span>{t("dsync.stLastError")}</span><b>{status.last_error}</b></div>
         {/if}
-        <div class="st"><span>{t("dsync.stDevice")}</span><b class="mono">{(status.device_id || "").slice(0, 8) || "—"}</b></div>
+        <div class="st"><span>{t("dsync.stDevice")}</span><b class="mono">{(status.device_id || "").slice(0, 8) || "-"}</b></div>
       </div>
 
       {#if status.has_passphrase}

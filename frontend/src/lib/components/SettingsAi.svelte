@@ -5,7 +5,7 @@
   import { icons } from "../icons.js";
 
   const aiProv = $derived(app.settings.aiProvider || "anthropic");
-  // AI actions are "on" once a key is set — or immediately for keyless local Ollama.
+  // AI actions are "on" once a key is set - or immediately for keyless local Ollama.
   const aiActive = $derived(!!app.settings.aiApiKey || aiProv === "ollama");
 
   // --- Ollama (local, keyless AI) -----------------------------------------
@@ -21,7 +21,7 @@
     starting = true;
     try {
       const r = await ai.ollamaStart(app.settings.aiBaseUrl || "");
-      notify(r.running ? "Ollama started" : "Couldn't start Ollama — is it installed?", r.running ? "info" : "error");
+      notify(r.running ? "Ollama started" : "Couldn't start Ollama - is it installed?", r.running ? "info" : "error");
     } catch (e) { notify(e.message || "Couldn't start Ollama", "error"); }
     finally { starting = false; refreshOllama(); }
   }
@@ -50,7 +50,7 @@
   }
   async function updateOllama() {
     try { await ai.ollamaUpdate(); install = { active: true, status: "updating…" }; pollInstall(); }
-    catch (e) { notify((e.message || "Couldn't start update") + " — opening the download page", "error"); openExternal("https://ollama.com/download"); }
+    catch (e) { notify((e.message || "Couldn't start update") + " - opening the download page", "error"); openExternal("https://ollama.com/download"); }
   }
   async function freeGpu() {
     unloading = true;
@@ -90,11 +90,11 @@
   function quickSetup(model) {
     saveSettings({ aiProvider: "ollama", aiButtons: true, ollamaKeepAlive: "adaptive", ollamaManaged: true });
     ai.ollamaManaged(true).catch(() => {});   // bring the hidden serve up now
-    if (isInstalled(model)) { useModel(model, "chat"); notify("All set — " + model + " is ready."); }
+    if (isInstalled(model)) { useModel(model, "chat"); notify("All set - " + model + " is ready."); }
     else startPull(model, true);
   }
 
-  // --- Live model search (ollama.com library — never stale) ---------------
+  // --- Live model search (ollama.com library - never stale) ---------------
   let modelQuery = $state("");
   let searchResults = $state([]);
   let searching = $state(false);
@@ -118,16 +118,16 @@
         if (install?.done) {
           clearInterval(_installTimer);
           if (install.ok) {
-            notify(install.action === "upgrade" ? "Ollama updated (" + (install.status || "done") + ")" : "Ollama installed — start it, then refresh");
+            notify(install.action === "upgrade" ? "Ollama updated (" + (install.status || "done") + ")" : "Ollama installed - start it, then refresh");
             refreshOllama();
-          } else notify(install.error || "Didn't complete — try the manual download", "error");
+          } else notify(install.error || "Didn't complete - try the manual download", "error");
         }
       } catch { clearInterval(_installTimer); }
     }, 1500);
   }
   async function startInstall() {
     try { await ai.ollamaInstall(); install = { active: true, status: "starting" }; pollInstall(); }
-    catch (e) { notify((e.message || "Couldn't start install") + " — opening the download page", "error"); openExternal("https://ollama.com/download"); }
+    catch (e) { notify((e.message || "Couldn't start install") + " - opening the download page", "error"); openExternal("https://ollama.com/download"); }
   }
 
   // --- Semantic search index ----------------------------------------------
@@ -168,15 +168,15 @@
   const CHAT_MODELS = [
     { name: "llama3.2:3b", size: "2 GB", tier: "low", note: "Fast, great default" },
     { name: "qwen2.5:3b", size: "1.9 GB", tier: "low", note: "Small, strong multilingual" },
-    { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: "Great multilingual — good for Czech" },
+    { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: "Great multilingual - good for Czech" },
     { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: "Fastest, but basic quality" },
     { name: "llama3.1:8b", size: "4.9 GB", tier: "mid", note: "Well-rounded" },
-    { name: "mistral-nemo:12b", size: "7 GB", tier: "mid", note: "Fast + coherent, great Czech — big step up from mistral 7b" },
+    { name: "mistral-nemo:12b", size: "7 GB", tier: "mid", note: "Fast + coherent, great Czech - big step up from mistral 7b" },
     { name: "gemma3:12b", size: "8 GB", tier: "mid", note: "Google Gemma 3 (slower to load)" },
-    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent all-round — fits a 16 GB GPU" },
+    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent all-round - fits a 16 GB GPU" },
     { name: "phi4:14b", size: "9 GB", tier: "high", note: "Strong reasoning (Microsoft Phi-4)" },
-    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality — needs 24 GB+ VRAM (spills / slow on 16 GB)" },
-    { name: "llama3.3:70b", size: "43 GB", tier: "high", note: "Best — needs lots of VRAM" },
+    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality - needs 24 GB+ VRAM (spills / slow on 16 GB)" },
+    { name: "llama3.3:70b", size: "43 GB", tier: "high", note: "Best - needs lots of VRAM" },
   ];
   // Defaults the one-click quick-setup buttons pull for each GPU tier.
   const QUICK_SETUP = [
@@ -187,7 +187,7 @@
   const EMBED_MODELS = [
     { name: "nomic-embed-text", size: "274 MB", tier: "low", note: "Default. Fast, good quality" },
     { name: "all-minilm", size: "46 MB", tier: "low", note: "Tiny, very fast" },
-    { name: "bge-m3", size: "1.2 GB", tier: "mid", note: "Multilingual — great for Czech search" },
+    { name: "bge-m3", size: "1.2 GB", tier: "mid", note: "Multilingual - great for Czech search" },
     { name: "mxbai-embed-large", size: "670 MB", tier: "mid", note: "Higher-quality embeddings" },
   ];
   const TIERS = ["low", "mid", "high"];
@@ -253,7 +253,7 @@
   <section class="card">
     <h3>AI assistant <span class="tag">{aiProv === "ollama" ? "local · private" : "bring your own key"}</span></h3>
     <p class="hint">Powers the AI assistant, “Catch me up”, AI reply, compose rewrites, and inbox triage. Calls go
-      straight from this app to the provider you choose — there's no RaplMail server in between. Pick <b>Ollama</b> for a
+      straight from this app to the provider you choose - there's no RaplMail server in between. Pick <b>Ollama</b> for a
       fully local, offline model (nothing leaves your machine).</p>
     <label class="fieldrow"><span>Provider</span>
       <select value={aiProv} onchange={(e) => saveSettings({ aiProvider: e.currentTarget.value })}>
@@ -293,7 +293,7 @@
           {#if install?.error}<p class="hint err">{install.error}</p>{/if}
         {:else if ollama.running}
           <div class="quicksetup">
-            <span class="lab2">✨ One-click setup — pick your hardware, RaplMail pulls the model &amp; switches everything on</span>
+            <span class="lab2">✨ One-click setup - pick your hardware, RaplMail pulls the model &amp; switches everything on</span>
             <div class="qsrow">
               {#each QUICK_SETUP as qs}
                 <button class="qsbtn" class:on={isActive(qs.model, "chat")} onclick={() => quickSetup(qs.model)} disabled={pull?.active}>
@@ -311,9 +311,9 @@
               <input placeholder="llama3.2" value={app.settings.aiModel || ""} onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
             {/if}
           </label>
-          {#if !ollama.models.length}<p class="hint">No models yet — use one-click setup above, or pick/search below.</p>{/if}
+          {#if !ollama.models.length}<p class="hint">No models yet - use one-click setup above, or pick/search below.</p>{/if}
           <div class="pullrow">
-            <span class="lab2">Recommended — “Use” to switch, “Pull” to download</span>
+            <span class="lab2">Recommended - “Use” to switch, “Pull” to download</span>
             {@render modelPicker(CHAT_MODELS, "chat")}
           </div>
           <div class="pullrow">
@@ -333,7 +333,7 @@
                 {/each}
               </div>
             {:else if modelQuery.trim().length >= 2}
-              <p class="hint">No matches — or couldn't reach ollama.com (you can still “Pull” a name directly below).</p>
+              <p class="hint">No matches - or couldn't reach ollama.com (you can still “Pull” a name directly below).</p>
             {/if}
             <div class="pullcustom">
               <input placeholder="…or pull an exact name/tag (e.g. gemma3:12b)" bind:value={pullName} onkeydown={(e) => { if (e.key === "Enter") startPull(); }} />
@@ -346,7 +346,7 @@
           {/if}
           <label class="fieldrow" style="margin-top:10px"><span>Free GPU after</span>
             <select value={app.settings.ollamaKeepAlive || "5m"} onchange={(e) => saveSettings({ ollamaKeepAlive: e.currentTarget.value })}>
-              <option value="adaptive">Adaptive — load when RaplMail is focused, free when it isn't</option>
+              <option value="adaptive">Adaptive - load when RaplMail is focused, free when it isn't</option>
               <option value="0">Immediately (unload after each request)</option>
               <option value="30s">30 seconds idle</option>
               <option value="1m">1 minute idle</option>
@@ -356,18 +356,18 @@
             </select>
           </label>
           {#if (app.settings.ollamaKeepAlive || "5m") === "adaptive"}
-            <p class="hint" style="margin:0">Adaptive: the model loads into VRAM when the RaplMail window is focused and is freed a few seconds after you switch away — unless you're mid-question. Ready when you are, off when you're not.</p>
+            <p class="hint" style="margin:0">Adaptive: the model loads into VRAM when the RaplMail window is focused and is freed a few seconds after you switch away - unless you're mid-question. Ready when you are, off when you're not.</p>
           {/if}
           <label class="check" style="margin-top:10px">
             <input type="checkbox" checked={app.settings.ollamaManaged !== false}
               onchange={(e) => { const v = e.currentTarget.checked; saveSettings({ ollamaManaged: v }); ai.ollamaManaged(v).catch(() => {}); refreshOllama(); }} />
-            <span>Hide Ollama's console windows <small>— RaplMail runs its own hidden Ollama server so the model loader never flashes black windows on load/unload (Windows). Your tray Ollama is left running but idle.</small></span>
+            <span>Hide Ollama's console windows <small>- RaplMail runs its own hidden Ollama server so the model loader never flashes black windows on load/unload (Windows). Your tray Ollama is left running but idle.</small></span>
           </label>
           <div class="rowbtns" style="margin-top:10px">
             <button class="btn" onclick={freeGpu} disabled={unloading}>{@html icons.bolt} {unloading ? "Freeing…" : "Free GPU now"}</button>
             <button class="btn ghost" onclick={updateOllama} disabled={install?.active}>{install?.active ? (install.status || "Updating…") : "Update Ollama"}</button>
           </div>
-          <p class="hint" style="margin-top:8px">Ollama keeps the model in VRAM after each request for fast follow-ups — that's the idle GPU use. Lower “Free GPU after” frees it sooner (at the cost of a reload on the next request). RaplMail also unloads the model when you close the AI assistant or leave a message where you used AI.</p>
+          <p class="hint" style="margin-top:8px">Ollama keeps the model in VRAM after each request for fast follow-ups - that's the idle GPU use. Lower “Free GPU after” frees it sooner (at the cost of a reload on the next request). RaplMail also unloads the model when you close the AI assistant or leave a message where you used AI.</p>
         {:else}
           <p class="hint">Ollama is installed but the server isn't running. Start it here to use local AI.</p>
           <div class="rowbtns">
@@ -399,7 +399,7 @@
           value={app.settings.aiModel || ""}
           onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
       </label>
-      <p class="hint">{app.settings.aiApiKey ? "✓ Key set — AI actions are active." : "No key — AI buttons stay hidden until you add one."}</p>
+      <p class="hint">{app.settings.aiApiKey ? "✓ Key set - AI actions are active." : "No key - AI buttons stay hidden until you add one."}</p>
     {/if}
     {#if aiActive}
       <label class="check">
@@ -427,7 +427,7 @@
 
   <section class="card">
     <h3>Semantic search <span class="tag">local · offline</span></h3>
-    <p class="hint">Search your mail by <b>meaning</b>, not just exact words — “that quote about server migration costs”
+    <p class="hint">Search your mail by <b>meaning</b>, not just exact words - “that quote about server migration costs”
       finds the right message even if it never used those exact words. RaplMail builds a local vector index using an
       embedding model; the vectors stay on this machine. Default source is <b>Ollama</b>, so nothing leaves your network.</p>
     <label class="check">

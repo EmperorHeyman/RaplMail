@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
     _threading.Thread(target=autostart_ollama_if_configured, daemon=True,
                       name="ollama-autostart").start()
     # Everything created during startup (modules, routes, engine) lives for the
-    # whole process — freeze it out of the cyclic GC so collections only scan
+    # whole process - freeze it out of the cyclic GC so collections only scan
     # request-lifetime objects (fewer + faster GC pauses).
     gc.collect()
     gc.freeze()

@@ -23,7 +23,7 @@
 <div class="wrap">
   <section>
     <h3>OpenPGP encryption</h3>
-    <p class="lead">Verify signed mail, read encrypted mail, and sign/encrypt what you send — all locally with your
+    <p class="lead">Verify signed mail, read encrypted mail, and sign/encrypt what you send - all locally with your
       own keys. Keys are stored in your settings and never leave this machine. Paste ASCII-armored keys
       (exported from GnuPG, Proton, etc.).</p>
   </section>
@@ -38,7 +38,7 @@
       <input type="password" placeholder="(if the key is protected)" value={app.settings.pgpPassphrase || ""}
         onchange={(e) => saveSettings({ pgpPassphrase: e.currentTarget.value })} />
     </label>
-    <p class="hint">{app.settings.pgpPrivateKey ? "✓ Private key set — decrypt & sign enabled." : "No private key."}</p>
+    <p class="hint">{app.settings.pgpPrivateKey ? "✓ Private key set - decrypt & sign enabled." : "No private key."}</p>
   </section>
 
   <section>

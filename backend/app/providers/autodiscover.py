@@ -6,7 +6,7 @@ the IMAP/SMTP host/port/security. Mirrors what Thunderbird/Outlook do.
 
 Resolution order (first hit wins):
   1. Known-provider table (gmail, seznam, icloud, …)
-  2. MX lookup — detects M365 / Google-hosted *custom* domains (e.g. a company
+  2. MX lookup - detects M365 / Google-hosted *custom* domains (e.g. a company
      domain whose mail is really on Outlook or Google).
   3. Thunderbird ISPDB (autoconfig.thunderbird.net)
   4. Provider autoconfig URLs (autoconfig.<domain>, <domain>/.well-known/…)
@@ -96,7 +96,7 @@ def discover(email: str) -> Discovered:
     # Last resort: guess and let the user confirm.
     _apply(d, dict(**_imap(f"imap.{domain}"), **_smtp(f"mail.{domain}", 587, True)),
            source="guess", confident=False)
-    d.note = d.note or "We guessed these settings — please double-check them."
+    d.note = d.note or "We guessed these settings - please double-check them."
     return d
 
 
@@ -116,30 +116,30 @@ _MX_RULES: list[tuple[tuple[str, ...], dict]] = [
     (("protection.outlook.com", "mail.protection.outlook", "outlook.com"),
      dict(provider="m365", auth="oauth", **_imap("outlook.office365.com"),
           **_smtp("smtp.office365.com", 587, True),
-          note="Hosted on Microsoft 365 — sign in with Microsoft.")),
+          note="Hosted on Microsoft 365 - sign in with Microsoft.")),
     (("aspmx.l.google.com", "googlemail.com", "google.com", "psmtp.com"),
      dict(provider="gmail", auth="oauth", **_imap("imap.gmail.com"),
           **_smtp("smtp.gmail.com", 587, True),
-          note="Hosted on Google Workspace — sign in with Google.")),
+          note="Hosted on Google Workspace - sign in with Google.")),
     (("seznam.cz",),
      dict(**_imap("imap.seznam.cz"), **_smtp("smtp.seznam.cz", 465),
-          note="Hosted on Seznam — use your Seznam password (enable IMAP in Seznam settings).")),
+          note="Hosted on Seznam - use your Seznam password (enable IMAP in Seznam settings).")),
     (("centrum.cz", "atlas.cz"),
      dict(**_imap("imap.centrum.cz"), **_smtp("smtp.centrum.cz", 465),
           note="Hosted on Centrum.")),
     (("icloud.com", "mail.me.com", "apple.com"),
      dict(**_imap("imap.mail.me.com"), **_smtp("smtp.mail.me.com", 587, True),
-          note="Hosted on iCloud — requires an app-specific password.")),
+          note="Hosted on iCloud - requires an app-specific password.")),
     (("messagingengine.com", "fastmail.com"),
      dict(**_imap("imap.fastmail.com"), **_smtp("smtp.fastmail.com", 465),
-          note="Hosted on Fastmail — use an app password.")),
+          note="Hosted on Fastmail - use an app password.")),
     (("zoho.com", "zoho.eu", "zohomail"),
      dict(**_imap("imap.zoho.com"), **_smtp("smtp.zoho.com", 465),
           note="Hosted on Zoho.")),
     (("yahoodns.net", "yahoo.com"),
      dict(**_imap("imap.mail.yahoo.com"), **_smtp("smtp.mail.yahoo.com", 465),
-          note="Hosted on Yahoo — requires an app password.")),
-    (("mailgun.org", "pphosted.com", "mimecast.com"),  # gateways — fall through unless nothing else
+          note="Hosted on Yahoo - requires an app password.")),
+    (("mailgun.org", "pphosted.com", "mimecast.com"),  # gateways - fall through unless nothing else
      dict()),
 ]
 
@@ -187,7 +187,7 @@ def _from_provider_autoconfig(domain: str, email: str) -> dict | None:
 
 
 def _fetch_and_parse(url: str, *, source: str) -> dict | None:
-    import httpx  # deferred — autodiscovery runs once per added account
+    import httpx  # deferred - autodiscovery runs once per added account
     try:
         resp = httpx.get(url, timeout=_HTTP_TIMEOUT, follow_redirects=True)
         if resp.status_code != 200 or not resp.text.strip().startswith("<"):

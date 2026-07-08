@@ -1,6 +1,6 @@
 """Anti-phishing screening: the domain/TLD blocklist matcher, the header-only
 spoof heuristics (brand impersonation + display-name/domain mismatch), and the
-AI-verdict parser. Pure functions — no live mailbox or model needed."""
+AI-verdict parser. Pure functions - no live mailbox or model needed."""
 from app.api.ai import _parse_screen
 from app.sync.authcheck import spoof_warnings
 from app.sync.screening import (header_spoof_flags, matches_blocked_domain,
@@ -48,7 +48,7 @@ def test_legit_brand_domain_not_flagged():
 
 
 def test_brand_word_inside_other_word_not_flagged():
-    # "apple" appears inside "Applebee's" — word-boundary matching must not trip.
+    # "apple" appears inside "Applebee's" - word-boundary matching must not trip.
     assert header_spoof_flags("info@applebees.com", "Applebee's Grill") == []
 
 

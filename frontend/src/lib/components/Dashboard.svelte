@@ -7,7 +7,7 @@
   import { currentLocale } from "../i18n.svelte.js";
 
   // Home-screen AI: type plainly (or tap a chip); opens the assistant with the
-  // unread inbox loaded as context and auto-asks — e.g. "shrň nové maily".
+  // unread inbox loaded as context and auto-asks - e.g. "shrň nové maily".
   let aiQ = $state("");
   const recapPrompt = () => (currentLocale() === "cs" ? "Shrň mi nové maily" : "Summarize my new mail");
   const needsReplyPrompt = () => (currentLocale() === "cs" ? "Které maily vyžadují odpověď?" : "Which emails need a reply?");
@@ -50,7 +50,7 @@
   let recent = $state([]);
   let events = $state([]);     // events across the next ~2 weeks (for "up next" + week strip)
   let loading = $state(true);
-  // Real inbox unread across all accounts — counting the 6 fetched rows capped
+  // Real inbox unread across all accounts - counting the 6 fetched rows capped
   // the hero stat at 6.
   const unread = $derived(
     app.folders.filter((f) => f.role === "inbox").reduce((n, f) => n + (f.unread_count || 0), 0)
@@ -236,7 +236,7 @@
   .dash > *:nth-child(3) { animation-delay: 80ms; }
   .dash > *:nth-child(4) { animation-delay: 120ms; }
 
-  /* Hero with a soft animated aurora — feels alive without any external image. */
+  /* Hero with a soft animated aurora - feels alive without any external image. */
   .hero { position: relative; overflow: hidden; border-radius: calc(var(--radius) + 3px); border: 1px solid var(--hairline);
     background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--surface)), var(--surface) 70%); padding: 26px 28px;
     box-shadow: var(--shadow-sm); }

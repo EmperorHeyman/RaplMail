@@ -40,7 +40,7 @@ class BadPasswordError(SecretStoreError):
 
 
 def _derive_key(password: str, salt: bytes) -> bytes:
-    # argon2's native module is only needed for the KDF itself — defer it so it
+    # argon2's native module is only needed for the KDF itself - defer it so it
     # isn't paged in at process start (unlock happens once, or never with a
     # cached auto-unlock key).
     from argon2.low_level import Type, hash_secret_raw
@@ -110,7 +110,7 @@ class SecretStore:
             self._salt = os.urandom(_SALT_LEN)
             self._fernet = Fernet(_derive_key(new_password, self._salt))
             self._flush()
-            # The auto-unlock file stores the (now old) password — refresh it or
+            # The auto-unlock file stores the (now old) password - refresh it or
             # the vault silently stops auto-unlocking on the next launch.
             if self.auto_unlock_enabled:
                 try:

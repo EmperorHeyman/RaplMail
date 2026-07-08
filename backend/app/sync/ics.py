@@ -1,4 +1,4 @@
-"""iCalendar (RFC 5545) extraction — enough to surface invites and feed events.
+"""iCalendar (RFC 5545) extraction - enough to surface invites and feed events.
 
 We don't implement the full spec, but we do handle the parts that matter for a
 useful calendar: real timezone conversion via TZID (zoneinfo), all-day vs timed
@@ -23,7 +23,7 @@ except Exception:  # pragma: no cover
 # month-by-month, so this comfortably covers the views people actually open.
 _WINDOW_BACK = timedelta(days=120)
 _WINDOW_FWD = timedelta(days=540)
-_MAX_INSTANCES = 800   # per recurring event — a hard backstop against runaways
+_MAX_INSTANCES = 800   # per recurring event - a hard backstop against runaways
 
 _WEEKDAYS = {"MO": 0, "TU": 1, "WE": 2, "TH": 3, "FR": 4, "SA": 5, "SU": 6}
 
@@ -73,7 +73,7 @@ def _parse_dt(val: str, params: dict, default_tz=None) -> tuple[datetime | None,
         naive = datetime.strptime(val[:15], "%Y%m%dT%H%M%S")
         # Floating time (no TZID, no Z) means "local to the viewer". RaplMail's
         # backend runs on the user's own machine, so the machine's local zone IS
-        # the viewer's — use it instead of mislabeling the time as UTC.
+        # the viewer's - use it instead of mislabeling the time as UTC.
         local_tz = datetime.now().astimezone().tzinfo
         tz = _zone(params.get("TZID")) or default_tz or local_tz
         return naive.replace(tzinfo=tz), False

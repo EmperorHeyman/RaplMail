@@ -119,7 +119,7 @@
       <div class="findings bad">
         {#each report.heuristics as w}<div class="f">{@html icons.shieldAlert} {w}</div>{/each}
         {#if report.reply_to_mismatch}<div class="f">{@html icons.shieldAlert} {t("security.labReplyMismatch")}</div>{/if}
-        {#if age.age_days != null && age.age_days < 30}<div class="f">{@html icons.shieldAlert} {t("security.labDomainAge")}: {age.age_days}d — {t("security.labVeryYoung")}</div>{/if}
+        {#if age.age_days != null && age.age_days < 30}<div class="f">{@html icons.shieldAlert} {t("security.labDomainAge")}: {age.age_days}d - {t("security.labVeryYoung")}</div>{/if}
         {#if oi.dnsbl?.length}<div class="f">{@html icons.shieldAlert} {t("security.labDnsblListed", { list: oi.dnsbl.join(", ") })}</div>{/if}
         {#if tl.backdated}<div class="f">{@html icons.shieldAlert} {t("security.labBackdated", { mins: Math.round((tl.skew_seconds || 0) / 60) })}</div>{/if}
       </div>

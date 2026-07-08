@@ -13,9 +13,9 @@
   let bodies = $state({});        // id -> detail
   let expanded = $state(new Set());
   let loading = $state(false);
-  let _key = null;   // previous threadKey — to tell a switch apart from a live refresh
+  let _key = null;   // previous threadKey - to tell a switch apart from a live refresh
   // Honor the Appearance setting for where Reply/Forward/… sit (top vs bottom),
-  // same as the single-message reader — otherwise conversations always showed top.
+  // same as the single-message reader - otherwise conversations always showed top.
   const actionsBottom = $derived(app.settings.readerActionsPos === "bottom");
 
   // Cap how many messages auto-expand: the clicked one + the newest + unread,
@@ -29,7 +29,7 @@
     // the user's expanded messages / loaded bodies survive a live update.
     if (key !== _key) { _key = key; list = []; bodies = {}; expanded = new Set(); }
     if (!key) return;
-    // The Reader already fetched this thread when it auto-promoted the view —
+    // The Reader already fetched this thread when it auto-promoted the view -
     // consume that result instead of asking again.
     if (list.length === 0 && threadPrefetch.key === key && threadPrefetch.msgs) {
       const pre = threadPrefetch.msgs;
@@ -51,7 +51,7 @@
     const last = msgs[msgs.length - 1];
     if (firstLoad) {
       // Open what the user came for without another click: the message they
-      // clicked, the newest one, and any unread — capped so a long neglected
+      // clicked, the newest one, and any unread - capped so a long neglected
       // thread doesn't unfold entirely.
       const want = new Set([last.id]);
       const sel = msgs.find((x) => x.id === app.selectedMessageId);
@@ -70,7 +70,7 @@
       });
     } else if (!expanded.has(last.id)) {
       // A live refresh brought a new newest message (e.g. the reply you just
-      // sent) — show it without a click.
+      // sent) - show it without a click.
       expanded = new Set([...expanded, last.id]);
       await loadBody(last.id);
       if (!last.is_seen) setMessageSeen(last, true);
@@ -78,7 +78,7 @@
   }
 
   // Clicking another message of the SAME conversation in the list doesn't
-  // reload the thread (key unchanged) — expand + jump to that message here.
+  // reload the thread (key unchanged) - expand + jump to that message here.
   let _selSeen = null;
   $effect(() => {
     const sel = app.selectedMessageId;
@@ -198,7 +198,7 @@
     const ids = new Set(list.map((m) => m.id));
     try {
       await messagesApi.bulk([...ids], "done");
-      // Drop the completed conversation from the list too — it otherwise sat
+      // Drop the completed conversation from the list too - it otherwise sat
       // there (done-hidden view) until the next sync refresh.
       if (!app.showDone) app.messages = app.messages.filter((m) => !ids.has(m.id));
       notify(t("reader.conversationDone"));

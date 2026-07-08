@@ -1,8 +1,8 @@
-"""S/MIME (X.509 / PKCS#7) — sign, encrypt, decrypt, and inspect signed mail.
+"""S/MIME (X.509 / PKCS#7) - sign, encrypt, decrypt, and inspect signed mail.
 
 Complements the OpenPGP support for enterprise environments that mandate S/MIME
 (law firms, corporate, government). Uses the stdlib ``email`` module +
-``cryptography``'s pkcs7/pkcs12 — no extra dependency. Your identity (cert + key,
+``cryptography``'s pkcs7/pkcs12 - no extra dependency. Your identity (cert + key,
 imported from a .p12/.pfx) and recipients' certificates are managed in
 Settings → Encryption.
 

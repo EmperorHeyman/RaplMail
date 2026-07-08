@@ -65,7 +65,7 @@
     busy = true;
     try {
       await api.create(draft);
-      // Rules otherwise only run on new mail — apply to what's already here too,
+      // Rules otherwise only run on new mail - apply to what's already here too,
       // so the rule visibly does something right away.
       let applied = 0;
       try { applied = (await api.apply(draft)).applied || 0; } catch {}

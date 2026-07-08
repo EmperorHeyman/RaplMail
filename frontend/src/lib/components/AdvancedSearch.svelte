@@ -5,8 +5,8 @@
   import { t } from "../i18n.svelte.js";
 
   // A friendly, structured search builder. It reads and writes the SAME query
-  // string the inline search bar (and the backend) understand — from:/to:/
-  // subject:/has:attachment/is:… + free text — so it's an "expand the search"
+  // string the inline search bar (and the backend) understand - from:/to:/
+  // subject:/has:attachment/is:… + free text - so it's an "expand the search"
   // surface, not a separate engine. Contact autocomplete on From/To makes it
   // smarter than typing operators by hand.
   let { open = false, onclose, initial = "", onsearch, onsemantic, smartAvailable = false } = $props();
@@ -17,7 +17,7 @@
   let words = $state("");
   let attach = $state(false);
   let status = $state("any");   // any | unread | read | flagged | done
-  // Smart (meaning-based) mode — only offered when the local embedding index is
+  // Smart (meaning-based) mode - only offered when the local embedding index is
   // enabled. It searches by semantic similarity, so the operator fields (from/
   // subject/status) don't apply: the whole query is a natural-language phrase.
   let smart = $state(false);

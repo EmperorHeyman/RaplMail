@@ -164,6 +164,38 @@ def test_apply_config_bundle_preserves_local_sync_keys(client):
             _set_blob(s, before)   # restore so the shared test DB stays clean
 
 
+def test_device_label_set_clear_and_fallback(client):
+    # The friendly name is trimmed + capped, survives a config save that omits it
+    # (None = leave unchanged), and clearing it falls back to the hostname/id.
+    from app.api.settings import _get_blob, _set_blob
+    with _s() as s:
+        before = _get_blob(s)
+    try:
+        with _s() as s:
+            devicesync.set_config(s, enabled=False, account_id=None, passphrase=None,
+                                  device_label="  Main  ")
+        with _s() as s:
+            assert devicesync.status(s)["device_label"] == "Main"
+        with _s() as s:   # a save without the field must not touch the name
+            devicesync.set_config(s, enabled=False, account_id=None, passphrase=None)
+        with _s() as s:
+            assert devicesync.status(s)["device_label"] == "Main"
+        with _s() as s:   # explicit empty clears it → hostname/short-id fallback
+            devicesync.set_config(s, enabled=False, account_id=None, passphrase=None,
+                                  device_label="")
+        with _s() as s:
+            lbl = devicesync.status(s)["device_label"]
+            assert lbl and lbl != "Main"
+        with _s() as s:   # overly long names are capped at 40 chars
+            devicesync.set_config(s, enabled=False, account_id=None, passphrase=None,
+                                  device_label="x" * 100)
+        with _s() as s:
+            assert devicesync.status(s)["device_label"] == "x" * 40
+    finally:
+        with _s() as s:
+            _set_blob(s, before)
+
+
 def test_build_config_payload_shape(client):
     # The explicit config snapshot carries a version + real change-time + bundle,
     # and strips sync-control keys from the settings it publishes.

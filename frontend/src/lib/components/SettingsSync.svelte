@@ -9,6 +9,7 @@
   let loading = $state(true);
   let enabled = $state(false);
   let accountId = $state(null);
+  let deviceLabel = $state("");
   let passphrase = $state("");
   let changingPass = $state(false);
   let saving = $state(false);
@@ -24,6 +25,7 @@
       status = await api.get("/sync/status");
       enabled = !!status.enabled;
       accountId = status.account_id ?? (app.accounts[0]?.id ?? null);
+      deviceLabel = status.device_label || "";
     } catch (e) { notify(e.message, "error"); }
     finally { loading = false; }
   }
@@ -42,10 +44,12 @@
         enabled,
         account_id: enabled ? accountId : null,
         passphrase: passphrase || null,
+        device_label: deviceLabel,
       });
       passphrase = ""; changingPass = false;
       enabled = !!status.enabled;
       accountId = status.account_id ?? accountId;
+      deviceLabel = status.device_label || "";
       notify(t("dsync.saved"));
     } catch (e) { notify(e.message, "error"); }
     finally { saving = false; }
@@ -113,6 +117,12 @@
 
       {#if enabled}
         <label class="row">
+          <span class="lbl"><b>{t("dsync.deviceName")}</b><span class="hint">{t("dsync.deviceNameHint")}</span></span>
+          <input type="text" bind:value={deviceLabel} maxlength="40"
+            placeholder={t("dsync.deviceNamePlaceholder")} />
+        </label>
+
+        <label class="row">
           <span class="lbl"><b>{t("dsync.account")}</b><span class="hint">{t("dsync.accountHint")}</span></span>
           <select bind:value={accountId}>
             {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
@@ -151,7 +161,8 @@
         {#if status.last_error}
           <div class="st err"><span>{t("dsync.stLastError")}</span><b>{status.last_error}</b></div>
         {/if}
-        <div class="st"><span>{t("dsync.stDevice")}</span><b class="mono">{(status.device_id || "").slice(0, 8) || "-"}</b></div>
+        <div class="st"><span>{t("dsync.stDevice")}</span>
+          <b>{status.device_label || "-"} <span class="devid">{(status.device_id || "").slice(0, 8)}</span></b></div>
       </div>
 
       {#if status.has_passphrase}
@@ -233,7 +244,7 @@
   .lbl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
   .lbl b { font-size: 14px; font-weight: 600; }
   .hint { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
-  select, input[type="password"] { flex: none; width: 260px; max-width: 50%; padding: 8px 10px;
+  select, input[type="password"], input[type="text"] { flex: none; width: 260px; max-width: 50%; padding: 8px 10px;
     background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); }
   select:focus, input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
   .passcol { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
@@ -253,7 +264,7 @@
   .st { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }
   .st span { color: var(--muted); }
   .st.err b { color: var(--danger); font-weight: 550; text-align: right; }
-  .mono { font-family: ui-monospace, monospace; }
+  .devid { font-family: ui-monospace, monospace; color: var(--faint); font-weight: 400; font-size: 12px; }
   .how { padding: 0 2px; }
   .how h3 { margin: 0 0 8px; font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); }
   .how ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: 13px; line-height: 1.55; }

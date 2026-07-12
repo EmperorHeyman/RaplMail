@@ -29,6 +29,7 @@ class SyncConfigIn(BaseModel):
     enabled: bool
     account_id: int | None = None
     passphrase: str | None = None
+    device_label: str | None = None   # None = leave unchanged, "" = reset to hostname
 
 
 @router.put("/config")
@@ -45,7 +46,8 @@ def sync_config(body: SyncConfigIn, session: Session = Depends(get_session)) -> 
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Set a sync passphrase.")
         if body.passphrase is not None and len(body.passphrase) < 8:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "The sync passphrase must be at least 8 characters.")
-    devicesync.set_config(session, enabled=body.enabled, account_id=body.account_id, passphrase=body.passphrase)
+    devicesync.set_config(session, enabled=body.enabled, account_id=body.account_id,
+                          passphrase=body.passphrase, device_label=body.device_label)
     return devicesync.status(session)
 
 

@@ -71,6 +71,7 @@ export const SETTINGS_INDEX = [
   { tab: "smime", label: "S/MIME certificate", kw: "smime s/mime certificate p12 pfx x509" },
   { tab: "calendar", label: "Calendar & contacts (CalDAV)", kw: "calendar caldav carddav contacts subscribe kalendář" },
   { tab: "sync", label: "Device sync", kw: "sync device link cross machine passphrase synchronizace" },
+  { tab: "sync", label: "Device name", kw: "device name friendly label rename main work pc název zařízení" },
   { tab: "rapldesk", label: "RaplDesk tickets", kw: "rapldesk ticket api helpdesk support" },
   { tab: "utility", label: "Subscription audit", kw: "subscription unsubscribe audit newsletter cleanup dormant" },
   { tab: "debug", label: "Debug logs", kw: "debug log logs console diagnostics troubleshoot" },

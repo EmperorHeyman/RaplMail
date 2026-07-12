@@ -9,6 +9,9 @@ export default {
 
     "dsync.enable": "Sync this device",
     "dsync.enableHint": "Publish and pick up changes through the carrier mailbox below.",
+    "dsync.deviceName": "Device name",
+    "dsync.deviceNameHint": "How this install shows up on your other devices when pulling settings - e.g. \"Main\" or \"Work\". Leave empty to use this PC's hostname.",
+    "dsync.deviceNamePlaceholder": "e.g. Main",
     "dsync.account": "Carrier account",
     "dsync.accountHint": "The account that carries the sync data - must be configured on every device you're linking (same mailbox).",
     "dsync.passphrase": "Sync passphrase",
@@ -68,6 +71,9 @@ export default {
 
     "dsync.enable": "Synchronizovat toto zařízení",
     "dsync.enableHint": "Odesílat a přijímat změny přes níže zvolenou schránku.",
+    "dsync.deviceName": "Název zařízení",
+    "dsync.deviceNameHint": "Pod tímto názvem se tato instalace zobrazí na ostatních zařízeních při stahování nastavení - např. \"Hlavní\" nebo \"Práce\". Prázdné = název počítače.",
+    "dsync.deviceNamePlaceholder": "např. Hlavní",
     "dsync.account": "Přenosový účet",
     "dsync.accountHint": "Účet, který přenáší synchronizovaná data - musí být nastaven na každém propojovaném zařízení (stejná schránka).",
     "dsync.passphrase": "Synchronizační heslo",

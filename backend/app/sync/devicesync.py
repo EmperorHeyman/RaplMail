@@ -117,16 +117,21 @@ def get_passphrase() -> str | None:
     return store.get(PASSPHRASE_KEY)
 
 
-def set_config(session: Session, *, enabled: bool, account_id: int | None, passphrase: str | None) -> None:
+def set_config(session: Session, *, enabled: bool, account_id: int | None, passphrase: str | None,
+               device_label: str | None = None) -> None:
     from app.core.security import get_secret_store
     store = get_secret_store()
     if passphrase:
         store.set(PASSPHRASE_KEY, passphrase)
-    _save(session, {
+    updates = {
         "syncEnabled": bool(enabled),
         "syncAccountId": account_id,
         "syncFolder": _blob(session).get("syncFolder") or SYNC_FOLDER_DEFAULT,
-    })
+    }
+    if device_label is not None:
+        # Empty string clears the custom name; _default_label falls back to hostname.
+        updates["syncDeviceLabel"] = device_label.strip()[:40]
+    _save(session, updates)
     device_id(session)  # ensure one exists
 
 
@@ -138,6 +143,7 @@ def status(session: Session) -> dict:
         "folder": blob.get("syncFolder") or SYNC_FOLDER_DEFAULT,
         "has_passphrase": bool(get_passphrase()),
         "device_id": blob.get("syncDeviceId") or "",
+        "device_label": _default_label(session),
         "last_at": blob.get("syncLastAt") or "",
         "last_error": blob.get("syncLastError") or "",
     }

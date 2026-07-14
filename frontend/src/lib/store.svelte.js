@@ -1110,6 +1110,20 @@ async function _loadUpcomingEvents() {
   const end = new Date(start.getTime() + 9 * 86400000);  // next ~9 days
   try { _calEvents = (await calendarApi.list(start.toISOString(), end.toISOString())) || []; } catch {}
 }
+function _eventKey(e) {
+  // Reminder identity. The same real-world meeting can be stored several times
+  // (the invite landed in two mailboxes, or arrived via mail AND a CalDAV/ICS
+  // feed), each as its own DB row - keying reminders by row id popped one
+  // window per copy. Key by the ICS UID instead, with the per-feed
+  // "ics:<feedhash>:" / "gcal:" storage namespaces stripped so all copies of
+  // one meeting collapse into a single reminder.
+  let uid = e.uid || "";
+  if (uid.startsWith("ics:")) uid = uid.split(":").slice(2).join(":");
+  else if (uid.startsWith("gcal:")) uid = uid.slice(5);
+  if (uid.includes("@google.com")) uid = uid.split("@")[0];
+  if (!uid || uid.startsWith("nouid:")) return `${e.summary || ""}|${e.start || ""}`;
+  return uid;
+}
 function _remindLabel(min) {
   if (min <= 0) return "now";
   if (min < 60) return `in ${min} min`;
@@ -1129,7 +1143,7 @@ function _checkReminders() {
     const t = new Date(e.start).getTime();
     for (const min of offsets) {
       const due = t - min * 60000;
-      const key = `${e.id}:${min}`;
+      const key = `${_eventKey(e)}:${min}`;
       // Fire once past the lead time, up to the event start - a fixed 90s
       // window silently skipped reminders when the machine slept across it.
       if (now >= due && now < t + 60000 && !_firedReminders.has(key)) {

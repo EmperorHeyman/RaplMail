@@ -98,6 +98,18 @@
       await load();
     } catch (err) { notify(err.message || "Couldn't delete", "error"); }
   }
+  const hasCancelled = $derived(events.some((e) => e.cancelled));
+  let clearing = $state(false);
+  async function clearCancelled() {
+    if (!confirm("Remove ALL cancelled events from the calendar? They won't come back on the next sync.")) return;
+    clearing = true;
+    try {
+      const r = await calendar.clearCancelled();
+      notify(`Removed ${r.deleted} cancelled event${r.deleted === 1 ? "" : "s"}`);
+      await load();
+    } catch (err) { notify(err.message || "Couldn't remove cancelled events", "error"); }
+    finally { clearing = false; }
+  }
 
   // --- new event (iMIP) ----------------------------------------------------
   let creating = $state(false);
@@ -239,6 +251,12 @@
         <button class="segbtn" class:on={view === "week"} onclick={() => setView("week")}>Week</button>
       </div>
       <button class="btn primary" onclick={newEvent} title="Create an event">＋ New event</button>
+      {#if hasCancelled}
+        <button class="btn" onclick={clearCancelled} disabled={clearing}
+          title="Delete every cancelled event from the calendar (they won't be re-added on sync)">
+          {@html icons.trash} {clearing ? "Clearing…" : "Clear cancelled"}
+        </button>
+      {/if}
       <button class="btn" onclick={scan} disabled={scanning} title="Pull mail invites and refresh calendar subscriptions">
         {@html icons.sync} {scanning ? "Syncing…" : "Sync"}
       </button>

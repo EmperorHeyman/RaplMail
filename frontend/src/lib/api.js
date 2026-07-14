@@ -317,6 +317,7 @@ export const calendar = {
   googleConnect: () => api.post("/calendar/google/connect", {}),
   googleDisconnect: () => api.post("/calendar/google/disconnect", {}),
   remove: (id) => api.del(`/calendar/${id}`),
+  clearCancelled: () => api.post("/calendar/clear-cancelled", {}),
 };
 
 export const rapldesk = {

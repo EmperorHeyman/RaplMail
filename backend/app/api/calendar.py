@@ -27,6 +27,7 @@ class EventOut(BaseModel):
     id: int
     account_id: int
     message_id: int | None
+    uid: str
     summary: str
     location: str
     organizer: str
@@ -60,9 +61,54 @@ def _synth_uid(account_id: int, ev: dict) -> str:
     return f"nouid:{hashlib.sha1(base.encode('utf-8')).hexdigest()[:16]}"
 
 
+def _base_uid(uid: str) -> str:
+    """The raw ICS UID under any of our storage namespaces: feed events are
+    'ics:<feedhash>:<uid>', Google-created ones 'gcal:<id>'."""
+    return uid.split(":", 2)[-1] if (uid or "").startswith(("ics:", "gcal:")) else (uid or "")
+
+
+def _cleared_uids(session: Session) -> set[str]:
+    from app.api.settings import _get_blob
+    return set(_get_blob(session).get("calendarClearedUids") or [])
+
+
+def _add_cleared_uids(session: Session, uids: set[str]) -> None:
+    """Tombstone deleted events. Calendar rows are re-derived from rescannable
+    sources (mail invites, ICS feeds), so a plain row delete would resurrect the
+    event on the next scan/sync - ingestion skips tombstoned uids instead."""
+    uids = {u for u in uids if u}
+    if not uids:
+        return
+    from app.api.settings import _get_blob, _set_blob
+    blob = _get_blob(session)
+    cur = [u for u in (blob.get("calendarClearedUids") or []) if u not in uids]
+    cur.extend(sorted(uids))
+    blob["calendarClearedUids"] = cur[-2000:]
+    _set_blob(session, blob)
+
+
+def _cancel_matching(session: Session, uid: str) -> int:
+    """Strike every stored copy of a cancelled meeting. A CANCEL carries one UID,
+    but the same meeting may also live under another account (the invite landed
+    in two mailboxes), under a per-feed namespace ('ics:<hash>:<uid>'), or as
+    expanded recurring occurrences ('<uid>_<ts>') - none of which the plain
+    (account_id, uid) upsert would touch."""
+    if not uid:
+        return 0
+    n = 0
+    for row in session.exec(select(CalendarEvent).where(
+            CalendarEvent.uid.contains(uid, autoescape=True))):  # type: ignore[attr-defined]
+        base = _base_uid(row.uid)
+        if (base == uid or base.startswith(uid + "_")) and not row.cancelled:
+            row.cancelled = True
+            n += 1
+    return n
+
+
 def upsert_events(session: Session, account_id: int, message_id: int | None, events: list[dict]) -> int:
     """Insert/update extracted events. Dedup by (account_id, uid). Does not commit."""
     n = 0
+    cleared = _cleared_uids(session)
     for ev in events:
         if not ev.get("start"):
             continue  # skip undated entries (e.g. todos)
@@ -71,6 +117,14 @@ def upsert_events(session: Session, account_id: int, message_id: int | None, eve
             select(CalendarEvent).where(CalendarEvent.account_id == account_id, CalendarEvent.uid == uid)
         ).first()
         if row is None:
+            if ev.get("cancelled"):
+                # A cancellation for a meeting we hold under a different key:
+                # don't insert a ghost "Canceled: ..." row - strike the copies
+                # we do have (other mailbox / feed namespace / occurrences).
+                n += _cancel_matching(session, ev.get("uid") or uid)
+                continue
+            if _base_uid(uid) in cleared:
+                continue  # the user deleted this event; a rescan must not resurrect it
             row = CalendarEvent(account_id=account_id, uid=uid)
             session.add(row)
         row.message_id = message_id or row.message_id
@@ -84,6 +138,7 @@ def upsert_events(session: Session, account_id: int, message_id: int | None, eve
         row.method = ev.get("method", "") or row.method
         if ev.get("cancelled"):
             row.cancelled = True
+            _cancel_matching(session, ev.get("uid") or uid)
         n += 1
     session.flush()
     return n
@@ -184,6 +239,7 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
     seen: set[str] = set()
     ok_prefixes: list[str] = []   # "ics:<feedhash>:" for feeds that fetched OK
     google_ids_seen: set[str] = set()   # raw Google event ids present in any feed
+    cleared = _cleared_uids(session)
     upserted = 0
     for feed in feeds:
         url = (feed.get("url") or "").strip()
@@ -207,6 +263,10 @@ def _sync_ics_feeds(session: Session, acct_id: int, feeds: list[dict]) -> tuple[
             row = session.exec(select(CalendarEvent).where(
                 CalendarEvent.account_id == acct_id, CalendarEvent.uid == uid)).first()
             if row is None:
+                # Never INSERT an already-cancelled feed entry (pure clutter),
+                # and never resurrect an event the user deleted (tombstoned).
+                if ev.get("cancelled") or raw_uid in cleared:
+                    continue
                 row = CalendarEvent(account_id=acct_id, uid=uid, source="ics")
                 session.add(row)
             row.source = "ics"
@@ -518,10 +578,28 @@ def _google_event_id(ev: CalendarEvent) -> str | None:
     return None
 
 
+class ClearCancelledResult(BaseModel):
+    deleted: int
+
+
+@router.post("/clear-cancelled", response_model=ClearCancelledResult)
+def clear_cancelled(session: Session = Depends(get_session)) -> ClearCancelledResult:
+    """Bulk-delete every cancelled event ("Canceled: ..." leftovers). Their uids
+    are tombstoned so the next mail scan / feed sync can't re-add them."""
+    rows = session.exec(select(CalendarEvent).where(CalendarEvent.cancelled == True)).all()  # noqa: E712
+    uids = {_base_uid(r.uid) for r in rows}
+    for r in rows:
+        session.delete(r)
+    session.commit()
+    _add_cleared_uids(session, uids)
+    return ClearCancelledResult(deleted=len(rows))
+
+
 @router.delete("/{event_id}")
 async def delete_event(event_id: int, session: Session = Depends(get_session)) -> dict:
     """Delete an event. If it lives on a connected Google Calendar (created here
-    or synced from the feed), delete it there too; always remove the local row."""
+    or synced from the feed), delete it there too; always remove the local row.
+    The uid is tombstoned so a rescan of the invite mail can't re-add it."""
     ev = session.get(CalendarEvent, event_id)
     if ev is None:
         return {"deleted": False}
@@ -539,8 +617,10 @@ async def delete_event(event_id: int, session: Session = Depends(get_session)) -
                 store.set(_GCAL_KEY, json.dumps(bundle))
             except Exception:
                 pass   # local delete still proceeds
+    base = _base_uid(ev.uid)
     session.delete(ev)
     session.commit()
+    _add_cleared_uids(session, {base})
     return {"deleted": True, "google": bool(gid)}
 
 

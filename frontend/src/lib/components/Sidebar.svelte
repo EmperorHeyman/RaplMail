@@ -2,7 +2,7 @@
   import { flip } from "svelte/animate";
   import { slide } from "svelte/transition";
   import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog, syncAllAccounts, moveMessages } from "../store.svelte.js";
-  import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
+  import { accounts as accountsApi, folders as foldersApi, messages as messagesApi, isMacApp } from "../api.js";
   import { icons, folderIcon } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
@@ -194,6 +194,11 @@
 </script>
 
 <aside class="sidebar" class:rail={collapsed}>
+  {#if isMacApp()}
+    <!-- macOS overlay title bar: clear the traffic lights and give the window
+         a grab strip (double-click maximizes, courtesy of Tauri's drag region). -->
+    <div class="macdrag" data-tauri-drag-region></div>
+  {/if}
   <div class="brand">
     <span class="mark">{@html icons.brand}</span>
     {#if !collapsed}<span class="title">RaplMail</span>{/if}
@@ -394,6 +399,10 @@
     min-height: 0; height: 100%; overflow: hidden;
   }
   .sidebar.rail { padding: 12px 8px 10px; align-items: stretch; }
+
+  /* macOS traffic-light clearance + window drag strip (native app only). */
+  .macdrag { height: 26px; flex: none; margin: -12px -10px -4px; }
+  .rail .macdrag { margin: -12px -8px -4px; }
 
   /* ── Brand ── */
   .brand { display: flex; align-items: center; gap: 9px; padding: 2px 4px 2px 6px; }

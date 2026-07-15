@@ -208,3 +208,27 @@ input[type="checkbox"]:focus, input[type="radio"]:focus { border: none; box-shad
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Liquid Glass (macOS native app) ──────────────────────────────────────
+   The Tauri window is transparent (tauri.macos.conf.json) with an
+   NSVisualEffectView vibrancy layer behind the webview (main.rs). The .glass
+   class - applied by applyTheme() only on macOS - swaps the opaque pane
+   backgrounds for translucent materials so the vibrancy shows through:
+   sidebar mostly glass, content panes progressively more solid for
+   readability. Every color derives from the theme tokens via color-mix, so
+   any theme preset keeps working. */
+html.glass body { background: transparent; }
+html.glass .sidebar {
+  background: color-mix(in srgb, var(--surface) 26%, transparent);
+  border-right-color: color-mix(in srgb, var(--border) 45%, transparent);
+}
+html.glass .list { background: color-mix(in srgb, var(--bg) 46%, transparent); }
+html.glass .reader, html.glass .thread { background: color-mix(in srgb, var(--bg) 58%, transparent); }
+/* Sticky list headers can't stay opaque over a translucent pane - give them
+   the pane's material plus real backdrop blur (WKWebView composites this
+   natively; the WebView2 perf caveat that bans it on Windows doesn't apply). */
+html.glass .list .datesep, html.glass .list .sechead {
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  -webkit-backdrop-filter: blur(16px) saturate(1.35);
+  backdrop-filter: blur(16px) saturate(1.35);
+}

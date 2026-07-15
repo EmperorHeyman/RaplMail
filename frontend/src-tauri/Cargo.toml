@@ -13,7 +13,9 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# macos-private-api: required by macOSPrivateApi in tauri.macos.conf.json (the
+# transparent webview behind the Liquid Glass vibrancy). No-op on Windows/Linux.
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
@@ -32,6 +34,11 @@ rand = "0.8"
 [target."cfg(windows)".dependencies]
 webview2-com = "0.38"
 windows-core = "0.61"
+
+# NSVisualEffectView vibrancy behind the transparent window (Liquid Glass look).
+# Already in Tauri's resolved dependency graph, so this adds no new crate versions.
+[target."cfg(target_os = \"macos\")".dependencies]
+window-vibrancy = "0.6"
 
 [profile.release]
 panic = "abort"

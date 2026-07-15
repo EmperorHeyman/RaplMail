@@ -1,5 +1,5 @@
 // Central reactive app state using Svelte 5 runes.
-import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi } from "./api.js";
+import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi, isMacApp } from "./api.js";
 import { playSound, setCustomSounds } from "./sound.js";
 import { setLocale, t } from "./i18n.svelte.js";
 
@@ -49,7 +49,7 @@ const DEFAULT_SETTINGS = {
   emailAdaptColors: true,        // invert light-authored email HTML to match a dark theme
   alwaysOriginalHtml: false,     // always render emails in their original HTML (no theming)
   customCssInEmails: false,      // also apply custom CSS inside email bodies (off = emails untouched)
-  smartGroupPlacement: "dateSections", // "dateSections" (Spark-style) | "top" | "afterN" | "timeline" | "bottom"
+  smartGroupPlacement: "sections", // "sections" (Spark classic) | "dateSections" | "top" | "afterN" | "timeline" | "bottom"
   smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
   senderAvatars: true,           // fetch + cache the sender domain's favicon as the avatar
   relativeTime: false,           // list rows show "3 hours ago" instead of a date
@@ -150,6 +150,7 @@ const DEFAULT_SETTINGS = {
   debugUnlocked: false,         // developer/debug section revealed (5 taps on the version)
   sandboxEnabled: true,         // offer the WebAssembly attachment sandbox + flag risky files
   unsubscribedSenders: [],      // list addresses the user has already unsubscribed from (shown green)
+  liquidGlass: true,            // macOS: translucent Liquid Glass chrome over window vibrancy
 };
 
 // Stored keybinds replace the defaults wholesale (the settings merge is
@@ -329,6 +330,10 @@ export function applyTheme() {
   let el = document.getElementById("rapl-custom-css");
   if (!el) { el = document.createElement("style"); el.id = "rapl-custom-css"; document.head.appendChild(el); }
   el.textContent = app.settings.customCss || "";
+  // Liquid Glass (macOS native app only): the window behind us is transparent
+  // with an NSVisualEffectView, so the .glass class swaps the opaque pane
+  // backgrounds for translucent materials that let the vibrancy through.
+  root.classList.toggle("glass", isMacApp() && app.settings.liquidGlass !== false);
 }
 
 async function doSend(payload) {
@@ -461,6 +466,14 @@ export async function initSettings() {
   if (!app.settings._placementMigrated) {
     const patch = { _placementMigrated: true };
     if ((app.settings.smartGroupPlacement || "afterN") === "afterN") patch.smartGroupPlacement = "dateSections";
+    saveSettings(patch);
+  }
+  // One-time migration: the default layout is now the Spark-classic fixed
+  // sections (People / Notifications / Newsletters / Pins / Seen). Only moves
+  // users still on the previous default; an explicit later choice sticks.
+  if (!app.settings._sectionsMigrated) {
+    const patch = { _sectionsMigrated: true };
+    if ((app.settings.smartGroupPlacement || "dateSections") === "dateSections") patch.smartGroupPlacement = "sections";
     saveSettings(patch);
   }
 }
@@ -1462,19 +1475,26 @@ export async function refreshMessages({ background = false } = {}) {
       return;
     }
     // Smart Inbox: main flow excludes grouped categories; cards show their counts.
+    // In "sections" placement (Spark classic) the sections are sliced client-side
+    // from the FULL stream instead, so nothing is excluded and no card data is needed.
     if (smartActive() && !app.search) {
       const scope = app.selectedKind === "smart" ? { role: "inbox" } : { folder_id: app.selectedFolderId };
+      const sections = (app.settings.smartGroupPlacement || "sections") === "sections";
       const grouped = groupedCategories();
       try {
-        let list = await messages.list({ ...scope, exclude_categories: grouped.join(","), include_done: app.showDone });
+        const params = sections
+          ? { ...scope, include_done: app.showDone }
+          : { ...scope, exclude_categories: grouped.join(","), include_done: app.showDone };
+        let list = await messages.list(params);
         if (!fresh()) return;
         if (app.selectedKind === "smart") {
           const ws = workspaceAccountIds();
           if (ws) list = list.filter((m) => ws.includes(m.account_id));
         }
         app.messages = mergeMessages(list);
-        messages.smartGroups({ ...scope, new_days: app.settings.smartNewDays ?? 3 })
-          .then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
+        if (!sections)
+          messages.smartGroups({ ...scope, new_days: app.settings.smartNewDays ?? 3 })
+            .then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});
       } finally { done(); }
       prefetchVisible(app.messages.map((m) => m.id));
       return;

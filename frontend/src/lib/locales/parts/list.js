@@ -141,6 +141,13 @@ export default {
     "list.showNewTip": "Show just the new mail in this group",
     "list.doneAll": "Done all",
     "list.doneAllTip": "Mark this whole group done",
+
+    // Spark-classic sections layout.
+    "list.secPeople": "People",
+    "list.secPins": "Pins",
+    "list.secSeen": "Seen",
+    "list.viewAll": "View all ({n})",
+    "list.showLess": "Show less",
   },
   cs: {
     // Opakující se krátká slova akcí.
@@ -280,5 +287,12 @@ export default {
     "list.showNewTip": "Zobrazit jen novou poštu v této skupině",
     "list.doneAll": "Hotovo vše",
     "list.doneAllTip": "Označit celou skupinu jako hotovou",
+
+    // Rozložení s pevnými sekcemi (Spark classic).
+    "list.secPeople": "Lidé",
+    "list.secPins": "Připnuté",
+    "list.secSeen": "Přečtené",
+    "list.viewAll": "Zobrazit vše ({n})",
+    "list.showLess": "Zobrazit méně",
   },
 };

@@ -1,6 +1,9 @@
 <script>
   import { app, saveSettings, applyTheme, THEME_TOKENS, notify, LIGHT_THEME } from "../store.svelte.js";
   import { PRESETS, PRESET_CATEGORIES } from "../themes.js";
+  import { isMacApp } from "../api.js";
+
+  function setLiquidGlass(on) { saveSettings({ liquidGlass: on }); applyTheme(); }
 
   // Effective email appearance mode (migrates the old two booleans).
   const emailMode = $derived(
@@ -299,6 +302,12 @@
         </div>
       </div>
     </div>
+    {#if isMacApp()}
+      <label class="check">
+        <input type="checkbox" checked={app.settings.liquidGlass !== false} onchange={(e) => setLiquidGlass(e.currentTarget.checked)} />
+        <div><b>Liquid Glass</b><span>Translucent window chrome over the desktop (macOS vibrancy). Turn off for fully opaque panes.</span></div>
+      </label>
+    {/if}
     <label class="slider-row">
       <span>Text &amp; UI size</span>
       <input type="range" min="0.8" max="1.4" step="0.05" value={app.settings.uiScale ?? 1} oninput={(e) => setScale(e.currentTarget.value)} />

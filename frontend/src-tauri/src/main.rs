@@ -253,6 +253,20 @@ fn main() {
             }
         })
         .setup(move |app| {
+            // Liquid Glass: the window is transparent (tauri.macos.conf.json), so an
+            // NSVisualEffectView must sit behind the webview or the window is see-through.
+            // UnderWindowBackground is the whole-window desktop-tinted material; the CSS
+            // theme layers its translucent surfaces on top of it.
+            #[cfg(target_os = "macos")]
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = window_vibrancy::apply_vibrancy(
+                    &win,
+                    window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                    None,
+                    None,
+                );
+            }
+
             // System-tray icon: keeps RaplMail alive in the background with a
             // menu to reopen or fully quit; left-click reopens the window.
             let show_item = MenuItem::with_id(app, "show", "Open RaplMail", true, None::<&str>)?;

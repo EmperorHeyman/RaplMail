@@ -45,6 +45,77 @@
     invitation_responses: { label: t("list.catInvitationResponses"), icon: icons.done },
   }));
   const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
+
+  // --- Spark-classic "sections" layout: one unified stream sliced into fixed
+  // sections - People / Notifications / Newsletters / Pins / Seen. Unread mail
+  // lives in its section; read mail settles into Seen; pinned mail into Pins.
+  const SEC_META = $derived.by(() => ({
+    people:        { label: t("list.secPeople"), icon: icons.accounts },
+    notifications: { label: t("list.catNotifications"), icon: icons.bell },
+    newsletters:   { label: t("list.catNewsletters"), icon: icons.newspaper },
+    pins:          { label: t("list.secPins"), icon: icons.pin },
+    seen:          { label: t("list.secSeen"), icon: icons.show },
+  }));
+  const secOf = (cat) =>
+    cat === "updates" || cat === "social" ? "notifications"
+    : cat === "newsletters" || cat === "promotions" ? "newsletters"
+    : "people";
+  const SEC_LIMIT = 5;            // collapsed rows per section ("View all" expands)
+  let secExpanded = $state(new Set());
+  function toggleSecExpand(id) {
+    const s = new Set(secExpanded);
+    s.has(id) ? s.delete(id) : s.add(id);
+    secExpanded = s;
+  }
+  const sectionsMode = $derived(
+    smartActive() && (app.settings.smartGroupPlacement || "sections") === "sections"
+  );
+
+  function buildSections(msgs) {
+    const vis = visibleIn(msgs);
+    const pinned = [], seen = [], bysec = { people: [], notifications: [], newsletters: [] };
+    for (const m of vis) {
+      if (m.pinned) pinned.push(m);
+      else if (m.is_seen) seen.push(m);
+      else bysec[secOf(m.category)].push(m);
+    }
+    // People: VIP senders first (stable sort keeps date order within each band),
+    // then grouped by account so each mailbox reads as its own block.
+    bysec.people.sort((a, b) => (isVip(b.from_addr) ? 1 : 0) - (isVip(a.from_addr) ? 1 : 0));
+    const multi = app.accounts.length > 1;
+    if (multi) {
+      const rank = new Map(app.accounts.map((a, i) => [a.id, i]));
+      bysec.people.sort((a, b) => (rank.get(a.account_id) ?? 99) - (rank.get(b.account_id) ?? 99));
+    }
+    const out = [];
+    const push = (id, arr, { limit = SEC_LIMIT, doneAll = false, acctGroups = false } = {}) => {
+      if (!arr.length) return;
+      // sechead carries the section's messages when it offers "done all".
+      out.push({ kind: "sechead", key: "sec:" + id, sec: id, count: arr.length,
+                 msgs: doneAll ? arr : undefined });
+      const rows = secExpanded.has(id) || arr.length <= limit ? arr : arr.slice(0, limit);
+      let lastAcct = null;
+      for (const m of rows) {
+        if (acctGroups && multi && m.account_id !== lastAcct) {
+          lastAcct = m.account_id;
+          out.push({ kind: "acctsep", key: `as:${id}:${m.account_id}`,
+                     account: app.accounts.find((a) => a.id === m.account_id) });
+        }
+        out.push({ kind: "msg", msg: m });
+      }
+      if (rows.length < arr.length)
+        out.push({ kind: "secmore", key: "sm:" + id, sec: id, total: arr.length });
+      else if (secExpanded.has(id) && arr.length > limit)
+        out.push({ kind: "secless", key: "sl:" + id, sec: id });
+    };
+    push("people", bysec.people, { limit: 8, acctGroups: true });
+    push("notifications", bysec.notifications, { doneAll: true });
+    push("newsletters", bysec.newsletters, { doneAll: true });
+    push("pins", pinned, { limit: Infinity });
+    push("seen", seen, { limit: Infinity });
+    return out;
+  }
+
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
   // Bulk category-done hides ids we don't hold objects for; single-row done
   // relies on the row object's own is_done (so the store's undo, which flips
@@ -98,7 +169,10 @@
   }
   $effect(() => {
     app.selectedKind; app.selectedFolderId; app.search;   // reset triggers
-    untrack(() => { if (stickyHot.size) stickyHot = new Set(); });
+    untrack(() => {
+      if (stickyHot.size) stickyHot = new Set();
+      if (secExpanded.size) secExpanded = new Set();
+    });
   });
 
   // Which Smart Inbox category cards are currently expanded (their key IS the
@@ -199,6 +273,7 @@
 
   function buildItems(msgs) {
     if (smartActive()) {
+      if (sectionsMode) return buildSections(msgs);
       const items = msgs.map((m) => ({ kind: "msg", msg: m }));
       const n = app.settings.smartPreviewCount || 4;
       const groups = [];
@@ -311,9 +386,9 @@
   }
   const items = $derived.by(() => {
     const built = buildItems(app.messages);
-    // Date-section layout has its own ordering (with header rows) - don't pull
+    // Sectioned layouts have their own ordering (with header rows) - don't pull
     // pinned/VIP to the top or it would orphan the section headers.
-    if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
+    if (smartActive() && ["dateSections", "sections"].includes(app.settings.smartGroupPlacement || "sections")) return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
     // Never hoist rows living inside an expanded group out of their card.
     const isP = (it) => it.kind === "msg" && !it.inGroup && it.msg.pinned;
@@ -703,8 +778,8 @@
       e.preventDefault(); return;
     }
     if (!items.length) return;
-    // Skip non-interactive rows (date headers, group loaders) when arrowing.
-    const SKIP = new Set(["header", "groupload"]);
+    // Skip non-interactive rows (date/section headers, group loaders) when arrowing.
+    const SKIP = new Set(["header", "groupload", "sechead", "acctsep"]);
     const step = (dir) => {
       let i = focusIndex;
       for (let n = 0; n < items.length; n++) {
@@ -728,6 +803,7 @@
       else if (it.kind === "group") activate(it);
       else if (it.kind === "groupmore") { if (it.cat) loadMoreCategory(it.cat); else bumpShown(it.gkey); }
       else if (it.kind === "groupseeall") seeAll(it.cat);
+      else if (it.kind === "secmore" || it.kind === "secless") toggleSecExpand(it.sec);
     } else if (combo === kb.done) {
       const it = items[focusIndex];
       if (it.kind !== "msg" && it.kind !== "group") { e.preventDefault(); return; }
@@ -832,7 +908,9 @@
 <section class="list">
   <header>
     <div class="row1">
-      {#if app.selectedKind === "smart"}
+      {#if app.selectedKind === "smart" && sectionsMode}
+        <h2>{t("list.smartInbox")}</h2>
+      {:else if app.selectedKind === "smart"}
         <!-- Smart Inbox: no redundant static title. When a group is open, show a
              breadcrumb so you can see which group folder you're in (and collapse it). -->
         <div class="crumbs">
@@ -930,6 +1008,29 @@
              out:fly={{ x: 48, duration: 140 }}>
           {#if item.kind === "header"}
             <div class="datesep">{bucketLabel(item.label)}</div>
+          {:else if item.kind === "sechead"}
+            <div class="sechead">
+              <span class="sic">{@html SEC_META[item.sec]?.icon || icons.folder}</span>
+              <span class="slabel">{SEC_META[item.sec]?.label || item.sec}</span>
+              <span class="scount">{item.count}</span>
+              {#if item.msgs}
+                <button class="sdone" title={t("list.doneAllTip")}
+                  onclick={() => doneGroup({ msgs: item.msgs })}>{@html icons.done}</button>
+              {/if}
+            </div>
+          {:else if item.kind === "acctsep"}
+            <div class="acctsep">
+              <span class="adot" style={`background:${item.account?.color || "var(--accent)"}`}></span>
+              {item.account?.email || ""}
+            </div>
+          {:else if item.kind === "secmore"}
+            <div class="gpart">
+              <button class="morebtn" onclick={() => toggleSecExpand(item.sec)}>{t("list.viewAll", { n: item.total })}</button>
+            </div>
+          {:else if item.kind === "secless"}
+            <div class="gpart">
+              <button class="morebtn" onclick={() => toggleSecExpand(item.sec)}>{t("list.showLess")}</button>
+            </div>
           {:else if item.kind === "msg"}
             <MessageRow
               message={item.msg}
@@ -1096,6 +1197,25 @@
     text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint);
     background: var(--bg);
     border-bottom: 1px solid var(--hairline); }
+  /* Spark-classic section header (People / Notifications / Newsletters / Pins /
+     Seen). Same no-backdrop-filter rule as .datesep: blur on sticky repaints
+     every scroll frame. */
+  .sechead { position: sticky; top: 0; z-index: 4; display: flex; align-items: center; gap: 7px;
+    padding: 12px 16px 6px; font-size: 12px; font-weight: 700; color: var(--text);
+    background: var(--bg); border-bottom: 1px solid var(--hairline); }
+  .sechead .sic { display: inline-flex; color: var(--muted); }
+  .sechead .sic :global(svg) { width: 14px; height: 14px; }
+  .sechead .scount { font-weight: 600; font-size: 11px; color: var(--faint); }
+  .sechead .sdone { margin-left: auto; display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 999px; color: var(--muted); opacity: 0;
+    transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .sechead:hover .sdone { opacity: 1; }
+  .sechead .sdone:hover { background: var(--done-soft); color: var(--done); }
+  .sechead .sdone :global(svg) { width: 14px; height: 14px; }
+  /* Account sub-label inside the People section (multi-account only). */
+  .acctsep { display: flex; align-items: center; gap: 7px; padding: 7px 16px 3px;
+    font-size: 11px; font-weight: 600; color: var(--muted); }
+  .acctsep .adot { width: 7px; height: 7px; border-radius: 999px; flex: none; }
   /* Expanded group content: flat rows with a quiet accent guide on the left. */
   .bundled :global(.row) { padding-left: 24px; box-shadow: inset 2px 0 0 var(--accent-soft-2); }
   .bundled :global(.row.focused) { box-shadow: inset 3px 0 0 var(--accent); }

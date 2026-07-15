@@ -11,8 +11,13 @@
 let cfg = null;
 let cfgPromise = null;
 
-function isTauri() {
+export function isTauri() {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+}
+
+/** Running as the native macOS app (drives the Liquid Glass chrome). */
+export function isMacApp() {
+  return isTauri() && /mac/i.test(navigator.platform || "");
 }
 
 async function resolveCfg() {

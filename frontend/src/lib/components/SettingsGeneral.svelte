@@ -328,7 +328,8 @@
       </label>
 
       <p class="hint" style="margin-top:14px">Where the groups sit</p>
-      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "dateSections") === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections (Spark-style)</b> - Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "sections") === "sections"} onchange={() => setPlacement("sections")} /> <span><b>Fixed sections (Spark classic)</b> - People / Notifications / Newsletters / Pins / Seen; unread mail sorts into its section, read mail settles into Seen</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections</b> - Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "timeline"} onchange={() => setPlacement("timeline")} /> <span>Float by activity (group rises with its newest mail; newer mail pushes it down)</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "top"} onchange={() => setPlacement("top")} /> <span>Always at the top</span></label>
       <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "afterN"} onchange={() => setPlacement("afterN")} /> <span>After

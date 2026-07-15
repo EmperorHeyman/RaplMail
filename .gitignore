@@ -34,6 +34,9 @@ backend/.env
 .DS_Store
 Thumbs.db
 
+# macOS sidecar - regenerated locally by dev-app.sh / build-desktop.sh (34 MB)
+frontend/src-tauri/binaries/raplmail-backend-aarch64-apple-darwin
+
 # Tauri updater signing private key - NEVER commit this
 frontend/src-tauri/.tauri-updater.key
 frontend/src-tauri/.tauri-updater.key.pub

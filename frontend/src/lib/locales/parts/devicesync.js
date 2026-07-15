@@ -4,7 +4,7 @@ export default {
   en: {
     "settingsNav.sync": "Device sync",
 
-    "dsync.intro": "Keep two (or more) RaplMail installs in step without a cloud account. One of your own mailboxes carries the data - every change is encrypted with a passphrase that never leaves your devices and stored in a hidden folder. Your 'done', snooze and pins sync automatically; settings move only when you push or pull them (below). Read/flag already sync via IMAP.",
+    "dsync.intro": "Keep two (or more) RaplMail installs in step without a cloud account. One of your own mailboxes carries the data - every change is encrypted with a passphrase that never leaves your devices and stored in a hidden folder. Your 'done', snooze, pins and rules sync automatically; settings and signatures move only when you push or pull them (below). Read/flag already sync via IMAP.",
     "dsync.loading": "Loading…",
 
     "dsync.enable": "Sync this device",
@@ -39,7 +39,7 @@ export default {
     "dsync.stDevice": "This device",
 
     "dsync.cfgTitle": "Settings, rules & signatures",
-    "dsync.cfgIntro": "Statuses (done, snooze, pins) sync automatically. Your settings, rules, signatures and sender tags do NOT move on their own - so a device that hasn't been set up can never overwrite one that has. Push yours to the other devices, or pull another device's when you want.",
+    "dsync.cfgIntro": "Statuses (done, snooze, pins) and rules sync automatically - whichever device changed its rules last wins. Your settings, signatures and sender tags do NOT move on their own, so a device that hasn't been set up can never overwrite one that has. Push yours to the other devices, or pull another device's when you want.",
     "dsync.pushBtn": "Push my settings",
     "dsync.pushing": "Pushing…",
     "dsync.pushed": "Your settings were published as a snapshot. On your other device, open this screen and hit \"Pull from a device\".",
@@ -58,15 +58,15 @@ export default {
     "dsync.close": "Close",
 
     "dsync.howTitle": "How it works",
-    "dsync.how1": "Your statuses (done, snooze, pins) publish automatically as encrypted messages in a hidden \"RaplMail Sync\" folder in the carrier mailbox, and every device picks them up - newest change wins.",
-    "dsync.how2": "Settings, rules and signatures only move when you Push or Pull them here, so they never overwrite silently. Each push is a snapshot you can choose from later.",
+    "dsync.how1": "Your statuses (done, snooze, pins) and rules publish automatically as encrypted messages in a hidden \"RaplMail Sync\" folder in the carrier mailbox, and every device picks them up - newest change wins. Rules travel as a whole set, so edits and deletes carry over too; a fresh install never overwrites a configured device.",
+    "dsync.how2": "Settings and signatures only move when you Push or Pull them here, so they never overwrite silently. Each push is a snapshot you can choose from later.",
     "dsync.how3": "Nothing goes to a third party. Everything is encrypted with your passphrase; if you ever see a sync message in another mail app, it's safe to ignore or delete.",
     "dsync.how4": "Use the same carrier account and the same passphrase on each device you link.",
   },
   cs: {
     "settingsNav.sync": "Synchronizace zařízení",
 
-    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek - každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení a připnutí se synchronizují automaticky; nastavení se přenáší jen když ho odešlete nebo stáhnete (níže). Přečteno/vlajka se už synchronizují přes IMAP.",
+    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek - každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení, připnutí a pravidla se synchronizují automaticky; nastavení a podpisy se přenáší jen když je odešlete nebo stáhnete (níže). Přečteno/vlajka se už synchronizují přes IMAP.",
     "dsync.loading": "Načítání…",
 
     "dsync.enable": "Synchronizovat toto zařízení",
@@ -101,7 +101,7 @@ export default {
     "dsync.stDevice": "Toto zařízení",
 
     "dsync.cfgTitle": "Nastavení, pravidla a podpisy",
-    "dsync.cfgIntro": "Stavy (hotovo, odložení, připnutí) se synchronizují automaticky. Vaše nastavení, pravidla, podpisy a štítky odesílatelů se samy NEPŘENÁŠÍ - takže zařízení, které ještě není nastavené, nikdy nepřepíše to nastavené. Odešlete své nastavení na ostatní zařízení, nebo si podle potřeby stáhněte nastavení z jiného zařízení.",
+    "dsync.cfgIntro": "Stavy (hotovo, odložení, připnutí) a pravidla se synchronizují automaticky - vyhrává zařízení, které pravidla změnilo naposledy. Vaše nastavení, podpisy a štítky odesílatelů se samy NEPŘENÁŠÍ, takže zařízení, které ještě není nastavené, nikdy nepřepíše to nastavené. Odešlete své nastavení na ostatní zařízení, nebo si podle potřeby stáhněte nastavení z jiného zařízení.",
     "dsync.pushBtn": "Odeslat moje nastavení",
     "dsync.pushing": "Odesílám…",
     "dsync.pushed": "Vaše nastavení bylo publikováno jako snímek. Na druhém zařízení otevřete tuto obrazovku a klepněte na „Stáhnout ze zařízení“.",
@@ -120,8 +120,8 @@ export default {
     "dsync.close": "Zavřít",
 
     "dsync.howTitle": "Jak to funguje",
-    "dsync.how1": "Vaše stavy (hotovo, odložení, připnutí) se automaticky publikují jako zašifrované zprávy ve skryté složce „RaplMail Sync“ v přenosové schránce a každé zařízení si je vyzvedne - vyhrává nejnovější změna.",
-    "dsync.how2": "Nastavení, pravidla a podpisy se přenáší jen když je zde odešlete nebo stáhnete, takže se nikdy nepřepíšou potichu. Každé odeslání je snímek, ze kterého si můžete později vybrat.",
+    "dsync.how1": "Vaše stavy (hotovo, odložení, připnutí) a pravidla se automaticky publikují jako zašifrované zprávy ve skryté složce „RaplMail Sync“ v přenosové schránce a každé zařízení si je vyzvedne - vyhrává nejnovější změna. Pravidla cestují jako celá sada, takže se přenáší i úpravy a mazání; čerstvá instalace nikdy nepřepíše nastavené zařízení.",
+    "dsync.how2": "Nastavení a podpisy se přenáší jen když je zde odešlete nebo stáhnete, takže se nikdy nepřepíšou potichu. Každé odeslání je snímek, ze kterého si můžete později vybrat.",
     "dsync.how3": "Nic neputuje třetí straně. Vše je zašifrováno vaším heslem; pokud synchronizační zprávu někdy uvidíte v jiné aplikaci, můžete ji klidně ignorovat nebo smazat.",
     "dsync.how4": "Na každém propojeném zařízení použijte stejný přenosový účet a stejné heslo.",
   },

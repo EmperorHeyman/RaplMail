@@ -12,9 +12,15 @@ What travels:
     other machine regardless of local row ids. Applied straight into
     MessageState, which is also the durable parking lot: if the mail hasn't
     synced yet on the other PC, _restore_state applies it when it does.
-  * Config (settings / rules / signatures / sender tags) via the existing
-    export bundle, newest-publish-wins. Sync-control keys are stripped both ways
-    so a peer's settings can never clobber this device's own sync configuration.
+  * Rules - automatically, whole-set last-writer-wins by a "rules changed at"
+    timestamp (syncRulesTs, bumped by every rule create/edit/delete). The device
+    that touched its rules most recently propagates its complete list; a device
+    that never touched rules never publishes them, so a fresh install can't wipe
+    anyone. Edits and deletes propagate (an add-only merge couldn't carry them).
+  * Config (settings / signatures / sender tags, plus rules for back-compat)
+    via the existing export bundle, on explicit push/pull only,
+    newest-publish-wins. Sync-control keys are stripped both ways so a peer's
+    settings can never clobber this device's own sync configuration.
 
 Last-writer-wins by MessageState.updated_at. The publish cursor (syncLastPushTs)
 is advanced past applied remote state so we don't echo it back.
@@ -101,6 +107,45 @@ def device_id(session: Session) -> str:
         did = uuid.uuid4().hex
         _save(session, {"syncDeviceId": did})
     return did
+
+
+def touch_rules_changed(session: Session) -> None:
+    """Mark this device's rule set as locally changed. The next sync tick
+    publishes the full list; peers adopt it if this timestamp beats theirs."""
+    _save(session, {"syncRulesTs": _now_iso()})
+
+
+def _replace_rules(session: Session, incoming: list[dict]) -> None:
+    """LWW adopt: the peer changed its rules more recently, so its complete rule
+    set replaces ours. Rules have no per-row identity across devices, so a
+    whole-set swap is the only way edits and deletes can propagate."""
+    from app.models import Rule
+    for r in session.exec(select(Rule)):
+        session.delete(r)
+    session.flush()
+    for r in incoming:
+        try:
+            session.add(Rule(account_id=None, **{k: r[k] for k in (
+                "name", "enabled", "order", "match_field", "match_op",
+                "match_value", "action", "action_arg") if k in r}))
+        except Exception:
+            continue
+    session.flush()
+
+
+def _apply_rules_payload(session: Session, payload: dict) -> bool:
+    """Adopt the peer's rule set from a state payload if it's fresher than ours
+    (LWW by rules_ts). Returns True when applied. The pushed-cursor is advanced
+    to the same ts so we don't echo the adopted set back."""
+    rules_ts = payload.get("rules_ts") or ""
+    incoming = payload.get("rules")
+    if not rules_ts or not isinstance(incoming, list):
+        return False
+    if rules_ts <= (_blob(session).get("syncRulesTs") or ""):
+        return False   # ours is newer or the same - keep it
+    _replace_rules(session, incoming)
+    _save(session, {"syncRulesTs": rules_ts, "syncRulesPushedTs": rules_ts})
+    return True
 
 
 def _strip_sync_keys(settings: dict) -> dict:
@@ -319,7 +364,8 @@ def _apply_config_bundle(session: Session, cfg: dict) -> None:
 # --- publish / scan -----------------------------------------------------------
 
 def publish(session: Session, account: Account, provider) -> None:
-    """Automatic publish: encrypt and append changed triage state only. Config is
+    """Automatic publish: encrypt and append changed triage state, plus the rule
+    set when it changed locally (LWW by syncRulesTs). Settings/signatures are
     never published automatically - use push_config for that."""
     passphrase = get_passphrase()
     if not passphrase:
@@ -329,13 +375,25 @@ def publish(session: Session, account: Account, provider) -> None:
     since = _parse_iso(blob.get("syncLastPushTs"))
     full = since is None   # first publish → all local state so a new peer catches up
     payload = _build_state_payload(session, device_id(session), since, full)
-    if not payload["states"]:
+    # Rules ride along whenever they changed since the last publish. A device
+    # whose rules were never touched (no syncRulesTs) publishes none - so a
+    # fresh install can never blank a configured device's rules.
+    rules_ts = blob.get("syncRulesTs") or ""
+    push_rules = bool(rules_ts) and (full or rules_ts > (blob.get("syncRulesPushedTs") or ""))
+    if push_rules:
+        from app.api.settings import export_rules
+        payload["rules"] = export_rules(session)
+        payload["rules_ts"] = rules_ts
+    if not payload["states"] and not push_rules:
         return   # nothing changed - skip the round-trip
     fernet = derive_fernet(passphrase)
     token = fernet.encrypt(json.dumps(payload, default=str).encode("utf-8")).decode("ascii")
     provider.ensure_folder(folder)
     provider.append_to_folder(folder, _wrap_message(token, account.email, payload["device"]), seen=True)
-    _save(session, {"syncLastPushTs": payload["ts"]})
+    updates = {"syncLastPushTs": payload["ts"]}
+    if push_rules:
+        updates["syncRulesPushedTs"] = rules_ts
+    _save(session, updates)
 
 
 def scan(session: Session, provider) -> int:
@@ -372,13 +430,18 @@ def scan(session: Session, provider) -> int:
             continue   # not ours / wrong passphrase / corrupt - skip
         if payload.get("device") == my_device:
             continue   # our own message
+        handled = False
         states = payload.get("states") or []
-        if not states:
-            continue   # config snapshot or empty - not applied automatically
-        ts = apply_states(session, states)
-        if ts is not None and (newest_applied is None or ts > newest_applied):
-            newest_applied = ts
-        applied += 1
+        if states:
+            ts = apply_states(session, states)
+            if ts is not None and (newest_applied is None or ts > newest_applied):
+                newest_applied = ts
+            handled = True
+        if _apply_rules_payload(session, payload):
+            handled = True
+        if handled:
+            applied += 1
+        # else: config snapshot or empty - not applied automatically
     updates = {"syncCursorUid": max_uid}
     # Advance the publish cursor past applied remote state so we don't echo it.
     if newest_applied is not None:

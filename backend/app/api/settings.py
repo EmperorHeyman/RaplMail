@@ -60,12 +60,18 @@ def put_settings(body: SettingsIn, session: Session = Depends(get_session)) -> d
     return {"ok": True}
 
 
-@router.get("/export")
-def export_bundle(session: Session = Depends(get_session)) -> dict:
-    rules = [
+def export_rules(session: Session) -> list[dict]:
+    """Rules as portable dicts (no local ids) - used by the export bundle and by
+    the automatic device-sync rules channel."""
+    return [
         {k: v for k, v in r.model_dump().items() if k not in ("id", "account_id", "created_at")}
         for r in session.exec(select(Rule))
     ]
+
+
+@router.get("/export")
+def export_bundle(session: Session = Depends(get_session)) -> dict:
+    rules = export_rules(session)
     sigs = [
         {k: v for k, v in s.model_dump().items() if k not in ("id", "account_id", "created_at")}
         for s in session.exec(select(Signature))
@@ -121,6 +127,10 @@ def _apply_config(session: Session, bundle: dict) -> ImportResult:
             res.rules += 1
         except Exception:
             continue
+    if res.rules:
+        # The local rule set changed - let device sync propagate the merged set.
+        from app.sync.devicesync import touch_rules_changed
+        touch_rules_changed(session)
 
     # Signatures: add by name if missing, as global signatures.
     existing_sig_names = {s.name for s in session.exec(select(Signature))}

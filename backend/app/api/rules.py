@@ -48,12 +48,20 @@ def list_rules(account_id: int | None = None, session: Session = Depends(get_ses
     return [_to_out(r) for r in session.exec(stmt.order_by(Rule.order))]
 
 
+def _touch_rules_changed(session: Session) -> None:
+    """Every rule change stamps syncRulesTs so device sync can propagate the
+    updated set automatically (whole-set LWW)."""
+    from app.sync.devicesync import touch_rules_changed
+    touch_rules_changed(session)
+
+
 @router.post("", response_model=RuleOut, status_code=status.HTTP_201_CREATED)
 def create_rule(body: RuleIn, session: Session = Depends(get_session)) -> RuleOut:
     rule = Rule(**body.model_dump())
     session.add(rule)
     session.commit()
     session.refresh(rule)
+    _touch_rules_changed(session)
     return _to_out(rule)
 
 
@@ -67,6 +75,7 @@ def update_rule(rule_id: int, body: RuleIn, session: Session = Depends(get_sessi
     session.add(rule)
     session.commit()
     session.refresh(rule)
+    _touch_rules_changed(session)
     return _to_out(rule)
 
 
@@ -77,6 +86,7 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
     session.delete(rule)
     session.commit()
+    _touch_rules_changed(session)
 
 
 # How many messages we're willing to scan when a rule needs Python-side matching

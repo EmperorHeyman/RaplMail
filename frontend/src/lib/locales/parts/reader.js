@@ -157,8 +157,8 @@ export default {
     "reader.forward": "Přeposlat",
     "reader.done": "Hotovo",
     "reader.restore": "Obnovit",
-    "reader.flag": "Vlajka",
-    "reader.flagged": "Označeno vlajkou",
+    "reader.flag": "Příznak",
+    "reader.flagged": "S příznakem",
     "reader.doneAll": "Vše hotovo",
 
     // Akce AI.
@@ -233,13 +233,13 @@ export default {
 
     // Odznak prověřování + rozbalený detail.
     "reader.newSenderBadge": "Nový odesílatel",
-    "reader.firstTimeSender": "Odesílatel poprvé - chcete přijímat poštu od {addr}?",
+    "reader.firstTimeSender": "Píše vám poprvé - chcete přijímat poštu od {addr}?",
     "reader.approve": "Schválit",
     "reader.block": "Blokovat",
 
     // Odznak hromadné pošty + rozbalený detail.
-    "reader.mailingListBadge": "Hromadná pošta",
-    "reader.mailingList": "Vypadá to jako hromadná pošta.",
+    "reader.mailingListBadge": "Rozesílka",
+    "reader.mailingList": "Vypadá to jako hromadná rozesílka.",
     "reader.unsubscribe": "Odhlásit odběr",
 
     // Pruh sledovacích prvků (čtečka - plný).

@@ -162,8 +162,8 @@ export default {
     "security.privacyGroup": "Soukromí",
     "security.trackToggle": "Blokovat sledovací pixely",
     "security.trackHint": "Blokuje neviditelné pixely 1×1 a známé sledovací obrázky, aby odesílatelé nepoznali, kdy jste zprávu přečetli. Běžné obrázky (loga, fotky, obsah) se načítají normálně - u každé zprávy lze také „Načíst vše“.",
-    "security.screenerToggle": "Prověřování (první odesílatelé)",
-    "security.screenerHint": "Pošta od lidí, se kterými jste si nikdy nedopisovali, se místo do schránky uloží do „Prověřování“ - každého nového odesílatele jednou schválíte nebo zablokujete (styl Hey).",
+    "security.screenerToggle": "Schvalování nových odesílatelů",
+    "security.screenerHint": "Pošta od lidí, se kterými jste si nikdy nedopisovali, se místo do schránky uloží mezi „Nové odesílatele“ - každého jednou schválíte nebo zablokujete (styl Hey).",
 
     // Přesunuté heslo při spuštění.
     "security.startupGroup": "Heslo při spuštění",

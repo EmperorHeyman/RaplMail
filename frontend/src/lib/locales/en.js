@@ -55,8 +55,8 @@ const base = {
   "onboarding.smartInboxHint": "Group newsletters, social and updates into tidy cards instead of one long list.",
   "onboarding.notifications": "Desktop notifications",
   "onboarding.notificationsHint": "A gentle ding and a popup when genuinely new mail arrives.",
-  "onboarding.startWithWindows": "Start with Windows",
-  "onboarding.startWithWindowsHint": "Launch RaplMail automatically when you sign in (into the tray).",
+  "onboarding.startWithWindows": "Start at login",
+  "onboarding.startWithWindowsHint": "Launch RaplMail automatically when you sign in (into the tray / menu bar).",
   "onboarding.addAccount": "Add an account",
   "onboarding.highlightsTitle": "What RaplMail does",
   "onboarding.highlightsBody": "A quick look at the features you'll use most. Every one of these has settings you can tune later.",
@@ -196,6 +196,20 @@ const base = {
   "update.checkFailed": "Update check failed: {err}",
   "schedule.localOnly": "RaplMail is local-only. Scheduled sends and snoozes fire from your computer, so RaplMail must be running (at least in the tray) and the PC powered on at the chosen time - they won't deliver from a server while you're away.",
   "schedule.localOnlyShort": "Local-only: your PC must be on and RaplMail running for this to fire.",
+
+  // Snooze presets + toasts (shared by rows, reader and context menus).
+  "snooze.laterToday": "Later today",
+  "snooze.thisEvening": "This evening",
+  "snooze.tomorrow": "Tomorrow",
+  "snooze.thisWeekend": "This weekend",
+  "snooze.nextWeek": "Next week",
+  "snooze.untilBack": "Until I'm back",
+  "snooze.tomorrowShort": "tomorrow",
+  "snooze.snoozed": "Snoozed",
+  "snooze.snoozedBack": "Snoozed until you're back",
+  "snooze.unsnoozed": "Unsnoozed",
+  "snooze.couldntSnooze": "Couldn't snooze",
+  "snooze.couldntUndo": "Couldn't undo the snooze - check your connection",
 };
 
 export default {

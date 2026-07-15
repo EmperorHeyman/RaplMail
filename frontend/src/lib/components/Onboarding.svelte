@@ -6,8 +6,9 @@
   import { icons } from "../icons.js";
 
   // Steps: welcome → language → highlights → theme → options → settings → done.
-  // The Windows-startup option only makes sense in the packaged desktop app.
-  const onWindows = isTauri() && (navigator.platform || "").toLowerCase().includes("win");
+  // The start-at-login option only makes sense in the packaged desktop app
+  // (the autostart plugin handles Windows, macOS and Linux alike).
+  const canAutostart = isTauri();
   const STEPS = ["welcome", "language", "highlights", "theme", "options", "settings", "done"];
   let i = $state(0);
   const step = $derived(STEPS[i]);
@@ -143,7 +144,7 @@
             <input type="checkbox" checked={app.settings.notifyNewMail !== false} onchange={(e) => toggleNotif(e.currentTarget.checked)} />
             <div><b>{t("onboarding.notifications")}</b><span>{t("onboarding.notificationsHint")}</span></div>
           </label>
-          {#if onWindows}
+          {#if canAutostart}
             <label class="opt">
               <input type="checkbox" checked={!!app.settings.launchOnStartup} onchange={(e) => toggleStartup(e.currentTarget.checked)} />
               <div><b>{t("onboarding.startWithWindows")}</b><span>{t("onboarding.startWithWindowsHint")}</span></div>

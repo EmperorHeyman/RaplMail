@@ -41,13 +41,36 @@ HEADERS_PER_FOLDER_LIMIT = 500  # cap on a single incremental pull
 def _make_idle_probe():
     """Return a callable -> seconds since last local input, or None if unsupported.
 
-    Windows: GetLastInputInfo via ctypes. Other platforms aren't supported yet
-    (the presence feature simply stays inert there).
+    Windows: GetLastInputInfo via ctypes. macOS: Quartz's
+    CGEventSourceSecondsSinceLastEventType via ctypes (no pyobjc needed).
+    Other platforms aren't supported yet (the presence feature stays inert).
     """
+    import ctypes
     import sys
+
+    if sys.platform == "darwin":
+        try:
+            asvc = ctypes.CDLL(
+                "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+            )
+            fn = asvc.CGEventSourceSecondsSinceLastEventType
+        except (OSError, AttributeError):
+            return None
+        fn.restype = ctypes.c_double
+        fn.argtypes = [ctypes.c_uint32, ctypes.c_uint32]
+        COMBINED_SESSION = 1      # kCGEventSourceStateCombinedSessionState
+        ANY_INPUT = 0xFFFFFFFF    # kCGAnyInputEventType (~0)
+
+        def idle_seconds_mac() -> float:
+            try:
+                return float(fn(COMBINED_SESSION, ANY_INPUT))
+            except Exception:
+                return 0.0
+
+        return idle_seconds_mac
+
     if not sys.platform.startswith("win"):
         return None
-    import ctypes
 
     class _LASTINPUTINFO(ctypes.Structure):
         _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]

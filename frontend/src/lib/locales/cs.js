@@ -51,8 +51,8 @@ const base = {
   "onboarding.smartInboxHint": "Seskupí newslettery, sociální sítě a upozornění do přehledných karet místo jednoho dlouhého seznamu.",
   "onboarding.notifications": "Oznámení na ploše",
   "onboarding.notificationsHint": "Jemné cinknutí a upozornění, když dorazí opravdu nová pošta.",
-  "onboarding.startWithWindows": "Spouštět s Windows",
-  "onboarding.startWithWindowsHint": "Spustí RaplMail automaticky po přihlášení (do lišty).",
+  "onboarding.startWithWindows": "Spouštět po přihlášení",
+  "onboarding.startWithWindowsHint": "Spustí RaplMail automaticky po přihlášení k počítači (do lišty).",
   "onboarding.addAccount": "Přidat účet",
   "onboarding.highlightsTitle": "Co RaplMail umí",
   "onboarding.highlightsBody": "Rychlý pohled na funkce, které budete používat nejvíc. U každé z nich najdete nastavení, které si můžete doladit později.",
@@ -70,8 +70,8 @@ const base = {
   "onboarding.hlSnoozeBody": "Odložte poštu na později a naplánujte odeslání zpráv na ten správný čas.",
   "onboarding.hlAiTitle": "Lokální AI asistent",
   "onboarding.hlAiBody": "Shrnování, návrhy odpovědí, třídění a hledání - vše běží u vás v počítači, cloud není potřeba.",
-  "onboarding.hlKeysTitle": "Na prvním místě klávesnice",
-  "onboarding.hlKeysBody": "Proletíte poštou pomocí zkratek. Klávesou ? je kdykoli zobrazíte všechny.",
+  "onboarding.hlKeysTitle": "Klávesnice na prvním místě",
+  "onboarding.hlKeysBody": "Proletíte poštou pomocí zkratek. Klávesou ? si kdykoli zobrazíte jejich přehled.",
   "onboarding.settingsTitle": "Přizpůsobte si to",
   "onboarding.settingsBody": "Vše níže si můžete nastavit podle sebe. Klepnutím na oblast tam rovnou přejdete - nebo dejte Dokončit a prozkoumejte to později.",
   "onboarding.setAccounts": "Připojte Microsoft 365, Gmail nebo libovolnou schránku IMAP/SMTP.",
@@ -157,7 +157,7 @@ const base = {
   "smime.recipientsHint": "Vložte certifikát X.509 (PEM) protistrany, abyste jí mohli posílat šifrovanou poštu S/MIME.",
   "smime.addCert": "Přidat certifikát",
   "smime.certAdded": "Certifikát přidán",
-  "smime.badCert": "Tohle nevypadá jako certifikát PEM (očekává se -----BEGIN CERTIFICATE-----).",
+  "smime.badCert": "Toto nevypadá jako certifikát PEM (očekává se -----BEGIN CERTIFICATE-----).",
 
   // Nástroje → Audit odběrů.
   "utility.subscriptionsTitle": "Audit odběrů",
@@ -173,7 +173,7 @@ const base = {
   "utility.archiveFuture": "Auto-archivace",
   "utility.archivedRule": "Budoucí pošta od {who} se bude archivovat",
   "utility.archivedN": "Přidáno pravidlo auto-archivace pro {n} odesílatelů",
-  "utility.sortDormant": "Nečinné první",
+  "utility.sortDormant": "Nejdřív nečinné",
   "utility.sortMost": "Nejvíce přijato",
   "utility.sortRecent": "Nejnovější",
   "utility.sortUnread": "Nejméně čtené",
@@ -192,6 +192,20 @@ const base = {
   "update.checkFailed": "Kontrola aktualizací selhala: {err}",
   "schedule.localOnly": "RaplMail běží jen lokálně. Naplánované odeslání a odložení se spouští z vašeho počítače, takže RaplMail musí být spuštěný (aspoň na liště) a PC zapnuté ve zvolený čas - ze serveru se nic neodešle, když jste pryč.",
   "schedule.localOnlyShort": "Jen lokálně: PC musí být zapnuté a RaplMail spuštěný, aby se to provedlo.",
+
+  // Předvolby odložení + hlášení (sdílené řádky, čtečkou i kontextovými nabídkami).
+  "snooze.laterToday": "Později dnes",
+  "snooze.thisEvening": "Dnes večer",
+  "snooze.tomorrow": "Zítra",
+  "snooze.thisWeekend": "O víkendu",
+  "snooze.nextWeek": "Příští týden",
+  "snooze.untilBack": "Až se vrátím",
+  "snooze.tomorrowShort": "zítra",
+  "snooze.snoozed": "Odloženo",
+  "snooze.snoozedBack": "Odloženo, dokud se nevrátíte",
+  "snooze.unsnoozed": "Odložení zrušeno",
+  "snooze.couldntSnooze": "Nepodařilo se odložit",
+  "snooze.couldntUndo": "Odložení se nepodařilo vrátit - zkontrolujte připojení",
 };
 
 export default {

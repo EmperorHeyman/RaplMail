@@ -999,12 +999,12 @@ export function snoozePresets() {
   const sat = new Date(now); sat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7)); sat.setHours(morning, 0, 0, 0);
   const mon = new Date(now); mon.setDate(now.getDate() + ((1 - now.getDay() + 7) % 7 || 7)); mon.setHours(morning, 0, 0, 0);
   return [
-    { label: "Later today", at: laterToday, iso: laterToday.toISOString() },
-    { label: "This evening", at: eveningOut, iso: eveningOut.toISOString() },
-    { label: "Tomorrow", at: tomorrow, iso: tomorrow.toISOString() },
-    { label: "This weekend", at: sat, iso: sat.toISOString() },
-    { label: "Next week", at: mon, iso: mon.toISOString() },
-    { label: "Until I'm back", presence: true },
+    { label: t("snooze.laterToday"), at: laterToday, iso: laterToday.toISOString() },
+    { label: t("snooze.thisEvening"), at: eveningOut, iso: eveningOut.toISOString() },
+    { label: t("snooze.tomorrow"), at: tomorrow, iso: tomorrow.toISOString() },
+    { label: t("snooze.thisWeekend"), at: sat, iso: sat.toISOString() },
+    { label: t("snooze.nextWeek"), at: mon, iso: mon.toISOString() },
+    { label: t("snooze.untilBack"), presence: true },
   ];
 }
 
@@ -1015,7 +1015,7 @@ export function presetWhen(at) {
   const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   if (at.toDateString() === now.toDateString()) return time;
   const tom = new Date(now.getTime() + 86400000);
-  if (at.toDateString() === tom.toDateString()) return `tomorrow ${time}`;
+  if (at.toDateString() === tom.toDateString()) return `${t("snooze.tomorrowShort")} ${time}`;
   if (at - now < 7 * 86400000) return `${at.toLocaleDateString([], { weekday: "short" })} ${time}`;
   return `${at.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
 }
@@ -1036,7 +1036,7 @@ export async function snoozeMessage(message, untilISO, presence = false) {
   try {
     await messages.snooze(message.id, presence ? null : untilISO, presence);
     if (untilISO || presence) {
-      notify(presence ? "Snoozed until you're back" : "Snoozed", "info", () => {
+      notify(presence ? t("snooze.snoozedBack") : t("snooze.snoozed"), "info", () => {
         message.snooze_until = null;
         if (_viewKey() === originView && !app.messages.some((m) => m.id === message.id)) {
           const at = idx >= 0 ? idx : app.messages.length;
@@ -1046,13 +1046,13 @@ export async function snoozeMessage(message, untilISO, presence = false) {
         // idx may be stale if the list changed during the undo window).
         messages.snooze(message.id, null, false)
           .then(() => refreshMessages({ background: true }))
-          .catch(() => notify("Couldn't undo the snooze - check your connection", "error"));
+          .catch(() => notify(t("snooze.couldntUndo"), "error"));
       });
     } else {
-      notify("Unsnoozed");
+      notify(t("snooze.unsnoozed"));
     }
   } catch (e) {
-    notify("Couldn't snooze", "error");
+    notify(t("snooze.couldntSnooze"), "error");
     refreshMessages({ background: true });
   }
 }

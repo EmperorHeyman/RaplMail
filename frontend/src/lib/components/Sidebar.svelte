@@ -58,14 +58,6 @@
   const inboxUnread = $derived(
     app.folders.filter((f) => f.role === "inbox").reduce((n, f) => n + (f.unread_count || 0), 0)
   );
-  // macOS: mirror the unread total onto the Dock icon badge (undefined clears it).
-  $effect(() => {
-    if (!isMacApp()) return;
-    const n = inboxUnread;
-    import("@tauri-apps/api/window")
-      .then(({ getCurrentWindow }) => getCurrentWindow().setBadgeCount(n > 0 ? n : undefined))
-      .catch(() => {});
-  });
 
   // Nav items grouped into sections: primary (no label) / Mail / Tools.
   // Order inside a section is still user-draggable (settings.specialOrder).

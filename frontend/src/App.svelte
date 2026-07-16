@@ -1,6 +1,6 @@
 <script>
-  import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge } from "./lib/store.svelte.js";
+  import { onMount, untrack } from "svelte";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge, flushSeenExcept } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -115,6 +115,13 @@
     // Re-evaluate auto day/night theme periodically.
     const t = setInterval(() => { if (app.settings.themeMode === "auto") applyTheme(); }, 600000);
     return () => clearInterval(t);
+  });
+
+  // Deferred read-marking: when the open message changes (or the reader closes),
+  // the previous one gets marked read. See store.noteOpened/flushSeenExcept.
+  $effect(() => {
+    const id = app.selectedMessageId;
+    untrack(() => flushSeenExcept(id));
   });
 
   function onGlobalKey(e) {

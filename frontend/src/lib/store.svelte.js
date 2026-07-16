@@ -151,6 +151,7 @@ const DEFAULT_SETTINGS = {
   sandboxEnabled: true,         // offer the WebAssembly attachment sandbox + flag risky files
   unsubscribedSenders: [],      // list addresses the user has already unsubscribed from (shown green)
   liquidGlass: true,            // macOS: translucent Liquid Glass chrome over window vibrancy
+  readMarkMode: "leave",        // opening a mail marks it read: "leave" (when you move on) | "instant"
 };
 
 // Stored keybinds replace the defaults wholesale (the settings merge is
@@ -339,11 +340,11 @@ export function applyTheme() {
 async function doSend(payload) {
   try {
     const r = await compose.send(payload);
-    if (r && r.queued) notify("Couldn't reach the server - queued, will retry. See Settings/sidebar for details.", "error");
-    else notify("Sent ✓");
+    if (r && r.queued) notify(t("toast.queuedRetry"), "error");
+    else notify(t("toast.sent"));
     refreshQueue();
   } catch (e) {
-    notify("Send failed: " + e.message, "error");
+    notify(t("toast.sendFailed", { error: e.message }), "error");
   }
 }
 
@@ -385,7 +386,7 @@ export function cancelSend() {
   clearTimeout(ps.timer);
   app.pendingSend = null;
   clearPersistedPendingSend();
-  notify("Send cancelled");
+  notify(t("toast.sendCancelled"));
   openCompose(ps.seed); // bring the message back to keep editing
 }
 
@@ -399,7 +400,7 @@ export function recoverPendingSend() {
   if (!payload) return;
   clearPersistedPendingSend();
   doSend(payload);
-  notify("Delivered a message that was still sending when the app closed");
+  notify(t("toast.deliveredPending"));
 }
 
 let _settingsTimer = null;
@@ -624,7 +625,7 @@ export function notify(message, kind = "info", undo = null) {
 // window.confirm). Returns a Promise<boolean>. Render <ConfirmDialog /> once at
 // the app root; it reads app.confirm.
 const _confirmQueue = [];
-export function confirmDialog({ title = "Are you sure?", message = "", confirmLabel = "Confirm", cancelLabel = "Cancel", danger = false } = {}) {
+export function confirmDialog({ title = t("confirm.areYouSure"), message = "", confirmLabel = t("confirm.confirm"), cancelLabel = t("common.cancel"), danger = false } = {}) {
   return new Promise((resolve) => {
     const item = { title, message, confirmLabel, cancelLabel, danger, resolve };
     // A dialog is already up: queue this one so neither promise is orphaned.
@@ -641,7 +642,7 @@ export function resolveConfirm(result) {
 export function runUndo() {
   app.toast = null;
   const u = _undoStack.pop();
-  if (u) { u(); notify("Undone"); }
+  if (u) { u(); notify(t("toast.undone")); }
 }
 export function hasUndo() { return _undoStack.length > 0; }
 
@@ -665,8 +666,34 @@ export async function updateBadge() {
 // the folder unread badge, and the Smart Inbox group counts - instead of
 // waiting for the next sync to correct the numbers. The server call is
 // fire-and-forget; a sync later reconciles the exact counts.
+// --- deferred read-marking ---------------------------------------------------
+// "leave" mode (default): an opened message stays visually unread while you
+// read it and is only marked read when you MOVE ON - to another message, or by
+// closing the reader. "instant" restores classic click-marks-read. An explicit
+// "mark unread" while the message is open cancels the pending mark.
+let _pendingSeen = null;
+export function noteOpened(message) {
+  if (!message) return;
+  if ((app.settings.readMarkMode || "leave") === "instant") {
+    if (!message.is_seen) setMessageSeen(message, true);
+    return;
+  }
+  if (_pendingSeen && _pendingSeen.id !== message.id && !_pendingSeen.is_seen)
+    setMessageSeen(_pendingSeen, true);
+  _pendingSeen = message;
+}
+/** Mark the pending message read unless it's the one with this id (App calls
+ *  this whenever the open message changes; null = reader closed). */
+export function flushSeenExcept(id = null) {
+  if (!_pendingSeen || _pendingSeen.id === id) return;
+  const m = _pendingSeen;
+  _pendingSeen = null;
+  if (!m.is_seen) setMessageSeen(m, true);
+}
+
 export function setMessageSeen(message, seen) {
   if (!message || message.is_seen === seen) return;
+  if (!seen && _pendingSeen?.id === message.id) _pendingSeen = null;
   message.is_seen = seen;
   const inList = app.messages.find((m) => m.id === message.id);
   if (inList) inList.is_seen = seen;
@@ -707,7 +734,7 @@ export async function setAutostart(on) {
   try {
     const { enable, disable } = await import("@tauri-apps/plugin-autostart");
     if (on) await enable(); else await disable();
-  } catch (e) { notify(`Couldn't change startup setting: ${e.message || e}`, "error"); }
+  } catch (e) { notify(t("toast.startupFailed", { error: e.message || e }), "error"); }
 }
 // On boot, reconcile the saved preference with the OS autostart registration -
 // they're two sources of truth and can drift (e.g. the entry was removed
@@ -871,8 +898,8 @@ export async function approveSender(message) {
   if (app.selectedMessageId === message.id) app.selectedMessageId = null;
   try {
     await contacts.create({ email: message.from_addr, name: message.from_name || "" });
-    notify(`Approved ${message.from_addr} - future mail lands in your inbox`);
-  } catch (e) { notify("Couldn't approve", "error"); refreshMessages({ background: true }); }
+    notify(t("toast.approved", { who: message.from_addr }));
+  } catch (e) { notify(t("toast.couldntApprove"), "error"); refreshMessages({ background: true }); }
 }
 
 export async function blockSender(message) {
@@ -882,8 +909,8 @@ export async function blockSender(message) {
     await rules.create({ name: `Blocked ${message.from_addr}`, match_field: "from",
                          match_op: "equals", match_value: message.from_addr, action: "block" });
     await messages.mute(message.id);  // also clear current mail from this sender
-    notify(`Blocked ${message.from_addr}`);
-  } catch (e) { notify("Couldn't block", "error"); refreshMessages({ background: true }); }
+    notify(t("toast.blocked", { who: message.from_addr }));
+  } catch (e) { notify(t("toast.couldntBlock"), "error"); refreshMessages({ background: true }); }
 }
 
 // Silence future desktop notifications from a sender WITHOUT touching the mail
@@ -896,8 +923,8 @@ export async function muteNotificationsFromSender(message) {
   try {
     await rules.create({ name: `Muted notifications: ${addr}`, match_field: "from",
                          match_op: "equals", match_value: addr, action: "mute_notifications" });
-    notify(`Muted notifications from ${message.from_name || addr}`);
-  } catch (e) { notify("Couldn't mute notifications", "error"); }
+    notify(t("toast.muteNotifOn", { who: message.from_name || addr }));
+  } catch (e) { notify(t("toast.couldntMuteNotif"), "error"); }
 }
 
 // The value a rule should match for a given field, pulled from the clicked
@@ -965,15 +992,15 @@ export async function setSenderCategory(message, category) {
   }
   try {
     await messages.setSenderCategory(message.from_addr, category);
-    notify(category === "auto" ? "Reset sender category" : `Sender → ${category}`);
+    notify(category === "auto" ? t("toast.senderCatReset") : t("toast.senderCatSet", { cat: category }));
     refreshMessages({ background: true });
-  } catch (e) { notify("Couldn't reclassify", "error"); refreshMessages({ background: true }); }
+  } catch (e) { notify(t("toast.couldntReclassify"), "error"); refreshMessages({ background: true }); }
 }
 
 export async function muteSender(message) {
   app.messages = app.messages.filter((m) => m.id !== message.id);
-  try { await messages.mute(message.id); notify(`Muted ${message.from_addr}`); }
-  catch (e) { notify("Couldn't mute", "error"); refreshMessages({ background: true }); }
+  try { await messages.mute(message.id); notify(t("toast.muted", { who: message.from_addr })); }
+  catch (e) { notify(t("toast.couldntMute"), "error"); refreshMessages({ background: true }); }
 }
 
 export async function syncAllAccounts() {
@@ -981,7 +1008,7 @@ export async function syncAllAccounts() {
   if (!app.accounts.length) return;
   app.syncing = true;
   for (const a of app.accounts) { try { await accounts.sync(a.id); } catch {} }
-  notify("Syncing…");
+  notify(t("toast.syncing"));
 }
 
 /** Snooze preset times relative to now. */
@@ -1072,7 +1099,7 @@ export function toggleVip(addrOrMsg) {
   const list = app.settings.vipSenders || [];
   const has = list.some((x) => (x || "").toLowerCase().trim() === a);
   saveSettings({ vipSenders: has ? list.filter((x) => (x || "").toLowerCase().trim() !== a) : [...list, a] });
-  notify(has ? "Removed from VIP" : "Marked as VIP ⭐");
+  notify(has ? t("toast.vipOff") : t("toast.vipOn"));
 }
 
 // Senders the user has marked trusted - suppresses the spoof/lookalike warning.
@@ -1083,13 +1110,13 @@ export function trustSender(addr) {
   const a = (addr || "").toLowerCase().trim();
   if (!a || isTrustedSender(a)) return;
   saveSettings({ trustedSenders: [...(app.settings.trustedSenders || []), a] });
-  notify("Marked safe - this sender now shows a green check ✓");
+  notify(t("toast.markedSafe"));
 }
 export function untrustSender(addr) {
   const a = (addr || "").toLowerCase().trim();
   if (!a) return;
   saveSettings({ trustedSenders: (app.settings.trustedSenders || []).filter((x) => x !== a) });
-  notify("Removed “safe” mark");
+  notify(t("toast.unmarkedSafe"));
 }
 export function toggleTrusted(addr) {
   isTrustedSender(addr) ? untrustSender(addr) : trustSender(addr);
@@ -1351,7 +1378,7 @@ export async function pinMessage(message, value) {
   if (item) item.pinned = v;       // optimistic - list re-sorts immediately
   message.pinned = v;
   try { await messages.pin(message.id, v); }
-  catch (e) { notify("Couldn't pin", "error"); if (item) item.pinned = !v; message.pinned = !v; }
+  catch (e) { notify(t("toast.couldntPin"), "error"); if (item) item.pinned = !v; message.pinned = !v; }
 }
 
 export async function muteThread(message) {
@@ -1362,9 +1389,9 @@ export async function muteThread(message) {
   if (app.selectedMessageId === message.id) { app.selectedMessageId = null; app.threadKey = null; }
   try {
     const r = await messages.muteThread(message.id);
-    notify(`Conversation muted${r?.count ? ` (${r.count})` : ""}`);
+    notify(t("toast.threadMuted") + (r?.count ? ` (${r.count})` : ""));
   } catch (e) {
-    notify("Couldn't mute conversation", "error");
+    notify(t("toast.couldntMuteThread"), "error");
     refreshMessages({ background: true });
   }
 }
@@ -1383,7 +1410,7 @@ export function openThread(latest) {
   app.view = "mail";
   app.threadKey = latest.thread_id;
   app.selectedMessageId = latest.id;
-  if (!latest.is_seen) setMessageSeen(latest, true);
+  noteOpened(latest);
 }
 
 // Hand a just-fetched thread to ThreadView so auto-opening a conversation
@@ -1409,7 +1436,7 @@ async function _removeMessage(message, action, label) {
       ? (app.messages[idx] || app.messages[idx - 1]) : null;
     app.threadKey = null;
     app.selectedMessageId = next ? next.id : null;
-    if (next && !next.is_seen) setMessageSeen(next, true);
+    noteOpened(next);
   }
   try {
     await messages.bulk([message.id], action);
@@ -1417,7 +1444,7 @@ async function _removeMessage(message, action, label) {
     refreshQueue();
     refreshFoldersSoon();
   } catch (e) {
-    notify(`Couldn't ${action} - restoring`, "error");
+    notify(t("toast.couldntUpdateRestore"), "error");
     refreshMessages({ background: true });
   }
 }
@@ -1431,10 +1458,9 @@ export function openMessageById(id) {
   app.view = "mail";
   app.threadKey = null;
   app.selectedMessageId = id;
-  // Opening a message marks it read (matches clicking it in the list).
+  // Opening a message marks it read (per readMarkMode - matches list clicks).
   const m = app.messages.find((x) => x.id === id);
-  if (m) setMessageSeen(m, true);
-  else messages.setSeen(id, true).catch(() => {});
+  noteOpened(m || { id, is_seen: false });
 }
 
 // Merge a freshly-fetched list into an existing one WITHOUT swapping every row
@@ -1661,7 +1687,7 @@ export async function markDone(message, done) {
       if (next) {
         app.threadKey = null;
         app.selectedMessageId = next.id;
-        if (!next.is_seen) { next.is_seen = true; messages.setSeen(next.id, true).catch(() => {}); }
+        noteOpened(next);
       } else {
         app.selectedMessageId = null;
       }
@@ -1673,7 +1699,7 @@ export async function markDone(message, done) {
     // Offer a quick undo when a message was archived out of the view.
     if (!app.showDone && done) {
       const originView = _viewKey();
-      notify("Marked done", "info", () => {
+      notify(t("toast.markedDone"), "info", () => {
         message.is_done = false;
         // idx < 0 = the message lives inside an expanded smart-group card, not
         // the main list - flipping is_done un-hides it there; don't splice a
@@ -1683,11 +1709,11 @@ export async function markDone(message, done) {
         }
         messages.setDone(message.id, false)
           .then(() => { refreshFoldersSoon(); refreshMessages({ background: true }); })
-          .catch(() => notify("Couldn't undo - check your connection", "error"));
+          .catch(() => notify(t("toast.couldntUndoConn"), "error"));
       });
     }
   } catch (e) {
-    notify("Couldn't update - restoring", "error");
+    notify(t("toast.couldntUpdateRestore"), "error");
     refreshMessages({ background: true });
   }
 }
@@ -1742,7 +1768,7 @@ export function addToAiChat(m) {
   }
   app.aiAssistantSeed = null;   // we're adding directly; don't double-seed on mount
   app.aiAssistantOpen = true;
-  notify(`Added to AI chat: ${item.subject}`);
+  notify(t("toast.addedToAiChat", { subject: item.subject }));
 }
 
 // --- Adaptive Ollama: warm the model into VRAM while the app is focused, unload
@@ -1790,7 +1816,7 @@ export function saveCurrentSearch(name) {
   if (!query || !name) return;
   const id = (crypto.randomUUID && crypto.randomUUID()) || `ss${Date.now()}`;
   saveSettings({ savedSearches: [...app.settings.savedSearches, { id, name, query }] });
-  notify(`Saved search “${name}”`);
+  notify(t("toast.savedSearch", { name }));
 }
 
 export function removeSavedSearch(id) {
@@ -1908,7 +1934,7 @@ export function startEvents() {
       // `new` only when a preview exists, so we never fire an empty popup.
       const n = ev.payload?.notify ?? (ev.payload?.preview ? ev.payload?.new : 0);
       if (n > 0) {
-        notify(`${n} new message(s)`);
+        notify(t("toast.newMailN", { n }));
         desktopNotify(ev.payload.preview, n);
       }
     } else if (ev.event === "sync:error") {
@@ -1918,17 +1944,17 @@ export function startEvents() {
       app.queueFailed = ev.payload?.failed ?? 0;
     } else if (ev.event === "presence:back") {
       // Returned to the desk - "until I'm back" mail was resurfaced server-side.
-      if (ev.payload?.count) notify(`Welcome back - ${ev.payload.count} message(s) resurfaced`);
+      if (ev.payload?.count) notify(t("toast.welcomeBack", { n: ev.payload.count }));
       refreshMessages({ background: true });
     } else if (ev.event === "mail:opened") {
       // A read-receipt tracking pixel fired - someone opened your message.
       const subj = ev.payload?.subject ? `“${ev.payload.subject}”` : "your message";
-      notify(`📬 ${ev.payload?.recipient || "Someone"} opened ${subj}`);
+      notify(t("toast.readReceipt", { who: ev.payload?.recipient || t("toast.someone"), subject: subj }));
     } else if (ev.event === "inbox:digest") {
       // Scheduled morning briefing arrived - cache it and nudge the user.
       app.aiDigest = ev.payload?.digest || "";
       const first = (app.aiDigest.split("\n").find((l) => l.trim()) || "Your morning briefing is ready");
-      notify("☀️ Morning briefing ready - open the inbox assistant");
+      notify(t("toast.briefingReady"));
       sendNative("RaplMail - morning briefing", first.slice(0, 180));
     }
   }, onReconnect);

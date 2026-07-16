@@ -350,7 +350,10 @@ const _PLAIN_BG = /^(?:#fff(?:fff)?|#ffffffff|white|transparent|none|inherit|ini
  * typed reply does not. We use this to decide whether dark-mode adaptation is
  * safe - we only re-theme PLAIN mail and never touch a sender's own design.
  */
-function emailHasOwnTheme(html) {
+/** Is the app currently on a dark theme? (Drives the reader's styling cycle.) */
+export function themeIsDarkNow() { return isDarkColor(currentBg()); }
+
+export function emailHasOwnTheme(html) {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
     for (const el of doc.querySelectorAll("[bgcolor],[background],[style]")) {
@@ -399,9 +402,11 @@ function darkenPlainBody(html, lightText) {
  * styled mail is left exactly as the sender designed it on a white reading pane,
  * so its colors are never mangled. No whole-document inversion.
  */
-export function emailDoc(bodyHtml, { raw = false } = {}) {
+export function emailDoc(bodyHtml, { raw = false, forceDark = false } = {}) {
   // raw = per-message "show original" toggle: exact sender design, white pane.
-  // Otherwise the email appearance mode decides:
+  // forceDark = per-message override: recolor THIS mail dark even when the
+  // adaptive mode would leave it on white (branded mail). Otherwise the email
+  // appearance mode decides:
   //   "original" - as the sender designed it (white pane)
   //   "adaptive" - dark pane for plain mail, leave branded mail on white (default)
   //   "dark"     - force a dark pane for ALL mail (no white, ever)
@@ -410,7 +415,7 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   if (!mode) mode = s.alwaysOriginalHtml ? "original" : (s.emailAdaptColors === false ? "original" : "adaptive");
   if (raw) mode = "original";
   const themeIsDark = isDarkColor(currentBg());
-  const force = mode === "dark" && themeIsDark;                       // recolor everything
+  const force = (mode === "dark" || (forceDark && !raw)) && themeIsDark;  // recolor everything
   const dark = force || (mode === "adaptive" && themeIsDark && !emailHasOwnTheme(bodyHtml));
   const original = mode === "original";
   // Opt-in: let the user's custom CSS also style email bodies (default off - emails untouched).

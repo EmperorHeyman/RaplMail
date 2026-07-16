@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment, subscriptions } from "../api.js";
   import { icons } from "../icons.js";
-  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
+  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink, emailHasOwnTheme, themeIsDarkNow } from "../email.js";
   import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
   import { fade } from "svelte/transition";
@@ -155,11 +155,14 @@
     aiDraft = null;
   }
 
-  let showOriginal = $state(false); // view the email with its own original styling
+  // Per-message styling override: "auto" follows the appearance setting;
+  // "dark" force-recolors THIS mail dark (works on branded mail the adaptive
+  // mode leaves white); "original" shows the sender's exact design.
+  let emailView = $state("auto");
   let showAllTo = $state(false);    // expand a long recipient list
   let showQuoted = $state(false);   // reveal collapsed quoted reply history
   let secOpen = $state(null);       // which security pill is expanded (key) - one at a time
-  $effect(() => { void app.selectedMessageId; showOriginal = false; showAllTo = false; showQuoted = false; secOpen = null; frameH = 360; ctxMenu = null; });
+  $effect(() => { void app.selectedMessageId; emailView = "auto"; showAllTo = false; showQuoted = false; secOpen = null; frameH = 360; ctxMenu = null; });
 
   // Trust / auth / encryption status as COMPACT PILLS instead of stacked
   // full-width bars - an S/MIME-signed + authenticated mail used to eat 2-3
@@ -240,7 +243,7 @@
   });
 
   const srcdoc = $derived(
-    detail ? emailDoc(bodyHtml, { raw: showOriginal }) : ""
+    detail ? emailDoc(bodyHtml, { raw: emailView === "original", forceDark: emailView === "dark" }) : ""
   );
 
   // Links inside the sandboxed email iframe don't navigate on their own in the
@@ -313,6 +316,24 @@
     app.settings.emailTheme ||
     (app.settings.alwaysOriginalHtml ? "original" : (app.settings.emailAdaptColors === false ? "original" : "adaptive"))
   );
+  // What the iframe ACTUALLY shows right now - the button label must be honest:
+  // adaptive mode leaves branded mail on white, so such a mail reads "original",
+  // not "adapted to theme" (that mismatch made the toggle look broken).
+  const shownEmailView = $derived.by(() => {
+    if (emailView === "original") return "original";
+    if (emailView === "dark") return "dark";
+    if (emailMode === "original" || !themeIsDarkNow()) return "original";
+    if (emailMode === "dark") return "dark";
+    return detail && emailHasOwnTheme(bodyHtml) ? "original" : "adapted";
+  });
+  // Cycle: auto → the useful override(s) → back. On a dark theme the extra stop
+  // is the per-message force-dark; on a light theme there is nothing to force.
+  function nextEmailView(v) {
+    if (!themeIsDarkNow()) return v === "auto" ? "original" : "auto";
+    if (v === "auto") return shownEmailView === "dark" ? "original" : "dark";
+    if (v === "dark") return "original";
+    return "auto";
+  }
   // Reply/Forward/Done bar position: top (in the header) or bottom (sticky footer).
   const actionsBottom = $derived(app.settings.readerActionsPos === "bottom");
 
@@ -887,9 +908,9 @@
             ••• {showQuoted ? t("reader.hideEarlier") : t("reader.showEarlier")}
           </button>
         {/if}
-        <button class="vtoggle" class:on={showOriginal} title={t("reader.stylingToggleTitle")}
-          onclick={() => (showOriginal = !showOriginal)}>
-          {@html icons.palette} {showOriginal ? t("reader.originalStyling") : (emailMode === "original" ? t("reader.originalStyling") : emailMode === "dark" ? t("reader.dark") : t("reader.adaptedToTheme"))}
+        <button class="vtoggle" class:on={emailView !== "auto"} title={t("reader.stylingToggleTitle")}
+          onclick={() => (emailView = nextEmailView(emailView))}>
+          {@html icons.palette} {t("reader.view." + shownEmailView)}
         </button>
       </div>
     {/if}

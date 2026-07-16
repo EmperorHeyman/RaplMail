@@ -51,6 +51,11 @@
 html, body, #app {
   height: 100%;
   margin: 0;
+  /* App shell, not a web page: no rubber-band overscroll bounce and no
+     two-finger horizontal history-swipe navigation (WebKit honors
+     overscroll-behavior for both). Inner panes keep their own scrolling. */
+  overscroll-behavior: none;
+  overflow: hidden;
 }
 
 body {
@@ -218,17 +223,45 @@ input[type="checkbox"]:focus, input[type="radio"]:focus { border: none; box-shad
    readability. Every color derives from the theme tokens via color-mix, so
    any theme preset keeps working. */
 html.glass body { background: transparent; }
+/* Panes: the sidebar is the clearest glass; content panes get progressively
+   more substance for readability. */
 html.glass .sidebar {
-  background: color-mix(in srgb, var(--surface) 26%, transparent);
-  border-right-color: color-mix(in srgb, var(--border) 45%, transparent);
+  background: color-mix(in srgb, var(--surface) 16%, transparent);
+  border-right-color: color-mix(in srgb, var(--border) 40%, transparent);
 }
-html.glass .list { background: color-mix(in srgb, var(--bg) 46%, transparent); }
-html.glass .reader, html.glass .thread { background: color-mix(in srgb, var(--bg) 58%, transparent); }
-/* Sticky list headers can't stay opaque over a translucent pane - give them
-   the pane's material plus real backdrop blur (WKWebView composites this
+html.glass .list { background: color-mix(in srgb, var(--bg) 34%, transparent); }
+html.glass .reader, html.glass .thread { background: color-mix(in srgb, var(--bg) 44%, transparent); }
+/* Toolbars and sticky headers float as glass over the scrolling content -
+   translucent pane material + real backdrop blur (WKWebView composites this
    natively; the WebView2 perf caveat that bans it on Windows doesn't apply). */
-html.glass .list .datesep, html.glass .list .sechead {
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  -webkit-backdrop-filter: blur(16px) saturate(1.35);
-  backdrop-filter: blur(16px) saturate(1.35);
+html.glass .list > header,
+html.glass .list .datesep, html.glass .list .sechead,
+html.glass .actions.bottom {
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
+}
+html.glass .list > header { border-bottom-color: color-mix(in srgb, var(--border) 45%, transparent); }
+/* Cards (reader header, message body frame, settings cards) read as raised
+   glass panels: translucent surface, soft blur, a specular top edge, and a
+   deeper drop shadow than the flat theme uses. */
+html.glass .reader header, html.glass .body-card, html.glass .card {
+  background: color-mix(in srgb, var(--surface) 52%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+/* Buttons and chips pick up the same material so the chrome reads as one
+   system instead of opaque boxes floating on glass. */
+html.glass .actions .btn, html.glass .vtoggle, html.glass .markread,
+html.glass .cat, html.glass .ai-chip {
+  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
+  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+html.glass .bulkbar {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
+  backdrop-filter: blur(20px) saturate(1.4);
 }

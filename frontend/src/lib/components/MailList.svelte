@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, noteOpened, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -757,7 +757,7 @@
         ? message.thread_id : null;
     app.selectedMessageId = message.id;
     markSticky(message.category);   // keep this mail's group pinned so it doesn't drop mid-click
-    if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
+    noteOpened(message);   // marks read now or when you move on, per readMarkMode
     refocusList();
   }
 

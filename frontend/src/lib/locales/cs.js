@@ -37,6 +37,17 @@ const base = {
 
   // Průvodce prvním spuštěním.
   "onboarding.stepOf": "Krok {n} z {total}",
+  "onboarding.tagline": "E-mail bezpečně u vás",
+  "onboarding.navWelcome": "Vítejte",
+  "onboarding.navLanguage": "Jazyk",
+  "onboarding.navHighlights": "Funkce",
+  "onboarding.navTheme": "Vzhled",
+  "onboarding.navOptions": "Předvolby",
+  "onboarding.navSettings": "Prozkoumat",
+  "onboarding.navDone": "Dokončení",
+  "onboarding.pillarLocal": "Soukromí, běží u vás v PC",
+  "onboarding.pillarFast": "Rychlá práce a lokální AI",
+  "onboarding.pillarKeys": "Ovládání klávesnicí",
   "onboarding.welcomeTitle": "Vítejte v RaplMailu",
   "onboarding.welcomeBody": "Rychlý e-mailový klient, který běží přímo u vás v počítači. Pojďme ho nastavit - zabere to jen pár vteřin.",
   "onboarding.languageTitle": "Vyberte si jazyk",
@@ -136,9 +147,11 @@ const base = {
   "rules.action.mute_notifications": "Ztlumit oznámení",
   "rules.action.webhook": "Odeslat na webhook",
   "rules.action.run_script": "Spustit lokální skript",
+  "rules.action.save_attachments": "Uložit přílohy do složky",
   "rules.categoryHint": "např. newsletters, social, updates, promotions",
   "rules.webhookHint": "https://… URL webhooku (POST)",
   "rules.scriptHint": "příkaz ke spuštění, např. python handler.py",
+  "rules.saveDirHint": "lokální složka, např. C:\\Posta\\Faktury",
   "rules.muteFromSender": "Ztlumit oznámení od odesílatele",
 
   // Běžná hlášení.

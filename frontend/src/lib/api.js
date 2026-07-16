@@ -371,6 +371,7 @@ export const messages = {
   setSeen: (id, value) => api.post(`/messages/${id}/seen`, { value }),
   snooze: (id, until, presence = false) => api.post(`/messages/${id}/snooze`, { until, presence }),
   bulk: (ids, action, until = null) => api.post("/messages/bulk", { ids, action, until }),
+  restore: (ids) => api.post("/messages/restore", { ids }),   // undo a queued archive/delete/move
   move: (ids, folderId) => api.post("/messages/move", { ids, folder_id: folderId }),   // drag → folder
   mute: (id) => api.post(`/messages/${id}/mute`),
   muteThread: (id) => api.post(`/messages/${id}/mute-thread`),

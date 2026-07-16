@@ -78,6 +78,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "suspicious": "ALTER TABLE message ADD COLUMN suspicious BOOLEAN DEFAULT 0",
         "ai_verdict": "ALTER TABLE message ADD COLUMN ai_verdict TEXT DEFAULT ''",
         "ai_reason": "ALTER TABLE message ADD COLUMN ai_reason TEXT DEFAULT ''",
+        "in_reply_to": "ALTER TABLE message ADD COLUMN in_reply_to TEXT DEFAULT ''",
     },
     "messagestate": {
         "snooze_presence": "ALTER TABLE messagestate ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",

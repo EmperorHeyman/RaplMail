@@ -426,6 +426,13 @@
           LAN</b>, start the backend with <code>RAPLMAIL_HOST=0.0.0.0</code> and use this machine's LAN IP in place of the host.</p>
       </div>
     {/if}
+    <div class="hookrow">
+      <div class="lblcol"><b>New-mail webhook</b>
+        <span class="hint" style="margin:2px 0 0">POST a JSON payload (sender, subject, snippet, account) to this URL for
+          every new inbox message - for n8n, Node-RED or Home Assistant flows. Leave empty to turn it off.</span></div>
+      <input type="url" placeholder="http://127.0.0.1:5678/webhook/raplmail" value={app.settings.newMailWebhook || ""}
+        onchange={(e) => saveSettings({ newMailWebhook: e.currentTarget.value.trim() })} />
+    </div>
   </section>
 
   <section class="card">
@@ -606,6 +613,12 @@
   .confirm input { flex: 1; }
   .tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; background: var(--surface-3); color: var(--accent); vertical-align: middle; margin-left: 6px; }
   .apibox { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .hookrow { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+    display: flex; flex-direction: column; gap: 8px; }
+  .hookrow .lblcol { display: flex; flex-direction: column; }
+  .hookrow .lblcol b { font-size: 13.5px; }
+  .hookrow input { background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; max-width: 420px; }
   .kv { display: flex; align-items: center; gap: 10px; }
   .kv > span:first-child { width: 64px; flex: none; color: var(--muted); font-size: 12px; }
   .kv code { flex: 1; min-width: 0; background: var(--surface-2); border: 1px solid var(--border); padding: 5px 9px; border-radius: var(--radius-sm); font-size: 12px; overflow-x: auto; white-space: nowrap; }

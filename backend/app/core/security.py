@@ -26,6 +26,59 @@ _PARALLELISM = 4
 _KEY_LEN = 32
 _SALT_LEN = 16
 
+# OS credential store (Windows Credential Manager via `keyring`) used as the
+# preferred backing for the auto-unlock secret. When available, the marker
+# below is written to the auto-unlock file instead of the password itself and
+# the real secret lives in the OS store.
+_KEYRING_SERVICE = "RaplMail"
+_KEYRING_USERNAME = "vault-auto-unlock"
+_KEYRING_MARKER = "keyring:v1"
+
+
+def keyring_available() -> bool:
+    """True if an OS-native credential store backend is usable.
+
+    Never raises - locked-down machines (no usable backend, group policy,
+    broken installs) simply report False and we fall back to the file path.
+    """
+    try:
+        import keyring
+        from keyring.backends.fail import Keyring as FailKeyring
+
+        return not isinstance(keyring.get_keyring(), FailKeyring)
+    except Exception:
+        return False
+
+
+def _keyring_set(secret: str) -> bool:
+    try:
+        import keyring
+
+        keyring.set_password(_KEYRING_SERVICE, _KEYRING_USERNAME, secret)
+        # Read-back guards against backends that accept writes but can't
+        # return them (would silently break the next startup unlock).
+        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME) == secret
+    except Exception:
+        return False
+
+
+def _keyring_get() -> str | None:
+    try:
+        import keyring
+
+        return keyring.get_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+    except Exception:
+        return None
+
+
+def _keyring_delete() -> None:
+    try:
+        import keyring
+
+        keyring.delete_password(_KEYRING_SERVICE, _KEYRING_USERNAME)
+    except Exception:
+        pass
+
 
 class SecretStoreError(Exception):
     pass
@@ -142,31 +195,52 @@ class SecretStore:
     def enable_auto_unlock(self, password: str) -> None:
         """Persist the master password locally so the vault unlocks on startup.
 
-        SECURITY: this stores the password reversibly on disk; anyone with file
-        access can then decrypt the vault. Convenience-vs-security tradeoff.
+        Preferred backing is the OS credential store (Windows Credential
+        Manager via `keyring`): the file then only holds a marker and the
+        secret is guarded by the user's OS login. If no usable keyring backend
+        exists, falls back to the legacy reversible file.
+
+        SECURITY (file fallback): anyone with file access can then decrypt the
+        vault. Convenience-vs-security tradeoff.
         """
         if not self.verify_password(password):
             raise BadPasswordError("invalid master password")
         if self._autounlock_path is None:
             raise SecretStoreError("auto-unlock path not configured")
         self._autounlock_path.parent.mkdir(parents=True, exist_ok=True)
-        self._autounlock_path.write_text(
-            base64.b64encode(password.encode("utf-8")).decode("ascii"), "utf-8"
-        )
+        if _keyring_set(password):
+            self._autounlock_path.write_text(_KEYRING_MARKER, "utf-8")
+        else:
+            self._autounlock_path.write_text(
+                base64.b64encode(password.encode("utf-8")).decode("ascii"), "utf-8"
+            )
 
     def disable_auto_unlock(self) -> None:
+        # Remove both backings so no copy of the secret is left behind.
+        _keyring_delete()
         if self._autounlock_path and self._autounlock_path.exists():
             self._autounlock_path.unlink()
 
     def try_auto_unlock(self) -> bool:
         if not self.auto_unlock_enabled or self.is_unlocked or not self.exists:
             return False
+        # OS credential store first, then the legacy base64 file so installs
+        # that enabled auto-unlock before the keyring backing keep working.
+        password = _keyring_get()
+        if password is not None:
+            try:
+                self.unlock(password)
+                return True
+            except Exception:
+                pass
         try:
-            password = base64.b64decode(self._autounlock_path.read_text("utf-8")).decode("utf-8")
-            self.unlock(password)
-            return True
+            raw = self._autounlock_path.read_text("utf-8")
+            if raw != _KEYRING_MARKER:
+                self.unlock(base64.b64decode(raw).decode("utf-8"))
+                return True
         except Exception:
-            return False
+            pass
+        return False
 
     def get(self, key: str) -> str | None:
         with self._lock:

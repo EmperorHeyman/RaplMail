@@ -6,7 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
 from app.api.deps import verify_token
-from app.core.security import BadPasswordError, SecretStore, SecretStoreError, get_secret_store
+from app.core.security import (
+    BadPasswordError, SecretStore, SecretStoreError, get_secret_store, keyring_available,
+)
 
 router = APIRouter(prefix="/vault", tags=["vault"], dependencies=[Depends(verify_token)])
 
@@ -23,11 +25,13 @@ class VaultStatus(BaseModel):
     exists: bool
     unlocked: bool
     auto_unlock: bool = False
+    keyring: bool = False  # OS credential store (Windows Credential Manager) usable
 
 
 def _status(store: SecretStore) -> VaultStatus:
     return VaultStatus(exists=store.exists, unlocked=store.is_unlocked,
-                       auto_unlock=store.auto_unlock_enabled)
+                       auto_unlock=store.auto_unlock_enabled,
+                       keyring=keyring_available())
 
 
 @router.get("/status", response_model=VaultStatus)

@@ -90,6 +90,7 @@
       <button class="btn ghost" onclick={copyDiagnostics}>Copy diagnostics</button>
       <button class="btn ghost" onclick={() => { syncAllAccounts(); notify("Sync triggered"); }}>Force sync all</button>
       <button class="btn ghost" onclick={() => { recategorizeOnce(true); notify("Recategorizing inbox…"); }}>Recategorize inbox</button>
+      <button class="btn ghost" onclick={() => { app.introTour = true; }}>Show intro screen</button>
       <button class="btn ghost danger" onclick={relock}>Hide developer mode</button>
     </div>
     <div class="kv"><span>Backend</span><code>{base}</code></div>

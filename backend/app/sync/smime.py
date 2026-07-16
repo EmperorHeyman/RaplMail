@@ -7,10 +7,12 @@ imported from a .p12/.pfx) and recipients' certificates are managed in
 Settings → Encryption.
 
 Note on verification: ``cryptography`` exposes decrypt but not a one-call PKCS#7
-signature verify, so ``analyze`` reports the *signer* (from the embedded cert)
-and whether that cert is currently within its validity window, rather than a full
-trust-chain check. Signed content is still surfaced; the badge is honest about
-what was checked.
+signature verify, so ``analyze`` reports the *signer* (from the embedded cert),
+whether that cert is within its validity window (``verified``), AND whether the
+signer chains to a trusted root in the system CA store (``chain_verified``, via
+``verify_chain`` walking issuer links with ``verify_directly_issued_by``). The
+cryptographic message-digest check over the signed bytes still isn't available
+one-call, so the badge is honest: identity + trust-chain, not payload integrity.
 """
 
 from __future__ import annotations
@@ -59,6 +61,69 @@ def _cert_valid_now(cert: x509.Certificate) -> bool:
         return cert.not_valid_before_utc <= now <= cert.not_valid_after_utc
     except Exception:
         return False
+
+
+_trust_roots: list[x509.Certificate] | None = None
+
+
+def _load_trust_roots() -> list[x509.Certificate]:
+    """The system trust store (certifi CA bundle), parsed + cached. Used to
+    anchor an S/MIME signer's chain to a trusted root."""
+    global _trust_roots
+    if _trust_roots is not None:
+        return _trust_roots
+    roots: list[x509.Certificate] = []
+    try:
+        import certifi
+        with open(certifi.where(), "rb") as fh:
+            data = fh.read()
+        # Split the PEM bundle and parse each cert; skip any that won't load.
+        marker = b"-----BEGIN CERTIFICATE-----"
+        chunks = data.split(marker)
+        for chunk in chunks[1:]:
+            try:
+                roots.append(x509.load_pem_x509_certificate(marker + chunk))
+            except Exception:
+                continue
+    except Exception:
+        roots = []
+    _trust_roots = roots
+    return roots
+
+
+def verify_chain(leaf: x509.Certificate, intermediates: list[x509.Certificate]) -> bool:
+    """Trust-chain verify: does `leaf` chain to a trusted root (certifi) through
+    the supplied intermediates? Walks issuer links with verify_directly_issued_by
+    (cryptography has no one-call PKCS#7 verify), checking each cert's validity
+    window. Best-effort: any error / no trust store returns False."""
+    roots = _load_trust_roots()
+    if not roots:
+        return False
+    by_subject: dict[bytes, list[x509.Certificate]] = {}
+    for c in [*intermediates, *roots]:
+        by_subject.setdefault(c.subject.public_bytes(), []).append(c)
+    cur = leaf
+    for _depth in range(10):   # cap the walk so a cyclic/self-referential set can't loop
+        if not _cert_valid_now(cur):
+            return False
+        # Reached a trusted root: self-issued and present in the trust store.
+        if cur.subject == cur.issuer:
+            return any(cur == r for r in roots)
+        issuers = by_subject.get(cur.issuer.public_bytes(), [])
+        parent = None
+        for cand in issuers:
+            try:
+                cur.verify_directly_issued_by(cand)
+                parent = cand
+                break
+            except Exception:
+                continue
+        if parent is None:
+            return False
+        if parent in roots and _cert_valid_now(parent):
+            return True   # anchored to a trusted root
+        cur = parent
+    return False
 
 
 def load_pkcs12(data: bytes, password: str = "") -> dict:
@@ -172,6 +237,7 @@ def analyze(raw_mime: bytes, identity: dict | None = None) -> dict | None:
             certs = _certs_from_pkcs7(payload)
             if certs:
                 return {"type": "signed", "verified": _cert_valid_now(certs[0]),
+                        "chain_verified": verify_chain(certs[0], certs[1:]),
                         "signer": _signer_line(certs), "decrypted": None}
         # enveloped-data (or anything else pkcs7-mime) → try to decrypt
         result = {"type": "encrypted", "verified": False, "signer": "", "decrypted": None}
@@ -188,5 +254,6 @@ def analyze(raw_mime: bytes, identity: dict | None = None) -> dict | None:
             if part.get_content_type().lower() in _PKCS7_SIG:
                 certs = _certs_from_pkcs7(part.get_payload(decode=True) or b"")
                 return {"type": "signed", "verified": _cert_valid_now(certs[0]) if certs else False,
+                        "chain_verified": verify_chain(certs[0], certs[1:]) if certs else False,
                         "signer": _signer_line(certs), "decrypted": None}
     return None

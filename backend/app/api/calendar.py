@@ -494,8 +494,9 @@ def google_calendar_disconnect(session: Session = Depends(get_session)) -> dict:
 async def create_event(body: CreateEventIn, request: Request,
                        session: Session = Depends(get_session)) -> dict:
     """Create an event. If Google Calendar is connected (OAuth), write it there
-    via the API (reliable). Otherwise fall back to the iMIP email trick. Always
-    stored locally so it shows in RaplMail immediately."""
+    via the API (reliable). Otherwise, if a CalDAV collection is configured,
+    PUT it there. Otherwise fall back to the iMIP email trick. Always stored
+    locally so it shows in RaplMail immediately."""
     acct = session.get(Account, body.account_id)
     if acct is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
@@ -546,6 +547,31 @@ async def create_event(body: CreateEventIn, request: Request,
         except Exception as exc:
             return {"uid": uid, "google": False, "sent": False,
                     "error": f"Google Calendar write failed: {exc}"}
+
+    # Next preference: PUT to the configured CalDAV collection (self-hosted
+    # servers). Skips the iMIP email entirely - the server IS the calendar.
+    from app.models import Setting
+    srow = session.get(Setting, 1)
+    cfg = dict(srow.data) if srow and srow.data else {}
+    cal_url = (cfg.get("caldavUrl") or "").strip()
+    if cal_url:
+        from app.sync import caldav as dav
+        # DAV object writes are plain calendar data, not scheduling messages -
+        # some servers reject an iTIP METHOD line - so strip it from the ICS.
+        ics = _build_event_ics(uid, body.summary, body.start, body.end, body.all_day,
+                               body.location, body.description, acct.email, acct.email)
+        ics = "\r\n".join(ln for ln in ics.split("\r\n") if not ln.startswith("METHOD:"))
+        try:
+            await run_in_threadpool(dav.put_event, cal_url, cfg.get("caldavUser") or "",
+                                    cfg.get("caldavPassword") or "", uid, ics)
+            if row:
+                row.source = "caldav"
+                session.add(row)
+                session.commit()
+            return {"uid": uid, "caldav": True, "sent": True, "google": False}
+        except Exception as exc:
+            return {"uid": uid, "caldav": False, "sent": False, "google": False,
+                    "error": f"CalDAV write failed: {exc}"}
 
     # Fallback: iMIP email trick (best-effort; unreliable for self-events).
     ics = _build_event_ics(uid, body.summary, body.start, body.end, body.all_day,
@@ -598,11 +624,27 @@ def clear_cancelled(session: Session = Depends(get_session)) -> ClearCancelledRe
 @router.delete("/{event_id}")
 async def delete_event(event_id: int, session: Session = Depends(get_session)) -> dict:
     """Delete an event. If it lives on a connected Google Calendar (created here
-    or synced from the feed), delete it there too; always remove the local row.
-    The uid is tombstoned so a rescan of the invite mail can't re-add it."""
+    or synced from the feed) or was written to a CalDAV collection, delete it
+    there too; always remove the local row. The uid is tombstoned so a rescan
+    of the invite mail can't re-add it."""
     ev = session.get(CalendarEvent, event_id)
     if ev is None:
         return {"deleted": False}
+    # Best-effort mirror delete for events we wrote to a CalDAV collection
+    # (created as <collection>/<uid>.ics, so the object URL is deterministic).
+    if ev.source == "caldav":
+        from app.models import Setting
+        srow = session.get(Setting, 1)
+        cfg = dict(srow.data) if srow and srow.data else {}
+        cal_url = (cfg.get("caldavUrl") or "").strip()
+        if cal_url:
+            from app.sync import caldav as dav
+            try:
+                await run_in_threadpool(dav.delete_event, cal_url,
+                                        cfg.get("caldavUser") or "",
+                                        cfg.get("caldavPassword") or "", ev.uid)
+            except Exception:
+                pass   # local delete still proceeds
     gid = _google_event_id(ev)
     if gid:
         from app.core.security import get_secret_store

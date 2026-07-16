@@ -2,22 +2,30 @@
 # Build:  pyinstaller raplmail-backend.spec --noconfirm
 # Output: dist/raplmail-backend.exe  (onefile)
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files, copy_metadata
 
 hiddenimports = []
 for pkg in ("uvicorn", "anyio", "app", "email", "encodings", "pgpy",
             # oletools/olevba (deep macro analysis) + its runtime deps. These pull
             # in submodules PyInstaller won't discover on its own.
-            "oletools", "olefile", "pcodedmp", "msoffcrypto"):
+            "oletools", "olefile", "pcodedmp", "msoffcrypto",
+            # keyring (Credential-Manager-backed auto-unlock) resolves its
+            # backends via entry points at runtime, and win32ctypes picks its
+            # cffi/ctypes core lazily - neither survives static analysis.
+            "keyring", "win32ctypes"):
     try:
         hiddenimports += collect_submodules(pkg)
     except Exception:
         pass
 hiddenimports += [
+    "keyring.backends.Windows",
     "websockets", "websockets.legacy", "h11",
     "mailparser", "msal", "google.auth", "google.auth.transport.requests",
     "google_auth_oauthlib", "google_auth_oauthlib.flow", "requests_oauthlib",
     "imapclient", "argon2", "cryptography", "orjson",
+    # pypdf (attachment FTS text extraction) is imported lazily inside a
+    # function; list it explicitly so a missed static scan can't drop it.
+    "pypdf",
     # OpenPGP (pgpy) - needs the stdlib `imghdr` module that was removed in
     # Python 3.13 and restored by the `standard-imghdr` backport.
     "pgpy", "imghdr",
@@ -29,6 +37,13 @@ hiddenimports += [
 import os
 
 datas = collect_data_files("certifi")
+# keyring's get_keyring() enumerates backends through the "keyring.backends"
+# entry-point group in its own dist metadata - without it the frozen exe only
+# sees the fail backend and auto-unlock silently degrades to the legacy file.
+try:
+    datas += copy_metadata("keyring")
+except Exception:
+    pass
 # Also drop cacert.pem at the bundle root as a stable fallback: newer certifi
 # resolves its bundle via importlib.resources, which doesn't reliably land in the
 # onefile _MEI dir, so app/core/certs.py looks here too (fixes the frozen M365

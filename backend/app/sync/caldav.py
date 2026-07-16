@@ -1,9 +1,10 @@
 """Minimal CalDAV / CardDAV client (stdlib only).
 
 Pulls VEVENTs and vCards from a CalDAV/CardDAV collection via a REPORT query and
-parses them into the same dicts the rest of the app uses. Read-only sync (server
--> local) for now. No third-party deps: urllib for HTTP, xml.etree for the
-multistatus response, and the existing iCal parser for events.
+parses them into the same dicts the rest of the app uses. Events can also be
+written back (PUT/DELETE of individual .ics objects - see put_event/delete_event);
+contacts remain read-only. No third-party deps: urllib for HTTP, xml.etree for
+the multistatus response, and the existing iCal parser for events.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from __future__ import annotations
 import base64
 import os
 import ssl
+import urllib.error
+import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
@@ -55,6 +58,43 @@ def _report(url: str, user: str, password: str, body: str) -> str:
     ctx = _ssl_context()
     with urllib.request.urlopen(req, timeout=30, context=ctx) as resp:
         return resp.read().decode("utf-8", "ignore")
+
+
+def _object_request(base_url: str, user: str, password: str, uid: str,
+                    method: str, data: bytes | None = None,
+                    content_type: str = "") -> None:
+    """Issue a PUT/DELETE against the <collection>/<uid>.ics object URL."""
+    url = base_url.rstrip("/") + "/" + urllib.parse.quote(uid, safe="") + ".ics"
+    headers: dict[str, str] = {}
+    if content_type:
+        headers["Content-Type"] = content_type
+    if user:
+        token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+        headers["Authorization"] = f"Basic {token}"
+    req = urllib.request.Request(url, data=data, method=method, headers=headers)
+    ctx = _ssl_context()
+    with urllib.request.urlopen(req, timeout=30, context=ctx):
+        pass  # urlopen raises HTTPError on any non-2xx status
+
+
+def put_event(base_url: str, user: str, password: str, uid: str, ics_text: str) -> str:
+    """PUT a full VCALENDAR to <collection>/<uid>.ics. Returns the object URL;
+    raises on any non-2xx response."""
+    _object_request(base_url, user, password, uid, "PUT",
+                    data=ics_text.encode("utf-8"),
+                    content_type="text/calendar; charset=utf-8")
+    return base_url.rstrip("/") + "/" + urllib.parse.quote(uid, safe="") + ".ics"
+
+
+def delete_event(base_url: str, user: str, password: str, uid: str) -> bool:
+    """DELETE <collection>/<uid>.ics. A 404 counts as success (already gone)."""
+    try:
+        _object_request(base_url, user, password, uid, "DELETE")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return True
+        raise
+    return True
 
 
 def _localname(tag: str) -> str:

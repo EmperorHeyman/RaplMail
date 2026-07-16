@@ -150,6 +150,50 @@ function renderDiff(text) {
   }).join("\n");
 }
 
+// Stricter variant for BARE message text (no <pre> wrapper): a plain-text patch
+// mail rendered as HTML lines. Requires a real hunk header AND file headers
+// ("diff --git" or "---"/"+++") plus actual +/- lines, so ordinary mail that
+// merely contains "---" or bullet lines can never false-positive.
+function looksLikeInlineDiff(text) {
+  if (!/^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@/m.test(text)) return false;
+  const hasGit = /^diff --git /m.test(text);
+  const hasFileHeaders = /^--- /m.test(text) && /^\+\+\+ /m.test(text);
+  if (!hasGit && !hasFileHeaders) return false;
+  return /^\+(?!\+\+ )/m.test(text) && /^-(?!-- )/m.test(text);
+}
+
+// Flatten an HTML fragment to plain text, keeping line structure (<br> and
+// block-element boundaries become newlines) so diff line prefixes survive.
+function htmlToLines(html) {
+  return decodeEntities(
+    (html || "")
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(?:p|div|li|tr|h[1-6]|blockquote|table)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+  ).replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/** Patch-mail rendering for the VISIBLE (non-quoted) body: when the message text
+ *  itself is a unified diff but is NOT wrapped in a <pre> block (plain-text patch
+ *  mail delivered as HTML lines), re-render it through the same color-coded diff
+ *  renderer used for <pre> blocks. Quoted history below the reply marker is left
+ *  untouched; anything with an existing <pre> is handled by highlightCodeBlocks. */
+export function renderInlineDiff(html) {
+  if (!html || /<pre[\s>]/i.test(html)) return html;
+  try {
+    // Only consider the content ABOVE the quoted-history boundary.
+    let idx = html.length;
+    for (const re of _QUOTE_MARKERS) {
+      const m = re.exec(html);
+      if (m && m.index < idx) idx = m.index;
+    }
+    const head = html.slice(0, idx);
+    const text = htmlToLines(head);
+    if (!looksLikeInlineDiff(text)) return html;
+    return `<pre class="rapl-code rapl-diff">${renderDiff(text)}</pre>` + html.slice(idx);
+  } catch { return html; }
+}
+
 /** Re-render every <pre> code block in an email with syntax highlighting, or as
  *  a color-coded diff when the block is a git patch / unified diff. */
 export function highlightCodeBlocks(html) {
@@ -418,6 +462,9 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   // Syntax-highlight code blocks (default ON) - developer-friendly reading of pasted code.
   const highlight = !original && app?.settings?.highlightCode !== false;
   let body = highlight ? highlightCodeBlocks(bodyHtml) : bodyHtml;
+  // Patch mail without a <pre> wrapper: if the visible (non-quoted) body text is
+  // itself a unified diff, render it with the same colored diff treatment.
+  if (highlight) body = renderInlineDiff(body);
   // Link hygiene (privacy, default on): strip utm_/fbclid/gclid & unwrap redirect
   // wrappers so a click can't leak tracking params. "Show original" keeps links.
   if (!original && s.stripTrackingParams !== false) body = cleanLinks(body);

@@ -65,6 +65,13 @@ class OutgoingMessage:
     smime_cert: str = ""            # your S/MIME certificate PEM (for signing)
     smime_key: str = ""             # your S/MIME private key PEM
     smime_recip_certs: list[str] = field(default_factory=list)  # recipient cert PEMs
+    # PGP/MIME (RFC 3156): sign / encrypt the fully-assembled MIME as
+    # multipart/signed or multipart/encrypted (applied in build_mime). Used when
+    # the message has HTML/attachments that inline ASCII-armor can't carry.
+    pgp_sign: bool = False
+    pgp_encrypt: bool = False
+    pgp_settings: dict = field(default_factory=dict)   # keystore source (private key + passphrase)
+    pgp_recipients: list[str] = field(default_factory=list)  # recipient armored public keys
     # iMIP: an iCalendar payload sent as a text/calendar part with this METHOD,
     # so Gmail/Outlook show an interactive RSVP and add it to the calendar.
     calendar_ics: str = ""

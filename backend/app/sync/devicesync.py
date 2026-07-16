@@ -363,17 +363,19 @@ def _apply_config_bundle(session: Session, cfg: dict) -> None:
 
 # --- publish / scan -----------------------------------------------------------
 
-def publish(session: Session, account: Account, provider) -> None:
+def publish(session: Session, account: Account, provider, force_full: bool = False) -> None:
     """Automatic publish: encrypt and append changed triage state, plus the rule
     set when it changed locally (LWW by syncRulesTs). Settings/signatures are
-    never published automatically - use push_config for that."""
+    never published automatically - use push_config for that. force_full appends
+    a complete baseline (all local state) - used by compaction so the folder
+    always holds a snapshot any peer can rebuild from."""
     passphrase = get_passphrase()
     if not passphrase:
         return
     blob = _blob(session)
     folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
     since = _parse_iso(blob.get("syncLastPushTs"))
-    full = since is None   # first publish → all local state so a new peer catches up
+    full = force_full or since is None   # first publish → all local state so a new peer catches up
     payload = _build_state_payload(session, device_id(session), since, full)
     # Rules ride along whenever they changed since the last publish. A device
     # whose rules were never touched (no syncRulesTs) publishes none - so a
@@ -575,14 +577,66 @@ def pull_config(session: Session, provider, uid: int) -> dict:
             "label": payload.get("device_label") or payload.get("device", "")[:8]}
 
 
+# --- op-log compaction ----------------------------------------------------
+# The sync folder grows one message per publish, forever. Past this size, old
+# increments are deleted - AFTER appending one full state baseline, so any peer
+# (even one offline for months) can still rebuild from the newest snapshot.
+_COMPACT_THRESHOLD = 400      # start compacting past this many messages
+_COMPACT_KEEP_NEWEST = 150    # recent increments always kept (any kind)
+_COMPACT_KEEP_CONFIG = 20     # settings snapshots kept for the pull picker
+_COMPACT_MAX_DELETE = 150     # per tick, so one compaction can't stall a sync
+
+
+def compact(session: Session, account: Account, provider) -> int:
+    """Compact the sync folder once it outgrows _COMPACT_THRESHOLD. Publishes a
+    full baseline first, then deletes old messages - keeping the newest
+    _COMPACT_KEEP_NEWEST of any kind plus the newest _COMPACT_KEEP_CONFIG
+    settings snapshots (identified by their subject, which we wrote ourselves;
+    no decryption needed). Returns the number of deleted messages."""
+    if not get_passphrase():
+        return 0
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    try:
+        uids = sorted(provider.list_uids(folder))
+    except Exception:
+        return 0
+    if len(uids) <= _COMPACT_THRESHOLD:
+        return 0
+    publish(session, account, provider, force_full=True)   # baseline before any delete
+    candidates = uids[:-_COMPACT_KEEP_NEWEST]
+    deleted = kept_config = 0
+    from email import message_from_bytes
+    for uid in reversed(candidates):   # newest-first so the newest old configs survive
+        if deleted >= _COMPACT_MAX_DELETE:
+            break
+        try:
+            raw = provider.fetch_raw(folder, uid)
+            subject = str(message_from_bytes(raw).get("Subject") or "")
+        except Exception:
+            continue
+        if "settings snapshot" in subject.lower() and kept_config < _COMPACT_KEEP_CONFIG:
+            kept_config += 1
+            continue
+        try:
+            provider.delete(folder, uid)
+            deleted += 1
+        except Exception:
+            continue
+    if deleted:
+        log.info("device sync compacted %d old message(s) from %r", deleted, folder)
+    return deleted
+
+
 def tick(session: Session, account: Account, provider) -> None:
-    """One publish+scan cycle for the sync account. Best-effort - never let a
-    sync-channel hiccup break the normal mail sync."""
+    """One publish+scan+compact cycle for the sync account. Best-effort - never
+    let a sync-channel hiccup break the normal mail sync."""
     if not is_sync_account(session, account.id):
         return
     try:
         publish(session, account, provider)
         scan(session, provider)
+        compact(session, account, provider)
         _save(session, {"syncLastAt": _now_iso(), "syncLastError": ""})
     except Exception as exc:  # noqa: BLE001
         log.exception("device sync tick failed")

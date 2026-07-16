@@ -10,6 +10,7 @@
 export const SETTINGS_INDEX = [
   // ── General ────────────────────────────────────────────────────────────────
   { tab: "general", label: "Undo send delay", kw: "undo send cancel recall window seconds zpět odeslání" },
+  { tab: "general", label: "New-mail webhook", kw: "webhook automation n8n node-red home assistant post url outbound" },
   { tab: "general", label: "Confirm before sending", kw: "confirm warning send potvrdit" },
   { tab: "general", label: "Smart Inbox", kw: "smart inbox group categories chytrá schránka" },
   { tab: "general", label: "Conversation threading", kw: "thread threading conversation group vlákna konverzace" },

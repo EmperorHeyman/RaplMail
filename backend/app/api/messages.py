@@ -1357,17 +1357,72 @@ async def bulk(body: BulkIn, request: Request, session: Session = Depends(get_se
 
     if a in ("archive", "delete"):
         # Queue it: hide the messages immediately, flush to IMAP in the background
-        # (offline-resilient - retried until the connection is back).
+        # (offline-resilient - retried until the connection is back). The flush is
+        # deferred past the undo-toast window so /messages/restore is a guaranteed
+        # local cancel - the server hasn't been touched yet.
         msgs = session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))).all()
         for m in msgs:
             m.pending_action = a
             session.add(m)
-        session.add(ActionQueue(kind=a, payload={"ids": list(body.ids)}))
+        not_before = (datetime.now(timezone.utc) + timedelta(seconds=UNDO_HOLD_SECONDS)).isoformat()
+        session.add(ActionQueue(kind=a, payload={"ids": list(body.ids), "not_before": not_before}))
         session.commit()
-        request.app.state.sync.request_sync()  # flush soon
+        _nudge_flush_after_hold(request)
         return {"queued": len(msgs)}
 
     raise HTTPException(status.HTTP_400_BAD_REQUEST, f"unknown action {a}")
+
+
+# How long a queued archive/delete waits before touching the server, so the
+# undo toast (6s) can always cancel it locally.
+UNDO_HOLD_SECONDS = 10
+
+
+def _nudge_flush_after_hold(request: Request) -> None:
+    """Ask the sync manager to flush again just after the undo hold expires, so
+    a deferred archive/delete doesn't sit queued until the next periodic sync."""
+    import asyncio
+
+    async def _later():
+        await asyncio.sleep(UNDO_HOLD_SECONDS + 1)
+        try:
+            request.app.state.sync.request_sync()
+        except Exception:
+            pass
+    task = asyncio.create_task(_later())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+class RestoreIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/restore")
+def restore_messages(body: RestoreIn, session: Session = Depends(get_session)) -> dict:
+    """Undo a queued archive/delete/move: pull the ids out of the pending queue
+    items and un-hide the rows. Within the undo hold this always succeeds - the
+    server was never touched. Ids whose action already flushed are skipped."""
+    wanted = set(body.ids)
+    for q in session.exec(select(ActionQueue).where(ActionQueue.status == "pending",
+                                                    ActionQueue.kind.in_(["archive", "delete", "move"]))):
+        ids = list(q.payload.get("ids") or [])
+        keep = [i for i in ids if i not in wanted]
+        if len(keep) == len(ids):
+            continue
+        if keep:
+            q.payload = {**q.payload, "ids": keep}
+            session.add(q)
+        else:
+            session.delete(q)
+    restored = 0
+    for m in session.exec(select(Message).options(*_NO_BODY).where(Message.id.in_(body.ids))):
+        if m.pending_action in ("archive", "delete", "move"):
+            m.pending_action = ""
+            session.add(m)
+            restored += 1
+    session.commit()
+    return {"restored": restored}
 
 
 class MoveIn(BaseModel):
@@ -1497,8 +1552,11 @@ def process_action_queue() -> int:
         items = session.exec(select(ActionQueue).where(ActionQueue.status == "pending")).all()
         snapshot = [(a.id, a.kind, dict(a.payload)) for a in items]
 
+    now_iso = datetime.now(timezone.utc).isoformat()
     flushed = 0
     for aid, kind, payload in snapshot:
+        if (payload.get("not_before") or "") > now_iso:
+            continue   # still inside the undo hold - leave it queued
         ok, err = True, ""
         try:
             if kind in ("archive", "delete"):
@@ -1604,16 +1662,37 @@ def unmute_thread(message_id: int, session: Session = Depends(get_session)) -> d
 
 @router.post("/rethread")
 def rethread(session: Session = Depends(get_session)) -> dict:
-    """Backfill thread ids for mail synced before threading existed (column-only)."""
+    """Backfill thread ids for mail synced before threading existed (column-only).
+
+    Two passes: first assign the subject+participant key to every message, then
+    let any message with an In-Reply-To that resolves to a known Message-ID adopt
+    its parent's thread_id - matching the live-sync reply-chain logic so a reply
+    whose subject was rewritten still joins the original conversation."""
     from app.sync.threading import thread_key
     rows = session.exec(select(Message.id, Message.account_id, Message.folder_id,
                                Message.subject, Message.uid, Message.from_addr,
-                               Message.to_addrs, Message.thread_id)).all()
+                               Message.to_addrs, Message.thread_id,
+                               Message.message_id, Message.in_reply_to)).all()
+    # Pass 1: subject/participant key for every row.
+    base_tid: dict[int, str] = {}          # message row id -> base thread id
+    by_msgid: dict[tuple[int, str], int] = {}   # (account, Message-ID) -> row id
+    for mid, acct, fid, subj, uid, from_addr, to_addrs, _tid, msgid, _irt in rows:
+        base_tid[mid] = thread_key(acct, subj or "", uid=uid or 0, folder_id=fid or 0,
+                                   participants=[from_addr or "", *(to_addrs or [])])
+        if msgid:
+            by_msgid[(acct, msgid)] = mid
+    # Pass 2: reply-chain override - walk In-Reply-To up to the root's base id.
+    def resolve(mid, acct, irt, seen):
+        parent = by_msgid.get((acct, irt)) if irt else None
+        if parent is None or parent in seen:
+            return base_tid[mid]
+        seen.add(parent)
+        prow = next(r for r in rows if r[0] == parent)
+        return resolve(parent, acct, prow[9], seen) or base_tid[parent]
     n = 0
-    for mid, acct, fid, subj, uid, from_addr, to_addrs, tid in rows:
-        new = thread_key(acct, subj or "", uid=uid or 0, folder_id=fid or 0,
-                         participants=[from_addr or "", *(to_addrs or [])])
-        if new != tid:
+    for mid, acct, _fid, _subj, _uid, _from, _to, tid, _msgid, irt in rows:
+        new = resolve(mid, acct, irt, {mid}) if irt else base_tid[mid]
+        if new and new != tid:
             session.exec(text("UPDATE message SET thread_id = :t WHERE id = :i").bindparams(t=new, i=mid))
             n += 1
     session.commit()

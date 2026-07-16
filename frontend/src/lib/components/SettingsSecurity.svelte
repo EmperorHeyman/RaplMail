@@ -149,6 +149,7 @@
   <section class="card">
     {#if app.vault.auto_unlock}
       <p class="hint ok">{@html icons.done} {t("security.startupAuto")}</p>
+      {#if app.vault.keyring}<p class="hint">{t("security.startupKeyring")}</p>{/if}
       <button class="btn" onclick={disableAuto} disabled={busy}>{t("security.startupRequireAgain")}</button>
     {:else}
       <p class="hint">{t("security.startupDefault")}</p>
@@ -156,6 +157,7 @@
         <button class="btn" onclick={() => (showAutoPw = true)}>{t("security.startupDisable")}</button>
       {:else}
         <div class="warn">{@html icons.warning} {t("security.startupWarn")}</div>
+        {#if app.vault.keyring}<p class="hint">{t("security.startupKeyring")}</p>{/if}
         <div class="confirm">
           <input type="password" placeholder={t("security.startupConfirm")} bind:value={autoPw}
             onkeydown={(e) => e.key === "Enter" && enableAuto()} />

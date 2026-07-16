@@ -273,29 +273,49 @@ class SyncManager:
         if flushed:
             await self._hub.broadcast("sync:done", {"new": 0})
 
-    def _digest_settings(self) -> tuple[bool, int]:
+    def _digest_settings(self) -> tuple[bool, int, str]:
         from app.models import Setting
         with Session(get_engine()) as session:
             row = session.get(Setting, 1)
             data = dict(row.data) if row and row.data else {}
-        return bool(data.get("digestEnabled")), int(data.get("digestHour", 8) or 8)
+        return (bool(data.get("digestEnabled")), int(data.get("digestHour", 8) or 8),
+                str(data.get("digestLastDay") or ""))
+
+    def _mark_digest_delivered(self, day: str) -> None:
+        # Persisted (not just in-memory): an app restart mid-morning must not
+        # deliver the same day's briefing twice.
+        from app.models import Setting
+        with Session(get_engine()) as session:
+            row = session.get(Setting, 1)
+            data = dict(row.data) if row and row.data else {}
+            data["digestLastDay"] = day
+            if row is None:
+                session.add(Setting(id=1, data=data))
+            else:
+                row.data = data
+            session.commit()
 
     async def _maybe_digest(self) -> None:
-        """Once per day, after the configured morning hour, push an AI inbox brief."""
+        """Once per day, after the configured morning hour, push an AI inbox brief.
+        Runs from the background sync loop, so it fires whenever the app is alive
+        (tray included) - no focus needed. Delivery is once per calendar day,
+        persisted across restarts; if the PC was off at the set hour, the brief
+        arrives as soon as RaplMail is next running."""
         if not get_secret_store().is_unlocked:
             return
-        enabled, hour = self._digest_settings()
+        enabled, hour, last_day = self._digest_settings()
         if not enabled:
             return
         now = datetime.now()  # local time
         today = now.date().isoformat()
-        if self._last_digest_day == today or now.hour < hour:
+        if self._last_digest_day == today or last_day == today or now.hour < hour:
             return
         from app.api.ai import generate_scheduled_digest
         loop = asyncio.get_running_loop()
         result = await loop.run_in_executor(self._executor, generate_scheduled_digest)
         # Mark done for today even if AI is unconfigured, so we don't retry all day.
         self._last_digest_day = today
+        self._mark_digest_delivered(today)
         if result:
             await self._hub.broadcast("inbox:digest", result)
 
@@ -390,13 +410,17 @@ class SyncManager:
                 "blocked_domains": normalize_blocklist(_sdata.get("blockedDomains")),
                 "phishing_screen": _sdata.get("phishingScreen", True) is not False,
             }
+            # Global outbound webhook (Settings -> General): POST every new inbox
+            # arrival to a local automation endpoint (n8n / Home Assistant / ESP32).
+            webhook_url = (_sdata.get("newMailWebhook") or "").strip()
+            hooks: list[dict] | None = [] if webhook_url else None
             provider = build_provider(account)
             try:
                 self._sync_folders(session, account, provider)
                 folders = list(session.exec(select(Folder).where(Folder.account_id == account_id)))
                 for folder in folders:
                     try:
-                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen)
+                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks)
                     except IntegrityError:
                         # FK failure mid-sync - typically the account (or folder)
                         # was deleted while this sync was in flight. Roll back so
@@ -424,6 +448,8 @@ class SyncManager:
                 # swallows its own errors so it can't break the mail sync).
                 from app.sync import devicesync
                 devicesync.tick(session, account, provider)
+                if webhook_url and hooks:
+                    self._post_new_mail_webhook(webhook_url, hooks)
                 # Full-history backfill: page older mail into the cache while the
                 # connection is warm, if the user turned it on. Reuses this
                 # provider; best-effort so it can't break the forward sync.
@@ -495,7 +521,7 @@ class SyncManager:
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
                      previews: list[dict] | None = None, muted: dict | None = None,
-                     screen: dict | None = None) -> int:
+                     screen: dict | None = None, hooks: list[dict] | None = None) -> int:
         self._check_uidvalidity(session, folder, provider)
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
@@ -547,6 +573,11 @@ class SyncManager:
                     "subject": msg.subject or "(no subject)",
                     "date": (msg.date.isoformat() if getattr(msg, "date", None) else ""),
                 })
+            # Global webhook payloads: every new inbox arrival that wasn't
+            # quarantined - including rule-filtered mail (an automation endpoint
+            # wants ALL arrivals, not just the ones that ding).
+            if hooks is not None and folder.role == FolderRole.inbox:
+                hooks.append(self._rule_payload(msg, account))
         self._resync_flags(session, account, folder, provider)
         return new_count
 
@@ -773,7 +804,7 @@ class SyncManager:
                                    participants=[h.from_addr, *(h.to_addrs or [])])
         msg = Message(
             account_id=account.id, folder_id=folder.id, uid=h.uid,
-            message_id=h.message_id, from_addr=h.from_addr, from_name=from_name,
+            message_id=h.message_id, in_reply_to=irt, from_addr=h.from_addr, from_name=from_name,
             to_addrs=h.to_addrs, cc_addrs=h.cc_addrs, subject=subject,
             snippet=h.snippet, date=h.date,
             thread_id=thread_id,
@@ -944,12 +975,15 @@ class SyncManager:
                 self._fire_webhook(rule.action_arg, msg, account)
             elif rule.action == RuleAction.run_script:
                 self._run_script(rule.action_arg, msg, account)
+            elif rule.action == RuleAction.save_attachments:
+                self._save_attachments(folder, msg, provider, rule.action_arg)
         except Exception:
             log.exception("rule action %s failed on uid %s", rule.action, msg.uid)
-        # Webhook/script are side-effects that leave the mail fully delivered, so
-        # they still fire the normal new-mail notification; every other action has
-        # moved/hidden/muted the message, so it shouldn't ding.
-        return rule.action in (RuleAction.webhook, RuleAction.run_script)
+        # Webhook/script/save-attachments are side-effects that leave the mail
+        # fully delivered, so they still fire the normal new-mail notification;
+        # every other action has moved/hidden/muted the message, so it shouldn't ding.
+        return rule.action in (RuleAction.webhook, RuleAction.run_script,
+                               RuleAction.save_attachments)
 
     @staticmethod
     def _rule_payload(msg: Message, account: Account) -> dict:
@@ -962,6 +996,80 @@ class SyncManager:
             "category": msg.category or "", "message_id": msg.message_id or "",
             "has_attachments": bool(msg.has_attachments),
         }
+
+    # Caps for the save-attachments rule action: a runaway inbox rule must not
+    # fill the disk. Per-message limits; oversize parts are skipped, not truncated.
+    _SAVE_ATT_MAX_FILES = 25
+    _SAVE_ATT_MAX_BYTES = 100 * 1024 * 1024   # per file
+
+    def _save_attachments(self, folder: Folder, msg: Message, provider, dest_dir: str) -> None:
+        """Rule action: write the message's attachments into a local folder.
+        Filenames are sanitized to their basename (no path traversal), collisions
+        get a ' (n)' suffix, and the mail itself is left fully delivered."""
+        import re as _re
+        from email import message_from_bytes
+        from pathlib import Path
+        dest = (dest_dir or "").strip()
+        if not dest:
+            return
+        root = Path(dest).expanduser()
+        raw = provider.fetch_raw(folder.path, msg.uid)
+        if not raw:
+            return
+        em = message_from_bytes(raw)
+        saved = 0
+        for part in em.walk():
+            if saved >= self._SAVE_ATT_MAX_FILES:
+                break
+            fname = part.get_filename()
+            if not fname or part.get_content_maintype() == "multipart":
+                continue
+            disp = (part.get_content_disposition() or "").lower()
+            if disp == "inline" and part.get("Content-Id"):
+                continue   # inline signature images etc. - not real attachments
+            try:
+                data = part.get_payload(decode=True)
+            except Exception:
+                continue
+            if not data or len(data) > self._SAVE_ATT_MAX_BYTES:
+                continue
+            # Basename only + strip characters Windows/posix can't take.
+            name = _re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", Path(fname).name).strip(". ") or "attachment"
+            root.mkdir(parents=True, exist_ok=True)
+            target = root / name
+            n = 1
+            while target.exists():
+                target = root / f"{Path(name).stem} ({n}){Path(name).suffix}"
+                n += 1
+            target.write_bytes(data)
+            saved += 1
+        if saved:
+            log.info("rule saved %d attachment(s) from uid %s to %s", saved, msg.uid, root)
+
+    def _post_new_mail_webhook(self, url: str, payloads: list[dict]) -> None:
+        """Global outbound webhook: POST one JSON body per new inbox arrival to
+        the configured local automation endpoint (n8n / Home Assistant / ESP32).
+        Runs on a daemon thread so a slow endpoint can never stall the sync."""
+        import json as _json
+        import threading
+        import urllib.request
+        url = (url or "").strip()
+        if not url.lower().startswith(("http://", "https://")):
+            return
+        batch = payloads[:100]   # a giant first sync must not turn into a POST storm
+
+        def _run():
+            for p in batch:
+                try:
+                    data = _json.dumps({"event": "new_mail", **p}).encode("utf-8")
+                    req = urllib.request.Request(
+                        url, data=data, method="POST",
+                        headers={"content-type": "application/json",
+                                 "user-agent": "RaplMail-webhook"})
+                    urllib.request.urlopen(req, timeout=8).close()
+                except Exception:
+                    pass   # fire-and-forget; the endpoint being down is not our problem
+        threading.Thread(target=_run, daemon=True, name="raplmail-webhook").start()
 
     def _fire_webhook(self, url: str, msg: Message, account: Account) -> None:
         """POST a small JSON payload to a local automation webhook (n8n / Node-RED

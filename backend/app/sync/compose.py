@@ -93,9 +93,65 @@ def build_mime(msg: OutgoingMessage) -> EmailMessage:
             att["data"], maintype=maintype or "application", subtype=subtype or "octet-stream",
             filename=att.get("filename", "attachment"),
         )
+    if getattr(msg, "pgp_sign", False) or getattr(msg, "pgp_encrypt", False):
+        return _apply_pgp_mime(root, msg)
     if getattr(msg, "smime_sign", False) or getattr(msg, "smime_encrypt", False):
         return _apply_smime(root, msg)
     return root
+
+
+def _apply_pgp_mime(root: EmailMessage, msg: OutgoingMessage) -> EmailMessage:
+    """Wrap the assembled body as RFC 3156 PGP/MIME - multipart/signed for a
+    detached signature, multipart/encrypted for encryption (sign-then-encrypt
+    when both). The addressing headers move to the outer message; the inner body
+    entity is what gets signed/encrypted. Raises on any crypto failure so the
+    caller never sends unprotected mail in place of a requested one."""
+    import email as _email
+
+    from app.sync import pgp as _pgp
+    addr_headers = {}
+    for h in ("From", "To", "Cc", "Subject", "Date", "Message-ID", "In-Reply-To", "References"):
+        if root[h] is not None:
+            addr_headers[h] = root[h]
+            del root[h]
+    # RFC 3156 requires the protected part in canonical CRLF form.
+    body_bytes = root.as_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")
+
+    if msg.pgp_encrypt:
+        armored = _pgp.mime_encrypt(body_bytes, msg.pgp_settings, msg.pgp_recipients,
+                                    do_sign=msg.pgp_sign)
+        if not armored:
+            raise RuntimeError("PGP/MIME encryption failed (missing recipient key or private key).")
+        outer = _email.message.EmailMessage(policy=SMTP_POLICY)
+        outer["Content-Type"] = 'multipart/encrypted; protocol="application/pgp-encrypted"'
+        ctrl = _email.message.MIMEPart(policy=SMTP_POLICY)
+        ctrl["Content-Type"] = "application/pgp-encrypted"
+        ctrl["Content-Description"] = "PGP/MIME version identification"
+        ctrl.set_payload("Version: 1\n")
+        data = _email.message.MIMEPart(policy=SMTP_POLICY)
+        data["Content-Type"] = 'application/octet-stream; name="encrypted.asc"'
+        data["Content-Description"] = "OpenPGP encrypted message"
+        data.set_payload(armored)
+        outer.set_payload([ctrl, data])
+    else:
+        signed = _pgp.mime_sign_detached(body_bytes, msg.pgp_settings)
+        if not signed:
+            raise RuntimeError("PGP/MIME signing failed (no usable private key).")
+        armored_sig, micalg = signed
+        outer = _email.message.EmailMessage(policy=SMTP_POLICY)
+        outer["Content-Type"] = ('multipart/signed; '
+                                 f'micalg="{micalg}"; protocol="application/pgp-signature"')
+        inner = _email.message_from_bytes(body_bytes, policy=SMTP_POLICY)
+        sig = _email.message.MIMEPart(policy=SMTP_POLICY)
+        sig["Content-Type"] = 'application/pgp-signature; name="signature.asc"'
+        sig["Content-Description"] = "OpenPGP digital signature"
+        sig.set_payload(armored_sig)
+        outer.set_payload([inner, sig])
+
+    for h, v in addr_headers.items():
+        del outer[h]
+        outer[h] = v
+    return outer
 
 
 def _apply_smime(root: EmailMessage, msg: OutgoingMessage) -> EmailMessage:

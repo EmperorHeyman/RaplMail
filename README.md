@@ -48,7 +48,7 @@ On first launch you choose a master password. It unlocks a local encrypted vault
 - **Screener** holds first-time senders for your approval.
 - **Subscription audit** (Settings > Utility): every mailing list you receive with its 30-day read rate, sorted so dormant and never-opened lists surface first. One-click unsubscribe (RFC 8058, with a browser fallback for confirmation-style links), a filter to show only senders you can actually leave, and a green marker on lists you have already unsubscribed from so you never re-click one. Auto-archive a whole list in one step.
 - **Drag a message onto a folder** to move it, single or multi-selected.
-- **Universal undo** toast for done, snooze, move, and bulk actions.
+- **Universal undo** toast for done, snooze, archive, delete, move, and bulk actions. Archive and delete hold the server move until the undo window passes, so undo always works.
 - **Keyboard-first**, with a full customizable shortcut set and a command palette (`Ctrl+K`) that also doubles as live search: start typing a `from:` / `subject:` / `is:` operator (or a `/regex/`) and it flips to matching mail you can open on the spot. Arrow keys move through the list and open mail as you go.
 
 ## Views
@@ -123,6 +123,14 @@ AI buttons stay hidden until a provider is usable and can be turned off entirely
 - **Plus-address generator and tracking**: mint `you+service@domain` per site and see who leaked your address (flagged when more than one sender uses an alias), then mute an alias in one click.
 - **Anti-spoof**: a DMARC, DKIM, and SPF visualizer with lookalike-domain warnings.
 
+## Device sync
+
+Link two or more RaplMail installs (say, "Main" and "Work") with no cloud account: one of your own mailboxes carries the sync data in a hidden folder, encrypted with a passphrase that never leaves your devices.
+
+- **Automatic**: done, snooze, and pin states, plus your rules (whole set, newest change wins - edits and deletes carry over, and a fresh install can never overwrite a configured device).
+- **On demand**: push your settings, signatures, and sender tags as a snapshot, and pull another device's snapshot from a picker that shows each device by its friendly name.
+- Give each install a name in Settings > Device sync so you always know whose settings you are pulling.
+
 ## Calendar and contacts
 
 - **Email-derived calendar**: meeting invites are parsed from mail, with RSVP and a bulk scan.
@@ -184,6 +192,8 @@ cd backend && .venv/Scripts/python -m pytest -q
 ```
 
 The suite covers the API surface (health, settings, metrics auth, AI graceful degradation, plus-aliases, message moves), attachment text extraction, OpenPGP round-trips, encryption at rest, and CalDAV/CardDAV parsing.
+
+An optional live test (`backend/tests/test_live_mailbox.py`) exercises a real mail account end-to-end through the app's own IMAP/SMTP provider: it sends itself a uniquely-subjected message over SMTP, polls IMAP until it arrives, sets a flag, verifies the flag round-trips, then deletes the message. It is skipped by default and only runs when a dedicated throwaway test mailbox is configured via environment variables: `RAPLMAIL_LIVE_EMAIL`, `RAPLMAIL_LIVE_PASSWORD`, `RAPLMAIL_LIVE_IMAP_HOST`, `RAPLMAIL_LIVE_SMTP_HOST` (plus optional `RAPLMAIL_LIVE_IMAP_PORT`, default 993, and `RAPLMAIL_LIVE_SMTP_PORT`, default 587). Use a throwaway account - the test writes to and deletes from its inbox.
 
 ## Why RaplMail?
 

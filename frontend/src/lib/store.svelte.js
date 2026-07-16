@@ -181,6 +181,7 @@ export const app = $state({
   settingsTab: null,             // when set, Settings opens to this tab
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
   ruleModal: null,               // { message } - open the quick "New rule" modal
+  introTour: false,              // re-show the onboarding intro (debug / "show me around again")
   lab: null,                     // { id, subject, from } - message sent to the Security Lab
   composing: null,
   mailMergeOpen: false,          // mail-merge / personalized bulk send dialog
@@ -1390,6 +1391,7 @@ export function readerCommand(cmd) {
 async function _removeMessage(message, action, label) {
   const wasSelected = app.selectedMessageId === message.id;
   const idx = app.messages.findIndex((m) => m.id === message.id);
+  const originView = _viewKey();
   app.messages = app.messages.filter((m) => m.id !== message.id);
   if (wasSelected) {
     const next = (app.settings.openNextOnDone && idx >= 0)
@@ -1400,7 +1402,16 @@ async function _removeMessage(message, action, label) {
   }
   try {
     await messages.bulk([message.id], action);
-    notify(label);
+    // The backend holds the IMAP move past the toast window, so undo is a
+    // guaranteed local cancel (same pattern as undo-send).
+    notify(label, "info", () => {
+      if (_viewKey() === originView && idx >= 0 && !app.messages.some((m) => m.id === message.id)) {
+        app.messages = [...app.messages.slice(0, idx), message, ...app.messages.slice(idx)];
+      }
+      messages.restore([message.id])
+        .then(() => { refreshQueue(); refreshFoldersSoon(); refreshMessages({ background: true }); })
+        .catch(() => notify("Couldn't undo - check your connection", "error"));
+    });
     refreshQueue();
     refreshFoldersSoon();
   } catch (e) {

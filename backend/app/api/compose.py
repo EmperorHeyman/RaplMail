@@ -59,6 +59,7 @@ class SendIn(BaseModel):
     smime_sign: bool = False        # S/MIME detached signature (needs your cert)
     smime_encrypt: bool = False     # S/MIME encrypt to recipients' certs
     request_receipt: bool = False   # embed a read-receipt tracking pixel
+    receipt_token: str = ""         # stable pixel id, minted once per message (rides in the payload)
     calendar_ics: str = ""          # iMIP: text/calendar payload (METHOD below)
     calendar_method: str = "REQUEST"
 
@@ -70,7 +71,8 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
 
     # Read-receipt: embed the pixel ONCE, here - retries/scheduled sends rebuild
     # the message from this payload, so embedding at delivery time minted a new
-    # tracker row per attempt. (PGP turns the body into armored text; skip.)
+    # tracker row per attempt. The minted token is stored on the payload
+    # (receipt_token) so every retry reuses it. (PGP armors the body; skip.)
     if body.request_receipt and not body.pgp_sign and not body.pgp_encrypt:
         body.html = _embed_receipt(session, body)
 
@@ -203,8 +205,10 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
         calendar_ics=getattr(body, "calendar_ics", "") or "",
         calendar_method=getattr(body, "calendar_method", "REQUEST") or "REQUEST",
     )
-    # OpenPGP: sign and/or encrypt the body inline (ASCII-armored). Encryption
-    # needs a stored public key for every recipient.
+    # OpenPGP: sign and/or encrypt. Plain-text-only mail uses inline ASCII-armor
+    # (widest client support); a message with HTML/attachments/inline images uses
+    # PGP/MIME (RFC 3156) instead - inline armor can only carry a flat text body,
+    # so it would silently drop those parts or leave attachments unprotected.
     if getattr(body, "pgp_sign", False) or getattr(body, "pgp_encrypt", False):
         from app.sync import pgp as pgpmod
         from app.sync.compose import _html_to_text
@@ -215,13 +219,25 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
         recip_keys = pgpmod.pubkeys_for(recipients, blob) if body.pgp_encrypt else []
         if body.pgp_encrypt and len(recip_keys) < len({r.lower() for r in recipients if r}):
             raise RuntimeError("Missing a PGP public key for one or more recipients - import it first.")
-        armored = pgpmod.sign_and_encrypt(
-            _html_to_text(html), blob, recip_keys,
-            do_sign=body.pgp_sign, do_encrypt=body.pgp_encrypt)
-        if armored:
-            message.text = armored
-            message.html = ""
-            message.inline_images = []
+        structured = bool(message.html or message.inline_images or message.attachments
+                          or getattr(message, "calendar_ics", ""))
+        if structured:
+            # PGP/MIME: protect the whole assembled body (headers + all parts) in
+            # build_mime. Fail loudly if we lack a private key for signing.
+            if body.pgp_sign and pgpmod.load_keystore(blob)[0] is None:
+                raise RuntimeError("No PGP private key imported - add one in Settings to sign.")
+            message.pgp_sign = bool(body.pgp_sign)
+            message.pgp_encrypt = bool(body.pgp_encrypt)
+            message.pgp_settings = blob
+            message.pgp_recipients = recip_keys
+        else:
+            armored = pgpmod.sign_and_encrypt(
+                _html_to_text(html), blob, recip_keys,
+                do_sign=body.pgp_sign, do_encrypt=body.pgp_encrypt)
+            if armored:
+                message.text = armored
+                message.html = ""
+                message.inline_images = []
     # S/MIME: attach the identity + recipient certs; the actual sign/encrypt of the
     # fully-assembled MIME happens in build_mime (which has the final body).
     if getattr(body, "smime_sign", False) or getattr(body, "smime_encrypt", False):
@@ -259,20 +275,37 @@ def _build_message(session: Session, account: Account, body: SendIn) -> Outgoing
 
 def _embed_receipt(session: Session, body: SendIn) -> str:
     """Record a tracker and return the compose HTML with the read-receipt pixel
-    appended. Called once per message (in /send), NOT per delivery attempt."""
+    appended. Idempotent per logical message: the token is minted once and kept
+    on the payload (body.receipt_token), the OpenTrack row is only inserted the
+    first time, and an already-pixelled body is returned untouched - so retries
+    of the same queued/scheduled send never mint a second tracker."""
     import secrets
 
     from app.core.config import get_settings
     from app.models import OpenTrack, Setting
+    if "/track/o/" in body.html:
+        return body.html   # pixel already embedded (retry of this payload)
     row = session.get(Setting, 1)
     blob = dict(row.data) if row and row.data else {}
     cfg = get_settings()
     base = (blob.get("trackBaseUrl") or f"http://{cfg.host}:{cfg.port}").rstrip("/")
-    token = secrets.token_urlsafe(16)
-    session.add(OpenTrack(token=token, subject=body.subject,
-                          recipient=", ".join(body.to) or ""))
-    session.commit()
+    if not body.receipt_token:
+        body.receipt_token = secrets.token_urlsafe(16)
+    token = body.receipt_token
+    if session.exec(select(OpenTrack).where(OpenTrack.token == token)).first() is None:
+        session.add(OpenTrack(token=token, subject=body.subject,
+                              recipient=", ".join(body.to) or ""))
+        session.commit()
     return body.html + f'<img src="{base}/track/o/{token}.png" width="1" height="1" alt="" style="display:none">'
+
+
+def _legacy_receipt_token(body: SendIn) -> str:
+    """Deterministic pixel token for payloads queued before receipt_token
+    existed: hashing the payload keeps the id identical across retries."""
+    import hashlib
+
+    seed = "|".join([str(body.account_id), ",".join(body.to), body.subject, body.html])
+    return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
 def _deliver_blocking(body_dict: dict) -> None:
@@ -285,6 +318,15 @@ def _deliver_blocking(body_dict: dict) -> None:
         account = session.get(Account, body.account_id)
         if account is None:
             raise RuntimeError("account not found")
+        # Legacy compat: payloads queued/scheduled before the pixel moved to
+        # compose time carry request_receipt but no embedded pixel. Derive the
+        # token deterministically from the payload so every delivery attempt of
+        # the same logical message reuses one tracker instead of minting a new id.
+        if body.request_receipt and not body.pgp_sign and not body.pgp_encrypt \
+                and "/track/o/" not in body.html:
+            if not body.receipt_token:
+                body.receipt_token = _legacy_receipt_token(body)
+            body.html = _embed_receipt(session, body)
         message = _build_message(session, account, body)
         sent_path = session.exec(
             select(Folder.path).where(Folder.account_id == body.account_id,

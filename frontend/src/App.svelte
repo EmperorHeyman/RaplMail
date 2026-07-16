@@ -273,7 +273,7 @@
 {#if app.ruleModal}
   <RuleModal />
 {/if}
-{#if !childWindow && app.vault.unlocked && !app.settings.onboarded}
+{#if !childWindow && app.vault.unlocked && (!app.settings.onboarded || app.introTour)}
   <Onboarding />
 {/if}
 <SendingIndicator />

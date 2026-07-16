@@ -153,6 +153,57 @@ def have_keys_for(emails: list[str], settings: dict) -> bool:
     return bool(pubkeys_for(emails, settings))
 
 
+def mime_sign_detached(data: bytes, settings: dict) -> tuple[str, str] | None:
+    """RFC 3156 detached signature over raw MIME bytes. Returns
+    (armored_signature, micalg) or None if no usable private key."""
+    if not _AVAILABLE:
+        return None
+    priv, _pubs, pw = load_keystore(settings)
+    if priv is None:
+        return None
+    try:
+        with (priv.unlock(pw) if priv.is_protected else _NullCtx(priv)) as k:
+            sig = k.sign(data)
+        micalg = f"pgp-{str(sig.hash_algorithm.name).lower()}"
+        return str(sig), micalg
+    except Exception:
+        return None
+
+
+def mime_encrypt(data: bytes, settings: dict, recipients_armored: list[str],
+                 do_sign: bool) -> str | None:
+    """RFC 3156 encryption of raw MIME bytes: one armored OpenPGP message,
+    optionally signed inside the ciphertext (sign-then-encrypt). Returns the
+    armored message or None on any failure - the caller must treat None as a
+    hard error, never fall back to sending plaintext."""
+    if not _AVAILABLE:
+        return None
+    priv, _pubs, pw = load_keystore(settings)
+    try:
+        msg = pgpy.PGPMessage.new(data)
+        if do_sign and priv is not None:
+            with (priv.unlock(pw) if priv.is_protected else _NullCtx(priv)) as k:
+                msg |= k.sign(msg)
+        keys = [_load_pub(a) for a in recipients_armored]
+        keys = [k for k in keys if k is not None]
+        if not keys:
+            return None
+        if len(keys) == 1:
+            k = keys[0]
+            enc = k.pubkey.encrypt(msg) if k.is_public is False else k.encrypt(msg)
+        else:
+            from pgpy.constants import SymmetricKeyAlgorithm
+            cipher = SymmetricKeyAlgorithm.AES256
+            sk = cipher.gen_key()
+            enc = msg
+            for k in keys:
+                enc = k.encrypt(enc, cipher=cipher, sessionkey=sk)
+            del sk
+        return str(enc)
+    except Exception:
+        return None
+
+
 def sign_and_encrypt(plaintext: str, settings: dict, recipients_armored: list[str],
                      do_sign: bool, do_encrypt: bool) -> str | None:
     """Produce an inline ASCII-armored PGP body, or None if it can't be done."""

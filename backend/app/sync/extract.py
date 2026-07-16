@@ -1,10 +1,11 @@
-"""Extract searchable text from attachment bytes - no third-party deps.
+"""Extract searchable text from attachment bytes.
 
-Handles plain text, source code, CSV/JSON/XML, and the OOXML Office formats
-(.docx / .xlsx / .pptx), which are just ZIP archives of XML. PDF and legacy
-binary Office formats need a parser library and are skipped for now (returns "").
-The extracted text is folded into the message's full-text-search index so a
-search matches words that only appear inside an attachment.
+Handles plain text, source code, CSV/JSON/XML, the OOXML Office formats
+(.docx / .xlsx / .pptx), which are just ZIP archives of XML, and PDF (via the
+pure-Python pypdf library). Legacy binary Office formats still need a parser
+library and are skipped for now (returns ""). The extracted text is folded
+into the message's full-text-search index so a search matches words that only
+appear inside an attachment.
 """
 
 from __future__ import annotations
@@ -15,6 +16,9 @@ import zipfile
 
 # Cap per attachment so a giant file can't bloat the FTS index or stall a fetch.
 _MAX_CHARS = 40_000
+# PDFs can run to hundreds of pages; _MAX_CHARS usually trips first, but cap
+# the page count too so a pathological PDF can't stall parsing.
+_MAX_PDF_PAGES = 50
 
 _TEXT_EXTS = {
     "txt", "md", "markdown", "rst", "log", "csv", "tsv", "json", "yaml", "yml",
@@ -68,6 +72,29 @@ def _ooxml_text(data: bytes) -> str:
     return " ".join(parts)
 
 
+def _pdf_text(data: bytes) -> str:
+    """Pull page text out of a PDF with pypdf. Encrypted or corrupt PDFs yield ""."""
+    try:
+        from pypdf import PdfReader  # lazy: only pay the import on actual PDFs
+
+        reader = PdfReader(io.BytesIO(data))
+        if reader.is_encrypted:
+            # Only PDFs with a blank user password (owner-locked) are readable.
+            if not reader.decrypt(""):
+                return ""
+        parts: list[str] = []
+        for page in reader.pages[:_MAX_PDF_PAGES]:
+            try:
+                parts.append(page.extract_text() or "")
+            except Exception:
+                continue  # one broken page shouldn't sink the rest
+            if sum(len(p) for p in parts) > _MAX_CHARS:
+                break
+    except Exception:
+        return ""
+    return " ".join(parts)
+
+
 def extract_attachment_text(filename: str, content_type: str, data: bytes) -> str:
     """Best-effort searchable text from one attachment. Empty if unsupported."""
     if not data:
@@ -75,7 +102,9 @@ def extract_attachment_text(filename: str, content_type: str, data: bytes) -> st
     ext = _ext(filename)
     ctype = (content_type or "").lower()
     try:
-        if ext in {"docx", "xlsx", "pptx"} or "openxmlformats" in ctype:
+        if ext == "pdf" or ctype == "application/pdf":
+            text = _pdf_text(data)
+        elif ext in {"docx", "xlsx", "pptx"} or "openxmlformats" in ctype:
             text = _ooxml_text(data)
         elif ext in _TEXT_EXTS or ctype.startswith("text/") or ctype in (
             "application/json", "application/xml", "application/javascript",
@@ -84,7 +113,7 @@ def extract_attachment_text(filename: str, content_type: str, data: bytes) -> st
             if ext in ("html", "htm") or ctype == "text/html":
                 text = _TAG_RE.sub(" ", text)
         else:
-            return ""  # pdf, images, binaries - not indexed (no parser dep)
+            return ""  # images, binaries, legacy Office - not indexed
     except Exception:
         return ""
     text = _WS_RE.sub(" ", text).strip()

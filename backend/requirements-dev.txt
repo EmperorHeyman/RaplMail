@@ -1,0 +1,2 @@
+# Test-only dependencies (not shipped in the frozen app).
+radicale>=3.5          # real CalDAV server for the write round-trip test

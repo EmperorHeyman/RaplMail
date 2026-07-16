@@ -15,12 +15,13 @@
 
   const FIELDS = ["from_domain", "from", "to", "subject", "body", "category"];
   const OPS = ["contains", "equals", "ends_with", "regex"];
-  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script"];
+  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script", "save_attachments"];
   const DESTRUCTIVE = new Set(["delete", "archive", "block"]);
-  const needsArg = $derived(["move", "webhook", "run_script"].includes(draft.action));
+  const needsArg = $derived(["move", "webhook", "run_script", "save_attachments"].includes(draft.action));
   const argPlaceholder = $derived(
     draft.action === "webhook" ? t("rules.webhookHint")
       : draft.action === "run_script" ? t("rules.scriptHint")
+      : draft.action === "save_attachments" ? t("rules.saveDirHint")
       : "folder, e.g. Archive"
   );
 

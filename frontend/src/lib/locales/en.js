@@ -41,6 +41,17 @@ const base = {
 
   // First-run onboarding wizard.
   "onboarding.stepOf": "Step {n} of {total}",
+  "onboarding.tagline": "Local-first email",
+  "onboarding.navWelcome": "Welcome",
+  "onboarding.navLanguage": "Language",
+  "onboarding.navHighlights": "Features",
+  "onboarding.navTheme": "Look & feel",
+  "onboarding.navOptions": "Preferences",
+  "onboarding.navSettings": "Explore",
+  "onboarding.navDone": "Finish",
+  "onboarding.pillarLocal": "Private, runs on your PC",
+  "onboarding.pillarFast": "Fast triage & local AI",
+  "onboarding.pillarKeys": "Keyboard-first",
   "onboarding.welcomeTitle": "Welcome to RaplMail",
   "onboarding.welcomeBody": "A fast, local-first email client that runs on your machine. Let's set it up - it only takes a few seconds.",
   "onboarding.languageTitle": "Choose your language",
@@ -140,9 +151,11 @@ const base = {
   "rules.action.mute_notifications": "Mute notifications",
   "rules.action.webhook": "POST to a webhook",
   "rules.action.run_script": "Run a local script",
+  "rules.action.save_attachments": "Save attachments to folder",
   "rules.categoryHint": "e.g. newsletters, social, updates, promotions",
   "rules.webhookHint": "https://… webhook URL (POST)",
   "rules.scriptHint": "command to run, e.g. python handler.py",
+  "rules.saveDirHint": "local folder, e.g. C:\\Mail\\Invoices",
   "rules.muteFromSender": "Mute notifications from sender",
 
   // Common toasts.

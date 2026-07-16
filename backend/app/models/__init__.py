@@ -60,6 +60,7 @@ class RuleAction(str, enum.Enum):
     mute_notifications = "mute_notifications"  # deliver normally but no ding/popup
     webhook = "webhook"         # action_arg = URL; POST a JSON payload on match
     run_script = "run_script"   # action_arg = local command; run it with mail context in env
+    save_attachments = "save_attachments"  # action_arg = local folder; save incoming attachments there
 
 
 class Account(SQLModel, table=True):
@@ -114,6 +115,7 @@ class Message(SQLModel, table=True):
     uid: int = Field(index=True)
 
     message_id: str = Field(default="", index=True)   # RFC 5322 Message-ID header
+    in_reply_to: str = Field(default="", index=True)  # parent Message-ID, for reply-chain threading
     thread_id: str = Field(default="", index=True)
 
     from_addr: str = Field(default="", index=True)

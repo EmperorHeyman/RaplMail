@@ -535,7 +535,16 @@
     try {
       await messagesApi.bulk(ids, action, until);
       const doneKey = { done: "list.markedDone", seen: "list.bulkRead", flag: "list.bulkFlagged", snooze: "list.bulkSnoozed", archive: "list.bulkArchived", delete: "list.bulkDeleted" }[action] || "list.bulkUpdated";
-      notify(t(doneKey, { n: ids.length }));
+      if (action === "archive" || action === "delete") {
+        // Undoable: the backend holds the IMAP move past the toast window.
+        notify(t(doneKey, { n: ids.length }), "info", () => {
+          messagesApi.restore(ids)
+            .then(() => { refreshQueue(); refreshMessages({ background: true }); })
+            .catch(() => notify(t("list.couldntUndo"), "error"));
+        });
+      } else {
+        notify(t(doneKey, { n: ids.length }));
+      }
       refreshMessages({ background: true });
       if (action === "archive" || action === "delete") refreshQueue();
     } catch (e) { notify(t("list.bulkFailed", { error: e.message }), "error"); refreshMessages({ background: true }); }

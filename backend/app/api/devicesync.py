@@ -58,7 +58,7 @@ def _guard_ready(st: dict) -> None:
         raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault and set a passphrase first.")
 
 
-def _with_provider(account_id: int, action: str, uid: int | None = None) -> dict:
+def _with_provider(account_id: int, action: str, uid: int | None = None, **kw) -> dict:
     """Build a provider for the carrier account and run one sync action against
     it, always closing the provider afterwards."""
     from app.sync.engine import build_provider
@@ -77,6 +77,14 @@ def _with_provider(account_id: int, action: str, uid: int | None = None) -> dict
                 return {"snapshots": devicesync.list_config_snapshots(s, provider)}
             if action == "pull":
                 return devicesync.pull_config(s, provider, uid)
+            if action == "cred-push":
+                return devicesync.push_credentials(s, account, provider, kw["secret"])
+            if action == "cred-snapshots":
+                return {"snapshots": devicesync.list_credential_snapshots(s, provider)}
+            if action == "cred-preview":
+                return {"accounts": devicesync.preview_credentials(s, provider, uid, kw["secret"])}
+            if action == "cred-pull":
+                return devicesync.apply_credentials(s, provider, uid, kw["secret"], kw.get("emails"))
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unknown sync action.")
         except RuntimeError as exc:
             raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
@@ -120,3 +128,61 @@ async def pull_config(body: PullConfigIn, session: Session = Depends(get_session
     st = devicesync.status(session)
     _guard_ready(st)
     return await run_in_threadpool(_with_provider, st["account_id"], "pull", body.uid)
+
+
+# --- encrypted credential sync (opt-in) ------------------------------------
+
+def _guard_cred(session: Session) -> dict:
+    """Credential sync needs the sync channel ready AND the vault unlocked (the
+    account secrets are sealed at rest)."""
+    st = devicesync.status(session)
+    _guard_ready(st)
+    from app.core.security import get_secret_store
+    if not get_secret_store().is_unlocked:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Unlock the vault first.")
+    return st
+
+
+class CredSecretIn(BaseModel):
+    secret: str
+
+
+@router.post("/push-credentials")
+async def push_credentials(body: CredSecretIn, session: Session = Depends(get_session)) -> dict:
+    """Publish this device's account credentials as an encrypted vault snapshot."""
+    st = _guard_cred(session)
+    return await run_in_threadpool(_with_provider, st["account_id"], "cred-push", None, secret=body.secret)
+
+
+@router.get("/credential-snapshots")
+async def credential_snapshots(session: Session = Depends(get_session)) -> dict:
+    """List credential snapshots (metadata only - device/count/time, no emails)."""
+    st = _guard_cred(session)
+    return await run_in_threadpool(_with_provider, st["account_id"], "cred-snapshots")
+
+
+class CredPreviewIn(BaseModel):
+    uid: int
+    secret: str
+
+
+@router.post("/credential-preview")
+async def credential_preview(body: CredPreviewIn, session: Session = Depends(get_session)) -> dict:
+    """Decrypt a snapshot and list its accounts so the user can choose which to import."""
+    st = _guard_cred(session)
+    return await run_in_threadpool(_with_provider, st["account_id"], "cred-preview", body.uid,
+                                   secret=body.secret)
+
+
+class CredPullIn(BaseModel):
+    uid: int
+    secret: str
+    emails: list[str] | None = None
+
+
+@router.post("/pull-credentials")
+async def pull_credentials(body: CredPullIn, session: Session = Depends(get_session)) -> dict:
+    """Import the chosen accounts + secrets from a credential snapshot."""
+    st = _guard_cred(session)
+    return await run_in_threadpool(_with_provider, st["account_id"], "cred-pull", body.uid,
+                                   secret=body.secret, emails=body.emails)

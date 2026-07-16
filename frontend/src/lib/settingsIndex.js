@@ -73,6 +73,7 @@ export const SETTINGS_INDEX = [
   { tab: "calendar", label: "Calendar & contacts (CalDAV)", kw: "calendar caldav carddav contacts subscribe kalendář" },
   { tab: "sync", label: "Device sync", kw: "sync device link cross machine passphrase synchronizace" },
   { tab: "sync", label: "Device name", kw: "device name friendly label rename main work pc název zařízení" },
+  { tab: "sync", label: "Sync account passwords (encrypted)", kw: "credential password sync accounts encrypted vault chacha aead hesla účty" },
   { tab: "rapldesk", label: "RaplDesk tickets", kw: "rapldesk ticket api helpdesk support" },
   { tab: "utility", label: "Subscription audit", kw: "subscription unsubscribe audit newsletter cleanup dormant" },
   { tab: "debug", label: "Debug logs", kw: "debug log logs console diagnostics troubleshoot" },

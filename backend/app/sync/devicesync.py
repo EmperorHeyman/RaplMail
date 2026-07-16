@@ -577,6 +577,225 @@ def pull_config(session: Session, provider, uid: int) -> dict:
             "label": payload.get("device_label") or payload.get("device", "")[:8]}
 
 
+# --- encrypted credential sync (opt-in, second independent key) ------------
+# Account passwords / OAuth tokens are the crown jewels, so they get their OWN
+# lock on top of the sync channel, keyed by a secret that NEVER travels over the
+# mailbox (a dedicated credential passphrase, or the reused master password).
+#
+# Two independent envelopes:
+#   inner: ChaCha20-Poly1305 AEAD over the credential bundle, key = Argon2id of
+#          the credential secret with a RANDOM per-publish salt (not the sync
+#          channel's fixed salt) + random 96-bit nonce. AAD binds it to this
+#          message kind + the origin device so it can't be replayed/mistyped.
+#   outer: the normal sync Fernet (sync passphrase), so the blob is even
+#          invisible without the sync passphrase.
+# Result: an attacker with the whole mailbox AND the sync passphrase still can't
+# read credentials - they'd need the credential secret, and Argon2id makes an
+# offline guess against the AEAD blob expensive.
+_CRED_AAD = b"raplmail-creds-v1"
+_CRED_SUBJECT = "RaplMail credential vault - safe to ignore"
+_ACCT_SYNC_FIELDS = ("email", "display_name", "imap_host", "imap_port", "smtp_host",
+                     "smtp_port", "use_oauth", "secret_key", "color", "enabled", "aliases")
+
+
+def _cred_key(secret: str, salt: bytes) -> bytes:
+    """32 raw bytes for ChaCha20-Poly1305, via the same Argon2id KDF the vault
+    uses (its output is urlsafe-b64 of the 32-byte hash - decode back to raw)."""
+    from app.core.security import _derive_key
+    return base64.urlsafe_b64decode(_derive_key(secret, salt))
+
+
+def _gather_credentials(session: Session) -> list[dict]:
+    """Every account plus its vault-held secret (password / OAuth bundle).
+    Requires an unlocked vault - the secrets are sealed at rest."""
+    from app.core.security import get_secret_store
+    store = get_secret_store()
+    if not store.is_unlocked:
+        raise RuntimeError("Unlock the vault first.")
+    out = []
+    for a in session.exec(select(Account)):
+        prov = a.provider.value if hasattr(a.provider, "value") else a.provider
+        entry = {k: getattr(a, k) for k in _ACCT_SYNC_FIELDS}
+        entry["provider"] = prov
+        entry["secret"] = store.get(a.secret_key) if a.secret_key else None
+        out.append(entry)
+    return out
+
+
+def _encrypt_credentials(accounts: list[dict], device: str, secret: str) -> dict:
+    import os
+
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    salt, nonce = os.urandom(16), os.urandom(12)
+    key = _cred_key(secret, salt)
+    aad = _CRED_AAD + b":" + device.encode("utf-8")
+    plaintext = json.dumps({"v": 1, "accounts": accounts}, default=str).encode("utf-8")
+    ct = ChaCha20Poly1305(key).encrypt(nonce, plaintext, aad)
+    return {
+        "v": 1, "kind": "credentials", "device": device,
+        "salt": base64.b64encode(salt).decode("ascii"),
+        "nonce": base64.b64encode(nonce).decode("ascii"),
+        "ct": base64.b64encode(ct).decode("ascii"),
+        "count": len(accounts),
+    }
+
+
+def _decrypt_credentials(env: dict, secret: str) -> list[dict]:
+    """Decrypt the inner AEAD bundle. A wrong secret or any tampering fails the
+    Poly1305 tag - surfaced as a clean error, never a partial/garbage result."""
+    from cryptography.exceptions import InvalidTag
+    from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+    try:
+        salt = base64.b64decode(env["salt"])
+        nonce = base64.b64decode(env["nonce"])
+        ct = base64.b64decode(env["ct"])
+        key = _cred_key(secret, salt)
+        aad = _CRED_AAD + b":" + (env.get("device") or "").encode("utf-8")
+        pt = ChaCha20Poly1305(key).decrypt(nonce, ct, aad)
+    except InvalidTag as exc:
+        raise RuntimeError("Incorrect credential passphrase (or the data was tampered with).") from exc
+    except Exception as exc:
+        raise RuntimeError("That credential snapshot could not be read.") from exc
+    data = json.loads(pt.decode("utf-8"))
+    return data.get("accounts") or []
+
+
+def push_credentials(session: Session, account: Account, provider, secret: str) -> dict:
+    """Publish this device's account credentials as an encrypted vault snapshot.
+    Requires the vault unlocked (to read secrets) and the sync passphrase set."""
+    if not get_passphrase():
+        raise RuntimeError("Set a sync passphrase first.")
+    if not secret or len(secret) < 8:
+        raise RuntimeError("The credential passphrase must be at least 8 characters.")
+    accounts = _gather_credentials(session)
+    if not accounts:
+        raise RuntimeError("No accounts to sync.")
+    device = device_id(session)
+    env = _encrypt_credentials(accounts, device, secret)
+    env["device_label"] = _default_label(session)
+    env["ts"] = _now_iso()
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    token = derive_fernet(get_passphrase()).encrypt(
+        json.dumps(env, default=str).encode("utf-8")).decode("ascii")
+    provider.ensure_folder(folder)
+    provider.append_to_folder(folder, _wrap_message(token, account.email, device,
+                                                    subject=_CRED_SUBJECT), seen=True)
+    _save(session, {"syncCredPushAt": env["ts"]})
+    return {"count": env["count"], "at": env["ts"], "label": env["device_label"]}
+
+
+def _fetch_cred_env(session: Session, provider, uid: int) -> dict:
+    """Outer-decrypt (sync passphrase) the message at uid and confirm it's a
+    credential snapshot. Does NOT touch the inner AEAD - no credential secret
+    needed here (that's the picker path)."""
+    passphrase = get_passphrase()
+    if not passphrase:
+        raise RuntimeError("Set a sync passphrase first.")
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    provider.ensure_folder(folder)
+    raw = provider.fetch_raw(folder, uid)
+    token = _extract_token(raw)
+    if not token:
+        raise RuntimeError("That snapshot could not be read.")
+    env = json.loads(derive_fernet(passphrase).decrypt(token.encode("ascii")).decode("utf-8"))
+    if env.get("kind") != "credentials":
+        raise RuntimeError("That message isn't a credential snapshot.")
+    return env
+
+
+def list_credential_snapshots(session: Session, provider) -> list[dict]:
+    """Credential snapshots in the folder (newest first) - metadata only. Emails
+    and secrets stay sealed inside the AEAD; the picker shows device + count +
+    time, and the real account list only appears after the secret is entered."""
+    passphrase = get_passphrase()
+    if not passphrase:
+        return []
+    blob = _blob(session)
+    folder = blob.get("syncFolder") or SYNC_FOLDER_DEFAULT
+    my_device = device_id(session)
+    fernet = derive_fernet(passphrase)
+    try:
+        provider.ensure_folder(folder)
+        uids = provider.list_uids(folder)
+    except Exception:
+        return []
+    out: list[dict] = []
+    for scanned, uid in enumerate(sorted(uids, reverse=True)):
+        if scanned >= _SNAPSHOT_SCAN_BUDGET:
+            break
+        try:
+            raw = provider.fetch_raw(folder, uid)
+            token = _extract_token(raw)
+            if not token:
+                continue
+            env = json.loads(fernet.decrypt(token.encode("ascii")).decode("utf-8"))
+        except Exception:
+            continue
+        if env.get("kind") != "credentials":
+            continue
+        out.append({
+            "uid": uid,
+            "device": env.get("device", ""),
+            "device_label": env.get("device_label") or (env.get("device", "")[:8] or "unknown"),
+            "is_me": env.get("device") == my_device,
+            "published_at": env.get("ts", ""),
+            "count": int(env.get("count") or 0),
+        })
+    out.sort(key=lambda x: (x.get("published_at") or ""), reverse=True)
+    return out
+
+
+def preview_credentials(session: Session, provider, uid: int, secret: str) -> list[dict]:
+    """Decrypt a credential snapshot and list its accounts (email + provider +
+    whether this device already has that account) so the user can choose which
+    to import. No account is created here."""
+    env = _fetch_cred_env(session, provider, uid)
+    accounts = _decrypt_credentials(env, secret)
+    existing = {a.email.lower() for a in session.exec(select(Account))}
+    return [{"email": e.get("email", ""), "provider": e.get("provider", ""),
+             "exists": (e.get("email") or "").lower() in existing}
+            for e in accounts if e.get("email")]
+
+
+def apply_credentials(session: Session, provider, uid: int, secret: str,
+                      emails: list[str] | None) -> dict:
+    """Import the chosen accounts (+ their secrets) from a credential snapshot.
+    Skips accounts already present locally; never overwrites an existing one."""
+    from app.core.security import get_secret_store
+    store = get_secret_store()
+    if not store.is_unlocked:
+        raise RuntimeError("Unlock the vault first.")
+    env = _fetch_cred_env(session, provider, uid)
+    accounts = _decrypt_credentials(env, secret)
+    want = {(e or "").lower() for e in (emails or [])}
+    existing = {a.email.lower() for a in session.exec(select(Account))}
+    imported = 0
+    for e in accounts:
+        email = (e.get("email") or "").lower().strip()
+        if not email or email in existing:
+            continue
+        if want and email not in want:
+            continue
+        try:
+            fields = {k: e[k] for k in _ACCT_SYNC_FIELDS if k in e}
+            fields["provider"] = e.get("provider", "imap")
+            acct = Account(**fields)
+            session.add(acct)
+            session.flush()   # assign secret_key-referenced row / id
+            sec_val = e.get("secret")
+            if e.get("secret_key") and sec_val is not None:
+                store.set(e["secret_key"], sec_val)
+            existing.add(email)
+            imported += 1
+        except Exception:
+            log.exception("credential import failed for one account")
+            continue
+    session.commit()
+    return {"imported": imported}
+
+
 # --- op-log compaction ----------------------------------------------------
 # The sync folder grows one message per publish, forever. Past this size, old
 # increments are deleted - AFTER appending one full state baseline, so any peer
@@ -618,6 +837,9 @@ def compact(session: Session, account: Account, provider) -> int:
         if "settings snapshot" in subject.lower() and kept_config < _COMPACT_KEEP_CONFIG:
             kept_config += 1
             continue
+        if "credential vault" in subject.lower():
+            continue   # never prune credential snapshots - the only copy of a
+                       # password may live here for a device that later dies
         try:
             provider.delete(folder, uid)
             deleted += 1

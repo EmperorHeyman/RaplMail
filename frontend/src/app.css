@@ -65,6 +65,16 @@ body {
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* App chrome is not selectable text - without this, dragging the window by
+     its top edge painted a text selection across the whole UI instead. Real
+     content (message text, inputs, code) re-enables selection below. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea, [contenteditable], [contenteditable] *,
+pre, code, .body-card, .reader .subject, .reader .meta, .ai-summary {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 ::selection { background: var(--accent-soft-2); }
@@ -223,45 +233,46 @@ input[type="checkbox"]:focus, input[type="radio"]:focus { border: none; box-shad
    readability. Every color derives from the theme tokens via color-mix, so
    any theme preset keeps working. */
 html.glass body { background: transparent; }
-/* Panes: the sidebar is the clearest glass; content panes get progressively
-   more substance for readability. */
+/* Panes over the frosted vibrancy layer: the sidebar shows the most glass
+   (native macOS look); content panes stay mostly solid for readability - the
+   glass should read at the edges of the window, not behind the mail you read. */
 html.glass .sidebar {
-  background: color-mix(in srgb, var(--surface) 16%, transparent);
-  border-right-color: color-mix(in srgb, var(--border) 40%, transparent);
+  background: color-mix(in srgb, var(--surface) 38%, transparent);
+  border-right-color: color-mix(in srgb, var(--border) 50%, transparent);
 }
-html.glass .list { background: color-mix(in srgb, var(--bg) 34%, transparent); }
-html.glass .reader, html.glass .thread { background: color-mix(in srgb, var(--bg) 44%, transparent); }
+html.glass .list { background: color-mix(in srgb, var(--bg) 72%, transparent); }
+html.glass .reader, html.glass .thread { background: color-mix(in srgb, var(--bg) 80%, transparent); }
 /* Toolbars and sticky headers float as glass over the scrolling content -
    translucent pane material + real backdrop blur (WKWebView composites this
    natively; the WebView2 perf caveat that bans it on Windows doesn't apply). */
 html.glass .list > header,
 html.glass .list .datesep, html.glass .list .sechead,
 html.glass .actions.bottom {
-  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   backdrop-filter: blur(20px) saturate(1.4);
 }
-html.glass .list > header { border-bottom-color: color-mix(in srgb, var(--border) 45%, transparent); }
+html.glass .list > header { border-bottom-color: color-mix(in srgb, var(--border) 55%, transparent); }
 /* Cards (reader header, message body frame, settings cards) read as raised
    glass panels: translucent surface, soft blur, a specular top edge, and a
    deeper drop shadow than the flat theme uses. */
 html.glass .reader header, html.glass .body-card, html.glass .card {
-  background: color-mix(in srgb, var(--surface) 52%, transparent);
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
   backdrop-filter: blur(24px) saturate(1.4);
-  border-color: color-mix(in srgb, var(--border) 65%, transparent);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 8px 24px rgba(0, 0, 0, 0.18);
 }
 /* Buttons and chips pick up the same material so the chrome reads as one
    system instead of opaque boxes floating on glass. */
 html.glass .actions .btn, html.glass .vtoggle, html.glass .markread,
 html.glass .cat, html.glass .ai-chip {
-  background: color-mix(in srgb, var(--surface-2) 50%, transparent);
-  border-color: color-mix(in srgb, var(--border) 60%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 html.glass .bulkbar {
-  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+  background: color-mix(in srgb, var(--surface-2) 75%, transparent);
   -webkit-backdrop-filter: blur(20px) saturate(1.4);
   backdrop-filter: blur(20px) saturate(1.4);
 }

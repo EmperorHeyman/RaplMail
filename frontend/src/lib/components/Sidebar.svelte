@@ -193,7 +193,10 @@
   const openFolder = (f) => { app.view = "mail"; selectFolder(f); };
 </script>
 
-<aside class="sidebar" class:rail={collapsed}>
+<!-- data-tauri-drag-region: dragging any EMPTY sidebar surface moves the window
+     (native macOS sidebar behavior); clicks on child controls are unaffected
+     because Tauri only starts a drag when the exact target carries the attribute. -->
+<aside class="sidebar" class:rail={collapsed} data-tauri-drag-region>
   {#if isMacApp()}
     <!-- macOS overlay title bar: clear the traffic lights and give the window
          a grab strip (double-click maximizes, courtesy of Tauri's drag region). -->

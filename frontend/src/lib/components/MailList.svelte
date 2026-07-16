@@ -906,8 +906,10 @@
 {/if}
 
 <section class="list">
-  <header>
-    <div class="row1">
+  <!-- Empty header surface doubles as a window drag handle (macOS overlay
+       title bar); buttons/inputs inside still receive their clicks. -->
+  <header data-tauri-drag-region>
+    <div class="row1" data-tauri-drag-region>
       {#if app.selectedKind === "smart" && sectionsMode}
         <h2>{t("list.smartInbox")}</h2>
       {:else if app.selectedKind === "smart"}

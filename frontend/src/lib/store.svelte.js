@@ -164,6 +164,7 @@ export function kbAll() {
 
 export const app = $state({
   vault: { exists: false, unlocked: false, auto_unlock: false, ready: false },
+  glassOk: true,                 // macOS: did the native vibrancy layer attach? (main.rs reports it)
   accounts: [],
   folders: [],
   selectedKind: "folder",        // "folder" | "unified"
@@ -334,7 +335,9 @@ export function applyTheme() {
   // Liquid Glass (macOS native app only): the window behind us is transparent
   // with an NSVisualEffectView, so the .glass class swaps the opaque pane
   // backgrounds for translucent materials that let the vibrancy through.
-  root.classList.toggle("glass", isMacApp() && app.settings.liquidGlass !== false);
+  // Gated on glassOk - if the vibrancy layer failed to attach, translucent
+  // panes would show the raw desktop, so we stay opaque instead.
+  root.classList.toggle("glass", isMacApp() && app.settings.liquidGlass !== false && app.glassOk !== false);
 }
 
 async function doSend(payload) {

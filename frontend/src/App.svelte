@@ -1,7 +1,7 @@
 <script>
   import { onMount, untrack } from "svelte";
   import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge, flushSeenExcept } from "./lib/store.svelte.js";
-  import { openExternal } from "./lib/api.js";
+  import { openExternal, isMacApp } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
   import { t } from "./lib/i18n.svelte.js";
@@ -112,6 +112,14 @@
     initSettings();  // pull persisted settings from the backend file
     startSandboxBridge();  // act on "trust & open"/"save" requests from a sandbox
     boot();
+    // Liquid Glass gate: only keep translucent CSS if the native vibrancy layer
+    // really attached (otherwise panes would show the raw desktop through).
+    if (isMacApp()) {
+      import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("glass_available"))
+        .then((ok) => { app.glassOk = !!ok; applyTheme(); })
+        .catch(() => {});
+    }
     // Re-evaluate auto day/night theme periodically.
     const t = setInterval(() => { if (app.settings.themeMode === "auto") applyTheme(); }, 600000);
     return () => clearInterval(t);
@@ -228,6 +236,11 @@
 {:else if !app.vault.unlocked}
   <VaultGate />
 {:else}
+  {#if isMacApp()}
+    <!-- Full-width window grab strip along the very top (the overlay title bar
+         has no chrome of its own). Sits above the panes; buttons start lower. -->
+    <div class="titledrag" data-tauri-drag-region></div>
+  {/if}
   <div class="app" class:customizing={app.customizing} class:resizing={!!resizing}
        style="--sidebar-w: {app.settings.sidebarCollapsed ? '60px' : (dragW.sidebar ?? app.settings.sidebarWidth) + 'px'}; --list-w: {(dragW.list ?? app.settings.listWidth)}px">
     <Sidebar />
@@ -301,6 +314,9 @@
     height: 100%;
     position: relative;
   }
+  /* macOS overlay title bar: a thin always-on-top strip that drags the window
+     from anywhere along the top edge (panes' own padding keeps controls clear). */
+  .titledrag { position: fixed; top: 0; left: 0; right: 0; height: 14px; z-index: 900; }
   .app.customizing { user-select: none; }
   /* While dragging a divider, stop the message iframe (and other panes) from
      capturing pointer events - otherwise the drag stalls over the reader. */

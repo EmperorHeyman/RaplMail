@@ -31,6 +31,16 @@ struct QuitFlag(AtomicBool);
 /// Driven by the "Minimize to tray on close" setting via `set_close_to_tray`.
 struct CloseToTray(AtomicBool);
 
+/// Did the macOS vibrancy layer attach? The frontend only enables the
+/// translucent Liquid Glass CSS when it did - otherwise a transparent window
+/// would show the raw desktop through every pane.
+struct GlassOk(AtomicBool);
+
+#[tauri::command]
+fn glass_available(state: State<GlassOk>) -> bool {
+    state.0.load(Ordering::SeqCst)
+}
+
 #[tauri::command]
 fn set_close_to_tray(app: tauri::AppHandle, on: bool) {
     app.state::<CloseToTray>().0.store(on, Ordering::SeqCst);
@@ -221,9 +231,10 @@ fn main() {
         .manage(ChildGuard(Mutex::new(None)))
         .manage(QuitFlag(AtomicBool::new(false)))
         .manage(CloseToTray(AtomicBool::new(true)))
+        .manage(GlassOk(AtomicBool::new(false)))
         .invoke_handler(tauri::generate_handler![
             backend_config, set_unread_badge, save_attachment, save_attachment_to, open_attachment,
-            reveal_path, open_url, set_close_to_tray
+            reveal_path, open_url, set_close_to_tray, glass_available
         ])
         // Closing the window hides to the tray (so IMAP IDLE + notifications keep
         // running in the background) unless the user explicitly chose Quit.
@@ -255,16 +266,21 @@ fn main() {
         .setup(move |app| {
             // Liquid Glass: the window is transparent (tauri.macos.conf.json), so an
             // NSVisualEffectView must sit behind the webview or the window is see-through.
-            // UnderWindowBackground is the whole-window desktop-tinted material; the CSS
-            // theme layers its translucent surfaces on top of it.
+            // HudWindow is a strongly frosted material (UnderWindowBackground rendered
+            // nearly clear on newer macOS); Active keeps it frosted when unfocused.
+            // The result is reported to the webview via `glass_available` so the CSS
+            // only goes translucent when the frosted layer is really there.
             #[cfg(target_os = "macos")]
             if let Some(win) = app.get_webview_window("main") {
-                let _ = window_vibrancy::apply_vibrancy(
+                match window_vibrancy::apply_vibrancy(
                     &win,
-                    window_vibrancy::NSVisualEffectMaterial::UnderWindowBackground,
+                    window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                    Some(window_vibrancy::NSVisualEffectState::Active),
                     None,
-                    None,
-                );
+                ) {
+                    Ok(()) => app.state::<GlassOk>().0.store(true, Ordering::SeqCst),
+                    Err(e) => eprintln!("[glass] vibrancy failed: {e}"),
+                }
             }
 
             // System-tray icon: keeps RaplMail alive in the background with a

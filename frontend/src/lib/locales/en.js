@@ -15,6 +15,14 @@ import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
 import sandbox from "./parts/sandbox.js";
+import tickets from "./parts/tickets.js";
+import calendarView from "./parts/calendarView.js";
+import ai from "./parts/ai.js";
+import settingsGeneral from "./parts/settingsGeneral.js";
+import settingsAccounts from "./parts/settingsAccounts.js";
+import appearance from "./parts/appearance.js";
+import settingsMisc from "./parts/settingsMisc.js";
+import miscui from "./parts/miscui.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -147,6 +155,43 @@ const base = {
 
   // Common toasts.
   "toast.muteNotifOn": "Muted notifications from {who}",
+  "toast.queuedRetry": "Couldn't reach the server - queued, will retry. See Settings/sidebar for details.",
+  "toast.sent": "Sent ✓",
+  "toast.sendFailed": "Send failed: {error}",
+  "toast.sendCancelled": "Send cancelled",
+  "toast.deliveredPending": "Delivered a message that was still sending when the app closed",
+  "toast.undone": "Undone",
+  "toast.couldntApprove": "Couldn't approve",
+  "toast.couldntBlock": "Couldn't block",
+  "toast.couldntMuteNotif": "Couldn't mute notifications",
+  "toast.couldntReclassify": "Couldn't reclassify",
+  "toast.couldntMute": "Couldn't mute",
+  "toast.syncing": "Syncing…",
+  "toast.markedSafe": "Marked safe - this sender now shows a green check ✓",
+  "toast.unmarkedSafe": "Removed “safe” mark",
+  "toast.couldntPin": "Couldn't pin",
+  "toast.couldntMuteThread": "Couldn't mute conversation",
+  "toast.markedDone": "Marked done",
+  "toast.couldntUndoConn": "Couldn't undo - check your connection",
+  "toast.couldntUpdateRestore": "Couldn't update - restoring",
+  "toast.briefingReady": "☀️ Morning briefing ready - open the inbox assistant",
+  "toast.startupFailed": "Couldn't change startup setting: {error}",
+  "toast.approved": "Approved {who} - future mail lands in your inbox",
+  "toast.blocked": "Blocked {who}",
+  "toast.senderCatReset": "Reset sender category",
+  "toast.senderCatSet": "Sender → {cat}",
+  "toast.muted": "Muted {who}",
+  "toast.vipOn": "Marked as VIP ⭐",
+  "toast.vipOff": "Removed from VIP",
+  "toast.threadMuted": "Conversation muted",
+  "toast.addedToAiChat": "Added to AI chat: {subject}",
+  "toast.savedSearch": "Saved search “{name}”",
+  "toast.newMailN": "{n} new message(s)",
+  "toast.welcomeBack": "Welcome back - {n} message(s) resurfaced",
+  "toast.readReceipt": "📬 {who} opened {subject}",
+  "toast.someone": "Someone",
+  "confirm.areYouSure": "Are you sure?",
+  "confirm.confirm": "Confirm",
 
   // S/MIME (Settings → S/MIME).
   "smime.identityTitle": "Your S/MIME certificate",
@@ -216,4 +261,6 @@ export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
   ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
+  ...tickets.en, ...calendarView.en, ...ai.en, ...settingsGeneral.en,
+  ...settingsAccounts.en, ...appearance.en, ...settingsMisc.en, ...miscui.en,
 };

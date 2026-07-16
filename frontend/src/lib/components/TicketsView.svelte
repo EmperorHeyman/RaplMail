@@ -3,6 +3,7 @@
   import { app, notify } from "../store.svelte.js";
   import { rapldesk } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let instances = $state([]);
   let instanceId = $state(null);
@@ -23,11 +24,11 @@
   let counts = $state(null);          // GET /tickets/counts → tab badges
   const myId = $derived(me?.id ?? app.settings.raplDeskUserId ?? null);
   const TABS = [
-    { id: "all", label: "All" },
-    { id: "mine", label: "My tickets" },
-    { id: "department", label: "My dept" },
-    { id: "unassigned", label: "Unassigned" },
-    { id: "created", label: "Created" },
+    { id: "all", key: "tickets.tabAll" },
+    { id: "mine", key: "tickets.tabMine" },
+    { id: "department", key: "tickets.tabDept" },
+    { id: "unassigned", key: "tickets.tabUnassigned" },
+    { id: "created", key: "tickets.tabCreated" },
   ];
 
   // detail
@@ -66,10 +67,10 @@
   // Unwrap the {http, data:{status,data}} envelope; throw a useful error.
   async function rd(method, endpoint, query = {}, body = null) {
     const r = await rapldesk.call(instanceId, { method, endpoint, query, body });
-    if (r.http === 401 || r.http === 403) throw new Error(`Not allowed (${r.http}) - this API key is missing the required scope.`);
-    if (r.http === 404) throw new Error(`404 Not Found - check the instance Base URL. Called: ${r.url || "?"}`);
+    if (r.http === 401 || r.http === 403) throw new Error(t("tickets.errNotAllowed", { http: r.http }));
+    if (r.http === 404) throw new Error(t("tickets.err404", { url: r.url || "?" }));
     if (r.http >= 400) throw new Error(r.data?.message || `HTTP ${r.http} (${r.url || ""})`);
-    if (r.data?.status === "error") throw new Error(r.data.message || "RaplDesk error");
+    if (r.data?.status === "error") throw new Error(r.data.message || t("tickets.errGeneric"));
     return r.data?.data ?? r.data;
   }
 
@@ -120,7 +121,7 @@
     if (!replyText.trim()) return;
     // v2 accepts "me" (bound key); fall back to a manual id only if /me is absent.
     const uid = me ? "me" : myUserId();
-    if (!uid) { notify("Set your RaplDesk user id in Settings → RAPL Desk first", "error"); return; }
+    if (!uid) { notify(t("tickets.setUserIdFirst"), "error"); return; }
     sending = true;
     try {
       await rd("POST", `tickets/${ticket.id}/replies`, {}, {
@@ -129,7 +130,7 @@
       replyText = ""; replyInternal = false;
       const rr = await rd("GET", `tickets/${ticket.id}/replies`);
       replies = rr.replies || [];
-      notify("Reply posted");
+      notify(t("tickets.replyPosted"));
     } catch (e) { notify(e.message, "error"); }
     finally { sending = false; }
   }
@@ -137,7 +138,10 @@
     try {
       await rd("PUT", `tickets/${ticket.id}`, {}, { [field]: value });
       ticket = { ...ticket, [field]: value };
-      notify(`Ticket ${field} → ${value}`);
+      notify(t("tickets.fieldSet", {
+        field: t(field === "priority" ? "tickets.priority" : "tickets.status"),
+        value: t((field === "priority" ? "tickets.pri." : "tickets.st.") + value),
+      }));
       loadStats();
     } catch (e) { notify(e.message, "error"); }
   }
@@ -153,8 +157,8 @@
     try { users = (await rd("GET", "users", { per_page: 100 })).users || []; } catch { users = []; }
   }
   async function createTicket() {
-    if (!nf.title.trim() || !nf.description.trim()) { notify("Title and description are required", "error"); return; }
-    if (!me && (!nf.firm_id || !nf.created_by_user_id)) { notify("Firm and 'created by' user are required", "error"); return; }
+    if (!nf.title.trim() || !nf.description.trim()) { notify(t("tickets.titleDescRequired"), "error"); return; }
+    if (!me && (!nf.firm_id || !nf.created_by_user_id)) { notify(t("tickets.firmCreatorRequired"), "error"); return; }
     creating = true;
     try {
       const body = { title: nf.title.trim(), description: nf.description.trim(), priority: nf.priority };
@@ -163,7 +167,7 @@
       if (nf.assign_me) body.assigned_to_user_id = "me";
       if (nf.department_id) body.department_id = Number(nf.department_id);
       const d = await rd("POST", "tickets", {}, body);
-      notify("Ticket created");
+      notify(t("tickets.created"));
       tab = "list"; page = 1; await loadList(); loadStats(); loadCounts();
     } catch (e) { notify(e.message, "error"); }
     finally { creating = false; }
@@ -176,7 +180,7 @@
 <section class="tickets stagger-in">
   <header>
     <div class="htop">
-      <h2>{@html icons.receipt || ""} Tickets</h2>
+      <h2>{@html icons.receipt || ""} {t("tickets.title")}</h2>
       {#if instances.length > 1}
         <select class="inst" bind:value={instanceId} onchange={() => selectInstance(instanceId)}>
           {#each instances as i}<option value={i.id}>{i.name}</option>{/each}
@@ -185,35 +189,35 @@
       <div class="hspace"></div>
       {#if stats}
         <div class="stats">
-          <span><b>{stats.total ?? stats.total_tickets ?? "-"}</b> total</span>
-          <span class="ok"><b>{stats.open ?? "-"}</b> open</span>
-          <span class="muted"><b>{stats.closed ?? "-"}</b> closed</span>
+          <span><b>{stats.total ?? stats.total_tickets ?? "-"}</b> {t("tickets.statTotal")}</span>
+          <span class="ok"><b>{stats.open ?? "-"}</b> {t("tickets.statOpen")}</span>
+          <span class="muted"><b>{stats.closed ?? "-"}</b> {t("tickets.statClosed")}</span>
         </div>
       {/if}
-      <button class="btn" onclick={loadList} disabled={loading} title="Refresh">{@html icons.sync}</button>
-      <button class="btn primary" onclick={startNew}>＋ New ticket</button>
+      <button class="btn" onclick={loadList} disabled={loading} title={t("tickets.refresh")}>{@html icons.sync}</button>
+      <button class="btn primary" onclick={startNew}>＋ {t("tickets.newTicket")}</button>
     </div>
     {#if tab === "list"}
       <div class="tabbar">
-        {#each TABS as t}
-          <button class="tab" class:on={listTab === t.id} onclick={() => setTab(t.id)}>
-            {t.label}{#if tabCount(t.id) != null}<span class="cnt">{tabCount(t.id)}</span>{/if}
+        {#each TABS as tb}
+          <button class="tab" class:on={listTab === tb.id} onclick={() => setTab(tb.id)}>
+            {t(tb.key)}{#if tabCount(tb.id) != null}<span class="cnt">{tabCount(tb.id)}</span>{/if}
           </button>
         {/each}
-        {#if me}<span class="who" title="Signed in via this API key">· {me.name}</span>{/if}
+        {#if me}<span class="who" title={t("tickets.signedInVia")}>· {me.name}</span>{/if}
       </div>
       <div class="filters">
-        <input class="search" placeholder="Search tickets…" bind:value={search}
+        <input class="search" placeholder={t("tickets.searchPlaceholder")} bind:value={search}
           onkeydown={(e) => e.key === "Enter" && (page = 1, loadList())} />
         <select bind:value={fStatus} onchange={() => (page = 1, loadList())}>
-          <option value="">Any status</option>{#each STATUSES as s}<option value={s}>{s}</option>{/each}
+          <option value="">{t("tickets.anyStatus")}</option>{#each STATUSES as s}<option value={s}>{t("tickets.st." + s)}</option>{/each}
         </select>
         <select bind:value={fPriority} onchange={() => (page = 1, loadList())}>
-          <option value="">Any priority</option>{#each PRIORITIES as p}<option value={p}>{p}</option>{/each}
+          <option value="">{t("tickets.anyPriority")}</option>{#each PRIORITIES as p}<option value={p}>{t("tickets.pri." + p)}</option>{/each}
         </select>
       </div>
       {#if (listTab === "mine" || listTab === "created") && !myId}
-        <p class="tabhint">Set your RaplDesk user id in <b>Settings → RAPL Desk</b> (or add <code>GET /me</code> to the API) to use this tab.</p>
+        <p class="tabhint">{t("tickets.tabHintPre")} <b>{t("tickets.settingsPath")}</b> {t("tickets.tabHintMid")} <code>GET /me</code> {t("tickets.tabHintEnd")}</p>
       {/if}
     {/if}
   </header>
@@ -221,77 +225,77 @@
   {#if instances.length === 0}
     <div class="empty">
       <div class="big">{@html icons.receipt || ""}</div>
-      <p>No RAPL Desk connected.</p>
-      <button class="btn primary" onclick={() => { app.view = "settings"; app.settingsTab = "rapldesk"; }}>Connect in Settings → RAPL Desk</button>
+      <p>{t("tickets.noDesk")}</p>
+      <button class="btn primary" onclick={() => { app.view = "settings"; app.settingsTab = "rapldesk"; }}>{t("tickets.connectInSettings")}</button>
     </div>
   {:else if err && tab === "list" && tickets.length === 0}
     <div class="empty"><div class="big">⚠</div><p>{err}</p></div>
   {:else if tab === "list"}
     <div class="list">
-      {#if loading}<p class="muted pad">Loading…</p>{/if}
-      {#each tickets as t}
-        <button class="trow" class:unread={t.unread} onclick={() => openTicket(t)}>
-          {#if t.unread}<span class="udot" title="Unread"></span>{/if}
-          <span class="pri {prioClass(t.priority)}" title={t.priority}></span>
+      {#if loading}<p class="muted pad">{t("tickets.loading")}</p>{/if}
+      {#each tickets as tk}
+        <button class="trow" class:unread={tk.unread} onclick={() => openTicket(tk)}>
+          {#if tk.unread}<span class="udot" title={t("tickets.unread")}></span>{/if}
+          <span class="pri {prioClass(tk.priority)}" title={t("tickets.pri." + (tk.priority || "normal"))}></span>
           <span class="tmain">
-            <span class="ttitle">#{t.id} · {t.title}</span>
-            <span class="tmeta">{t.firm_name || ""}{t.department_name ? " · " + t.department_name : ""}{t.assigned_to_name ? " · " + t.assigned_to_name : " · unassigned"}</span>
+            <span class="ttitle">#{tk.id} · {tk.title}</span>
+            <span class="tmeta">{tk.firm_name || ""}{tk.department_name ? " · " + tk.department_name : ""}{tk.assigned_to_name ? " · " + tk.assigned_to_name : " · " + t("tickets.unassigned")}</span>
           </span>
           <span class="tright">
-            {#if t.is_overdue}<span class="badge overdue" title="Past deadline">overdue</span>{/if}
-            <span class="badge st-{t.status}">{t.status}</span>
-            {#if t.reply_count}<span class="rc">{@html icons.chat} {t.reply_count}</span>{/if}
-            <span class="tdate">{fmt(t.last_reply_at || t.created_at)}</span>
+            {#if tk.is_overdue}<span class="badge overdue" title={t("tickets.pastDeadline")}>{t("tickets.overdue")}</span>{/if}
+            <span class="badge st-{tk.status}">{t("tickets.st." + tk.status)}</span>
+            {#if tk.reply_count}<span class="rc">{@html icons.chat} {tk.reply_count}</span>{/if}
+            <span class="tdate">{fmt(tk.last_reply_at || tk.created_at)}</span>
           </span>
         </button>
       {/each}
-      {#if !loading && tickets.length === 0}<p class="muted pad">No tickets match.</p>{/if}
+      {#if !loading && tickets.length === 0}<p class="muted pad">{t("tickets.noMatch")}</p>{/if}
       {#if pagination.total_pages > 1}
         <div class="pager">
-          <button class="btn ghost" disabled={page <= 1} onclick={() => (page--, loadList())}>‹ Prev</button>
-          <span>Page {pagination.page} / {pagination.total_pages} · {pagination.total} total</span>
-          <button class="btn ghost" disabled={page >= pagination.total_pages} onclick={() => (page++, loadList())}>Next ›</button>
+          <button class="btn ghost" disabled={page <= 1} onclick={() => (page--, loadList())}>{t("tickets.prev")}</button>
+          <span>{t("tickets.pageInfo", { page: pagination.page, pages: pagination.total_pages, total: pagination.total })}</span>
+          <button class="btn ghost" disabled={page >= pagination.total_pages} onclick={() => (page++, loadList())}>{t("tickets.next")}</button>
         </div>
       {/if}
     </div>
   {:else if tab === "detail"}
     <div class="detail">
-      <button class="back" onclick={() => { tab = "list"; }}>‹ All tickets</button>
-      {#if loading}<p class="muted pad">Loading…</p>{/if}
+      <button class="back" onclick={() => { tab = "list"; }}>{t("tickets.backToList")}</button>
+      {#if loading}<p class="muted pad">{t("tickets.loading")}</p>{/if}
       {#if ticket}
         <div class="d-head">
           <h3><span class="pri {prioClass(ticket.priority)}"></span>#{ticket.id} · {ticket.title}</h3>
           <div class="d-controls">
-            <label>Status
+            <label>{t("tickets.status")}
               <select value={ticket.status} onchange={(e) => setField("status", e.currentTarget.value)}>
-                {#each STATUSES as s}<option value={s}>{s}</option>{/each}
+                {#each STATUSES as s}<option value={s}>{t("tickets.st." + s)}</option>{/each}
               </select>
             </label>
-            <label>Priority
+            <label>{t("tickets.priority")}
               <select value={ticket.priority} onchange={(e) => setField("priority", e.currentTarget.value)}>
-                {#each PRIORITIES as p}<option value={p}>{p}</option>{/each}
+                {#each PRIORITIES as p}<option value={p}>{t("tickets.pri." + p)}</option>{/each}
               </select>
             </label>
           </div>
         </div>
-        <div class="d-meta">{ticket.firm_name || ""}{ticket.department_name ? " · " + ticket.department_name : ""}{ticket.created_by_name ? " · by " + ticket.created_by_name : ""}</div>
+        <div class="d-meta">{ticket.firm_name || ""}{ticket.department_name ? " · " + ticket.department_name : ""}{ticket.created_by_name ? " · " + t("tickets.byName", { name: ticket.created_by_name }) : ""}</div>
         {#if ticket.description}<div class="d-desc">{ticket.description}</div>{/if}
 
         <div class="replies">
           {#each replies as r}
             <div class="reply" class:internal={r.is_internal_note}>
-              <div class="rhead"><b>{r.user_name || "?"}</b> <span class="rrole">{r.user_role || ""}</span>{#if r.is_internal_note}<span class="note">internal</span>{/if}<span class="rtime">{fmt(r.created_at)}</span></div>
+              <div class="rhead"><b>{r.user_name || "?"}</b> <span class="rrole">{r.user_role || ""}</span>{#if r.is_internal_note}<span class="note">{t("tickets.internal")}</span>{/if}<span class="rtime">{fmt(r.created_at)}</span></div>
               <div class="rbody">{@html r.message}</div>
             </div>
           {/each}
-          {#if replies.length === 0 && !loading}<p class="muted">No replies yet.</p>{/if}
+          {#if replies.length === 0 && !loading}<p class="muted">{t("tickets.noReplies")}</p>{/if}
         </div>
 
         <div class="reply-box">
-          <textarea rows="3" bind:value={replyText} placeholder="Write a reply…"></textarea>
+          <textarea rows="3" bind:value={replyText} placeholder={t("tickets.replyPlaceholder")}></textarea>
           <div class="rb-actions">
-            <label class="chk"><input type="checkbox" bind:checked={replyInternal} /> Internal note</label>
-            <button class="btn primary" onclick={sendReply} disabled={sending || !replyText.trim()}>{sending ? "Sending…" : "Reply"}</button>
+            <label class="chk"><input type="checkbox" bind:checked={replyInternal} /> {t("tickets.internalNote")}</label>
+            <button class="btn primary" onclick={sendReply} disabled={sending || !replyText.trim()}>{sending ? t("tickets.sending") : t("tickets.reply")}</button>
           </div>
         </div>
       {:else if err}
@@ -300,29 +304,29 @@
     </div>
   {:else if tab === "new"}
     <div class="newform">
-      <button class="back" onclick={() => { tab = "list"; }}>‹ Cancel</button>
-      <h3>New ticket</h3>
-      <label class="fr"><span>Title</span><input bind:value={nf.title} /></label>
-      <label class="fr"><span>Description</span><textarea rows="4" bind:value={nf.description}></textarea></label>
-      <label class="fr"><span>Firm</span>
+      <button class="back" onclick={() => { tab = "list"; }}>‹ {t("tickets.cancel")}</button>
+      <h3>{t("tickets.newTicket")}</h3>
+      <label class="fr"><span>{t("tickets.fTitle")}</span><input bind:value={nf.title} /></label>
+      <label class="fr"><span>{t("tickets.fDescription")}</span><textarea rows="4" bind:value={nf.description}></textarea></label>
+      <label class="fr"><span>{t("tickets.fFirm")}</span>
         {#if firms.length}<select bind:value={nf.firm_id}><option value="">-</option>{#each firms as f}<option value={f.id}>{f.name}</option>{/each}</select>
-        {:else}<input type="number" bind:value={nf.firm_id} placeholder="firm id" />{/if}
+        {:else}<input type="number" bind:value={nf.firm_id} placeholder={t("tickets.phFirmId")} />{/if}
       </label>
-      <label class="fr"><span>Created by</span>
+      <label class="fr"><span>{t("tickets.fCreatedBy")}</span>
         {#if users.length}<select bind:value={nf.created_by_user_id}><option value="">-</option>{#each users as u}<option value={u.id}>{u.name} ({u.email})</option>{/each}</select>
-        {:else}<input type="number" bind:value={nf.created_by_user_id} placeholder="user id" />{/if}
+        {:else}<input type="number" bind:value={nf.created_by_user_id} placeholder={t("tickets.phUserId")} />{/if}
       </label>
-      <label class="fr"><span>Department</span>
+      <label class="fr"><span>{t("tickets.fDepartment")}</span>
         {#if departments.length}<select bind:value={nf.department_id}><option value="">-</option>{#each departments as d}<option value={d.id}>{d.name}</option>{/each}</select>
-        {:else}<input type="number" bind:value={nf.department_id} placeholder="optional" />{/if}
+        {:else}<input type="number" bind:value={nf.department_id} placeholder={t("tickets.phOptional")} />{/if}
       </label>
-      <label class="fr"><span>Priority</span>
-        <select bind:value={nf.priority}>{#each PRIORITIES as p}<option value={p}>{p}</option>{/each}</select>
+      <label class="fr"><span>{t("tickets.priority")}</span>
+        <select bind:value={nf.priority}>{#each PRIORITIES as p}<option value={p}>{t("tickets.pri." + p)}</option>{/each}</select>
       </label>
-      <label class="fr"><span>Assign</span><label class="chk"><input type="checkbox" bind:checked={nf.assign_me} /> Assign to me</label></label>
+      <label class="fr"><span>{t("tickets.fAssign")}</span><label class="chk"><input type="checkbox" bind:checked={nf.assign_me} /> {t("tickets.assignToMe")}</label></label>
       <div class="modal-btns">
-        <button class="btn ghost" onclick={() => (tab = "list")}>Cancel</button>
-        <button class="btn primary" onclick={createTicket} disabled={creating}>{creating ? "Creating…" : "Create ticket"}</button>
+        <button class="btn ghost" onclick={() => (tab = "list")}>{t("tickets.cancel")}</button>
+        <button class="btn primary" onclick={createTicket} disabled={creating}>{creating ? t("tickets.creating") : t("tickets.createTicket")}</button>
       </div>
     </div>
   {/if}

@@ -2,6 +2,7 @@
   import { vault } from "../api.js";
   import { app, refreshVault, notify } from "../store.svelte.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let password = $state("");
   let confirm = $state("");
@@ -13,16 +14,16 @@
   async function submit(e) {
     e.preventDefault();
     error = "";
-    if (isNew && password !== confirm) { error = "Passwords don't match"; return; }
-    if (password.length < 6) { error = "Use at least 6 characters"; return; }
+    if (isNew && password !== confirm) { error = t("vault.noMatch"); return; }
+    if (password.length < 6) { error = t("vault.tooShort"); return; }
     busy = true;
     try {
       if (isNew) await vault.initialize(password);
       else await vault.unlock(password);
       await refreshVault();
-      notify("Vault unlocked");
+      notify(t("vault.unlocked"));
     } catch (err) {
-      error = err.message || "Failed";
+      error = err.message || t("vault.failed");
     } finally {
       busy = false;
     }
@@ -34,23 +35,21 @@
     <div class="logo">{@html icons.brand}</div>
     <h1>RaplMail</h1>
     <p class="sub">
-      {isNew
-        ? "Set a master password to encrypt your accounts on this device."
-        : "Enter your master password to unlock your mail."}
+      {isNew ? t("vault.setupSub") : t("vault.unlockSub")}
     </p>
 
-    <input type="password" placeholder="Master password" bind:value={password} autofocus />
+    <input type="password" placeholder={t("vault.masterPassword")} bind:value={password} autofocus />
     {#if isNew}
-      <input type="password" placeholder="Confirm password" bind:value={confirm} />
+      <input type="password" placeholder={t("vault.confirmPassword")} bind:value={confirm} />
     {/if}
 
     {#if error}<div class="error">{error}</div>{/if}
 
     <button class="btn primary" type="submit" disabled={busy}>
-      {busy ? "…" : isNew ? "Create vault" : "Unlock"}
+      {busy ? "…" : isNew ? t("vault.create") : t("vault.unlock")}
     </button>
     {#if isNew}
-      <p class="hint">There's no recovery - if you forget this, your stored credentials are gone.</p>
+      <p class="hint">{t("vault.noRecovery")}</p>
     {/if}
   </form>
 </div>

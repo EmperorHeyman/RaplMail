@@ -3,6 +3,7 @@
   import { app, notify, saveSettings } from "../store.svelte.js";
   import { calendar } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let cursor = $state(new Date());   // any day within the visible month/week
   let events = $state([]);
@@ -24,8 +25,9 @@
     return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return d; });
   });
 
-  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const MONTHS = $derived(Array.from({ length: 12 }, (_, i) => t(`calv.month${i + 1}`)));
+  const MONTHS_SHORT = $derived(Array.from({ length: 12 }, (_, i) => t(`calv.monthShort${i + 1}`)));
+  const DOW = $derived(Array.from({ length: 7 }, (_, i) => t(`calv.dow${i + 1}`)));
 
   let _loadGen = 0;   // latest-request-wins: clicking ‹ › quickly overlaps loads
   async function load() {
@@ -91,23 +93,23 @@
     creating = true;
   }
   async function deleteEvent(e) {
-    if (!e?.id || !confirm(`Delete "${e.summary || "(untitled)"}"?`)) return;
+    if (!e?.id || !confirm(t("calv.confirmDeleteEvent", { title: e.summary || t("calv.untitled") }))) return;
     try {
       const r = await calendar.remove(e.id);
-      notify(r.google ? "Deleted from Google Calendar" : "Event deleted");
+      notify(r.google ? t("calv.deletedGoogle") : t("calv.eventDeleted"));
       await load();
-    } catch (err) { notify(err.message || "Couldn't delete", "error"); }
+    } catch (err) { notify(err.message || t("calv.couldntDelete"), "error"); }
   }
   const hasCancelled = $derived(events.some((e) => e.cancelled));
   let clearing = $state(false);
   async function clearCancelled() {
-    if (!confirm("Remove ALL cancelled events from the calendar? They won't come back on the next sync.")) return;
+    if (!confirm(t("calv.confirmClearCancelled"))) return;
     clearing = true;
     try {
       const r = await calendar.clearCancelled();
-      notify(`Removed ${r.deleted} cancelled event${r.deleted === 1 ? "" : "s"}`);
+      notify(r.deleted === 1 ? t("calv.removedCancelledOne") : t("calv.removedCancelledN", { n: r.deleted }));
       await load();
-    } catch (err) { notify(err.message || "Couldn't remove cancelled events", "error"); }
+    } catch (err) { notify(err.message || t("calv.couldntRemoveCancelled"), "error"); }
     finally { clearing = false; }
   }
 
@@ -128,7 +130,7 @@
   function newEvent() { form = blankForm(selected || new Date()); creating = true; }
   function newEventRange(a, b) { form = blankForm(a, b, true); creating = true; }   // multi-day all-day
   async function saveEvent() {
-    if (!form?.summary.trim() || !form.account_id) { notify("Add a title and pick an account", "error"); return; }
+    if (!form?.summary.trim() || !form.account_id) { notify(t("calv.needTitleAccount"), "error"); return; }
     saving = true;
     try {
       const startIso = form.all_day ? `${form.date}T00:00:00` : `${form.date}T${form.start}:00`;
@@ -150,11 +152,11 @@
         all_day: form.all_day, location: form.location.trim(), description: form.description.trim(),
       });
       if (r.error) notify(r.error, "error");
-      else if (r.google) notify("Added to your Google Calendar ✓");
-      else notify(r.sent ? "Event created - accept the invite in your inbox to add it" : "Saved locally (invite couldn't be sent)");
+      else if (r.google) notify(t("calv.addedGoogle"));
+      else notify(r.sent ? t("calv.createdInvite") : t("calv.savedLocally"));
       if (!r.error) creating = false;
       await load();
-    } catch (e) { notify(e.message || "Couldn't create event", "error"); }
+    } catch (e) { notify(e.message || t("calv.couldntCreate"), "error"); }
     finally { saving = false; }
   }
 
@@ -221,12 +223,12 @@
   async function setRsvp(ev, status) {
     try { const u = await calendar.rsvp(ev.id, status); ev.status = u.status; events = [...events]; } catch {}
   }
-  const STATUS_LABEL = { accepted: "Going", declined: "Declined", tentative: "Maybe", needsAction: "" };
+  const STATUS_LABEL = $derived({ accepted: t("calv.statusGoing"), declined: t("calv.statusDeclined"), tentative: t("calv.maybe"), needsAction: "" });
 
   const title = $derived.by(() => {
     if (view === "week") {
       const f = weekDays[0], l = weekDays[6];
-      const mf = MONTHS[f.getMonth()].slice(0, 3), ml = MONTHS[l.getMonth()].slice(0, 3);
+      const mf = MONTHS_SHORT[f.getMonth()], ml = MONTHS_SHORT[l.getMonth()];
       return f.getMonth() === l.getMonth()
         ? `${mf} ${f.getDate()} - ${l.getDate()}, ${f.getFullYear()}`
         : `${mf} ${f.getDate()} - ${ml} ${l.getDate()}`;
@@ -240,25 +242,25 @@
 <section class="cal stagger-in">
   <header>
     <div class="nav">
-      <button class="btn ghost" onclick={prev} title={view === "week" ? "Previous week" : "Previous month"}>‹</button>
-      <button class="btn ghost" onclick={today}>Today</button>
-      <button class="btn ghost" onclick={next} title={view === "week" ? "Next week" : "Next month"}>›</button>
+      <button class="btn ghost" onclick={prev} title={view === "week" ? t("calv.prevWeek") : t("calv.prevMonth")}>‹</button>
+      <button class="btn ghost" onclick={today}>{t("calv.today")}</button>
+      <button class="btn ghost" onclick={next} title={view === "week" ? t("calv.nextWeek") : t("calv.nextMonth")}>›</button>
       <h2>{title}</h2>
     </div>
     <div class="hbtns">
       <div class="seg">
-        <button class="segbtn" class:on={view === "month"} onclick={() => setView("month")}>Month</button>
-        <button class="segbtn" class:on={view === "week"} onclick={() => setView("week")}>Week</button>
+        <button class="segbtn" class:on={view === "month"} onclick={() => setView("month")}>{t("calv.month")}</button>
+        <button class="segbtn" class:on={view === "week"} onclick={() => setView("week")}>{t("calv.week")}</button>
       </div>
-      <button class="btn primary" onclick={newEvent} title="Create an event">＋ New event</button>
+      <button class="btn primary" onclick={newEvent} title={t("calv.newEventTip")}>＋ {t("calv.newEvent")}</button>
       {#if hasCancelled}
         <button class="btn" onclick={clearCancelled} disabled={clearing}
-          title="Delete every cancelled event from the calendar (they won't be re-added on sync)">
-          {@html icons.trash} {clearing ? "Clearing…" : "Clear cancelled"}
+          title={t("calv.clearCancelledTip")}>
+          {@html icons.trash} {clearing ? t("calv.clearing") : t("calv.clearCancelled")}
         </button>
       {/if}
-      <button class="btn" onclick={scan} disabled={scanning} title="Pull mail invites and refresh calendar subscriptions">
-        {@html icons.sync} {scanning ? "Syncing…" : "Sync"}
+      <button class="btn" onclick={scan} disabled={scanning} title={t("calv.syncTip")}>
+        {@html icons.sync} {scanning ? t("calv.syncing") : t("calv.sync")}
       </button>
     </div>
   </header>
@@ -266,32 +268,32 @@
   {#if creating && form}
     <div class="modal-bg" onclick={() => (creating = false)}>
       <div class="modal" onclick={(e) => e.stopPropagation()}>
-        <h3>New event</h3>
-        <label class="fr"><span>Title</span><input bind:value={form.summary} placeholder="Dentist" /></label>
-        <label class="fr"><span>{form.all_day ? "Start date" : "Date"}</span><input type="date" bind:value={form.date} /></label>
+        <h3>{t("calv.newEvent")}</h3>
+        <label class="fr"><span>{t("calv.fTitle")}</span><input bind:value={form.summary} placeholder={t("calv.fTitlePh")} /></label>
+        <label class="fr"><span>{form.all_day ? t("calv.fStartDate") : t("calv.fDate")}</span><input type="date" bind:value={form.date} /></label>
         {#if form.all_day}
-          <label class="fr"><span>End date</span><input type="date" bind:value={form.endDate} min={form.date} /></label>
+          <label class="fr"><span>{t("calv.fEndDate")}</span><input type="date" bind:value={form.endDate} min={form.date} /></label>
         {:else}
-          <div class="fr"><span>Time</span>
+          <div class="fr"><span>{t("calv.fTime")}</span>
             <div class="times"><input type="time" bind:value={form.start} /> - <input type="time" bind:value={form.end} /></div>
           </div>
         {/if}
-        <label class="fr"><span>All day</span><input type="checkbox" bind:checked={form.all_day} /></label>
-        <label class="fr"><span>Location</span><input bind:value={form.location} placeholder="optional" /></label>
-        <label class="fr"><span>Notes</span><textarea rows="2" bind:value={form.description} placeholder="optional"></textarea></label>
+        <label class="fr"><span>{t("calv.fAllDay")}</span><input type="checkbox" bind:checked={form.all_day} /></label>
+        <label class="fr"><span>{t("calv.fLocation")}</span><input bind:value={form.location} placeholder={t("calv.fOptional")} /></label>
+        <label class="fr"><span>{t("calv.fNotes")}</span><textarea rows="2" bind:value={form.description} placeholder={t("calv.fOptional")}></textarea></label>
         {#if gcal.connected}
-          <div class="fr"><span>Calendar</span><span class="tgt">{@html icons.google || ""} {gcal.email || "Google Calendar"}</span></div>
+          <div class="fr"><span>{t("calv.fCalendar")}</span><span class="tgt">{@html icons.google || ""} {gcal.email || t("calv.googleCalendar")}</span></div>
         {:else if app.accounts.length > 1}
-          <label class="fr"><span>Send via</span>
+          <label class="fr"><span>{t("calv.fSendVia")}</span>
             <select bind:value={form.account_id}>
               {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
             </select>
           </label>
         {/if}
-        <p class="modal-hint">{gcal.connected ? "Written straight to your Google Calendar." : "No Google Calendar connected - an invite is emailed to the chosen account's own inbox. Connect Google in Settings → Calendar for direct writes."}</p>
+        <p class="modal-hint">{gcal.connected ? t("calv.hintGoogle") : t("calv.hintNoGoogle")}</p>
         <div class="modal-btns">
-          <button class="btn ghost" onclick={() => (creating = false)}>Cancel</button>
-          <button class="btn primary" onclick={saveEvent} disabled={saving}>{saving ? "Creating…" : "Create event"}</button>
+          <button class="btn ghost" onclick={() => (creating = false)}>{t("calv.cancel")}</button>
+          <button class="btn primary" onclick={saveEvent} disabled={saving}>{saving ? t("calv.creating") : t("calv.createEvent")}</button>
         </div>
       </div>
     </div>
@@ -302,11 +304,11 @@
       <div class="modal" onclick={(e) => e.stopPropagation()}>
         <div class="d-top" style="--evc:{detailEv.color || 'var(--accent)'}">
           <span class="d-dot"></span>
-          <h3>{detailEv.summary || "(untitled)"}{#if detailEv.cancelled} <span class="cx">Cancelled</span>{/if}</h3>
+          <h3>{detailEv.summary || t("calv.untitled")}{#if detailEv.cancelled} <span class="cx">{t("calv.cancelled")}</span>{/if}</h3>
         </div>
         <p class="d-when">
           {#if detailEv.all_day || isMultiDay(detailEv)}
-            {fmtDayHeader(new Date(detailEv.start))}{#if detailEv.end && dayKey(new Date(detailEv.start)) !== dayKey(new Date(new Date(detailEv.end).getTime() - 1))} - {fmtDayHeader(new Date(new Date(detailEv.end).getTime() - 1))}{/if} · all day
+            {fmtDayHeader(new Date(detailEv.start))}{#if detailEv.end && dayKey(new Date(detailEv.start)) !== dayKey(new Date(new Date(detailEv.end).getTime() - 1))} - {fmtDayHeader(new Date(new Date(detailEv.end).getTime() - 1))}{/if} · {t("calv.allDay")}
           {:else}
             {fmtDayHeader(new Date(detailEv.start))} · {fmtTime(detailEv.start)}{#if detailEv.end} - {fmtTime(detailEv.end)}{/if}
           {/if}
@@ -316,14 +318,14 @@
         {#if detailEv.description}<p class="d-desc">{detailEv.description}</p>{/if}
         {#if !detailEv.cancelled && detailEv.organizer}
           <div class="rsvp">
-            <button class:on={detailEv.status === "accepted"} onclick={() => setRsvp(detailEv, "accepted")}>{@html icons.done} Yes</button>
-            <button class:on={detailEv.status === "tentative"} onclick={() => setRsvp(detailEv, "tentative")}>Maybe</button>
-            <button class:on={detailEv.status === "declined"} onclick={() => setRsvp(detailEv, "declined")}>{@html icons.close} No</button>
+            <button class:on={detailEv.status === "accepted"} onclick={() => setRsvp(detailEv, "accepted")}>{@html icons.done} {t("calv.yes")}</button>
+            <button class:on={detailEv.status === "tentative"} onclick={() => setRsvp(detailEv, "tentative")}>{t("calv.maybe")}</button>
+            <button class:on={detailEv.status === "declined"} onclick={() => setRsvp(detailEv, "declined")}>{@html icons.close} {t("calv.no")}</button>
           </div>
         {/if}
         <div class="modal-btns">
-          <button class="btn danger" onclick={() => { const e = detailEv; detailEv = null; deleteEvent(e); }}>{@html icons.trash} Delete</button>
-          <button class="btn primary" onclick={() => (detailEv = null)}>Close</button>
+          <button class="btn danger" onclick={() => { const e = detailEv; detailEv = null; deleteEvent(e); }}>{@html icons.trash} {t("calv.delete")}</button>
+          <button class="btn primary" onclick={() => (detailEv = null)}>{t("calv.close")}</button>
         </div>
       </div>
     </div>
@@ -346,10 +348,10 @@
                   {#each evs.slice(0, 3) as e}
                     <span class="pill" data-evid={e.id} class:span={isMultiDay(e)} class:cancelled={e.cancelled} class:declined={e.status === "declined"}
                       style={e.color ? `--evc:${e.color}` : ""}>
-                      {#if !e.all_day}<b>{fmtTime(e.start)}</b> {/if}{e.summary || "(untitled)"}
+                      {#if !e.all_day}<b>{fmtTime(e.start)}</b> {/if}{e.summary || t("calv.untitled")}
                     </span>
                   {/each}
-                  {#if evs.length > 3}<span class="more">+{evs.length - 3} more</span>{/if}
+                  {#if evs.length > 3}<span class="more">{t("calv.moreCount", { n: evs.length - 3 })}</span>{/if}
                 </span>
               </button>
             {/each}
@@ -371,12 +373,12 @@
         </div>
         <div class="wg-scroll">
           <div class="wg-allday">
-            <div class="wg-rowlabel">all-day</div>
+            <div class="wg-rowlabel">{t("calv.allDayRow")}</div>
             {#each weekDays as day}
               <div class="wg-allcell" class:indrag={inDrag(day)} ondblclick={() => dblDay(day)}
                 onpointerdown={() => dragDown(day)} onpointerenter={() => dragOver(day)}>
                 {#each allDayOn(day) as e}
-                  <button class="pill span" style="--evc:{e.color || 'var(--accent)'}" onclick={(ev) => { ev.stopPropagation(); openDetail(e); }}>{e.summary || "(untitled)"}</button>
+                  <button class="pill span" style="--evc:{e.color || 'var(--accent)'}" onclick={(ev) => { ev.stopPropagation(); openDetail(e); }}>{e.summary || t("calv.untitled")}</button>
                 {/each}
               </div>
             {/each}
@@ -390,7 +392,7 @@
                 {#each timedOn(day) as e}
                   <button class="wg-ev" class:cancelled={e.cancelled} style="top:{evTop(e)}px; height:{evHeight(e)}px; --evc:{e.color || 'var(--accent)'}"
                     onclick={(ev) => { ev.stopPropagation(); openDetail(e); }}>
-                    <b>{fmtTime(e.start)}</b> {e.summary || "(untitled)"}
+                    <b>{fmtTime(e.start)}</b> {e.summary || t("calv.untitled")}
                   </button>
                 {/each}
               </div>
@@ -403,21 +405,21 @@
     <aside class="agenda">
       <h3>{fmtDayHeader(selected)}</h3>
       {#if dayEvents.length === 0}
-        <p class="empty">No events. {#if loading}Loading…{/if}</p>
+        <p class="empty">{t("calv.noEvents")} {#if loading}{t("calv.loading")}{/if}</p>
       {:else}
         {#each dayEvents as e}
           <div class="event" class:cancelled={e.cancelled} style={e.color ? `--evc:${e.color}` : ""}>
-            <div class="time"><span class="dot"></span>{e.all_day ? "All day" : `${fmtTime(e.start)}${e.end ? " - " + fmtTime(e.end) : ""}`}
-              <button class="del" title="Delete event" onclick={() => deleteEvent(e)}>{@html icons.trash}</button>
+            <div class="time"><span class="dot"></span>{e.all_day ? t("calv.fAllDay") : `${fmtTime(e.start)}${e.end ? " - " + fmtTime(e.end) : ""}`}
+              <button class="del" title={t("calv.deleteEventTip")} onclick={() => deleteEvent(e)}>{@html icons.trash}</button>
             </div>
-            <div class="title">{e.summary || "(untitled)"}{#if e.cancelled} <span class="cx">Cancelled</span>{/if}</div>
+            <div class="title">{e.summary || t("calv.untitled")}{#if e.cancelled} <span class="cx">{t("calv.cancelled")}</span>{/if}</div>
             {#if e.location}<div class="meta">{@html icons.inbox} {e.location}</div>{/if}
             {#if e.organizer}<div class="meta">{@html icons.accounts} {e.organizer}</div>{/if}
             {#if !e.cancelled}
               <div class="rsvp">
-                <button class:on={e.status === "accepted"} onclick={() => setRsvp(e, "accepted")}>{@html icons.done} Yes</button>
-                <button class:on={e.status === "tentative"} onclick={() => setRsvp(e, "tentative")}>Maybe</button>
-                <button class:on={e.status === "declined"} onclick={() => setRsvp(e, "declined")}>{@html icons.close} No</button>
+                <button class:on={e.status === "accepted"} onclick={() => setRsvp(e, "accepted")}>{@html icons.done} {t("calv.yes")}</button>
+                <button class:on={e.status === "tentative"} onclick={() => setRsvp(e, "tentative")}>{t("calv.maybe")}</button>
+                <button class:on={e.status === "declined"} onclick={() => setRsvp(e, "declined")}>{@html icons.close} {t("calv.no")}</button>
               </div>
             {/if}
           </div>

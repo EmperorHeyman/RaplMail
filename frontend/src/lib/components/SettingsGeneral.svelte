@@ -41,21 +41,23 @@
     saveSettings(patch);
   }
   function regenKey() {
-    if (!confirm("Generate a new API key? Devices using the old key will stop working until updated.")) return;
+    if (!confirm(t("setgen.regenConfirm"))) return;
     saveSettings({ localApiKey: randomKey() });
   }
   const metricsUrl = $derived(`${backendBase()}/metrics`);
-  async function copyText(t) {
-    try { await navigator.clipboard.writeText(t); notify("Copied"); } catch { notify("Couldn't copy", "error"); }
+  async function copyText(txt) {
+    try { await navigator.clipboard.writeText(txt); notify(t("setgen.copied")); } catch { notify(t("setgen.copyFailed"), "error"); }
   }
 
+  // Labels are i18n keys - translated with t() at render time so they follow
+  // live language switches.
   const SMART_CATS = [
-    { id: "updates", label: "Notifications", icon: icons.bell },
-    { id: "newsletters", label: "Newsletters", icon: icons.newspaper },
-    { id: "social", label: "Social", icon: icons.chat },
-    { id: "promotions", label: "Promotions", icon: icons.tag },
-    { id: "invitations", label: "Invitations", icon: icons.calendar },
-    { id: "invitation_responses", label: "Invitation responses", icon: icons.done },
+    { id: "updates", label: "setgen.catUpdates", icon: icons.bell },
+    { id: "newsletters", label: "setgen.catNewsletters", icon: icons.newspaper },
+    { id: "social", label: "setgen.catSocial", icon: icons.chat },
+    { id: "promotions", label: "setgen.catPromotions", icon: icons.tag },
+    { id: "invitations", label: "setgen.catInvitations", icon: icons.calendar },
+    { id: "invitation_responses", label: "setgen.catInvitationResponses", icon: icons.done },
   ];
   const META = Object.fromEntries(SMART_CATS.map((c) => [c.id, c]));
   function toggleGroup(id, on) {
@@ -89,8 +91,8 @@
       a.download = `raplmail-config-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      notify("Config exported");
-    } catch { notify("Export failed", "error"); }
+      notify(t("setgen.configExported"));
+    } catch { notify(t("setgen.exportFailed"), "error"); }
   }
   async function doImport(e) {
     const file = e.currentTarget.files?.[0];
@@ -98,8 +100,8 @@
       try {
         const bundle = JSON.parse(await file.text());
         const r = await importConfig(bundle);
-        notify(`Imported: settings ${r.settings ? "✓" : "-"} · ${r.rules} rules · ${r.signatures} signatures · ${r.sender_categories} sender tags`);
-      } catch { notify("Import failed - invalid file", "error"); }
+        notify(t("setgen.importedSummary", { settings: r.settings ? "✓" : "-", rules: r.rules, signatures: r.signatures, tags: r.sender_categories }));
+      } catch { notify(t("setgen.importFailed"), "error"); }
     }
     e.currentTarget.value = "";
   }
@@ -119,9 +121,9 @@
       a.download = `raplmail-backup-${new Date().toISOString().slice(0, 10)}.rmail`;
       a.click();
       URL.revokeObjectURL(url);
-      notify("Encrypted backup saved (.rmail)");
+      notify(t("setgen.backupSaved"));
     } catch (err) {
-      notify(err?.message?.includes("vault") ? "Unlock your vault first" : "Backup failed", "error");
+      notify(err?.message?.includes("vault") ? t("setgen.unlockVaultFirst") : t("setgen.backupFailed"), "error");
     } finally { backingUp = false; }
   }
   async function doImportFull(e) {
@@ -130,14 +132,14 @@
     if (!file) return;
     let blob;
     try { blob = JSON.parse(await file.text()); }
-    catch { notify("Not a valid .rmail file", "error"); return; }
-    const pw = prompt("Enter the master password from the machine this backup was made on:");
+    catch { notify(t("setgen.notRmail"), "error"); return; }
+    const pw = prompt(t("setgen.restorePrompt"));
     if (!pw) return;
     try {
       const r = await importFullBackup(blob, pw);
-      notify(`Restored: ${r.accounts} account(s) · settings ${r.settings ? "✓" : "-"} · ${r.rules} rules · ${r.signatures} signatures. Syncing…`);
+      notify(t("setgen.restoredSummary", { accounts: r.accounts, settings: r.settings ? "✓" : "-", rules: r.rules, signatures: r.signatures }));
     } catch (err) {
-      notify(err?.status === 400 ? "Wrong password or corrupt backup" : (err?.message || "Restore failed"), "error");
+      notify(err?.status === 400 ? t("setgen.wrongPassword") : (err?.message || t("setgen.restoreFailed")), "error");
     }
   }
 
@@ -155,7 +157,7 @@
       const r = await enableNotifications();
       notifPerm = r;
       saveSettings({ notifyNewMail: r === "granted" });
-      if (r !== "granted") notify("Notifications were blocked by the system", "error");
+      if (r !== "granted") notify(t("setgen.notifBlockedSystem"), "error");
     } else {
       saveSettings({ notifyNewMail: false });
     }
@@ -163,10 +165,10 @@
   async function sendTest() {
     const res = await testNotification();
     await refreshPerm();
-    if (res.ok) notify("Test notification sent - check your desktop");
-    else if (res.reason === "denied") notify("Blocked - allow notifications for this app in Windows Settings → Notifications (and turn off Focus Assist)", "error");
-    else if (res.reason === "unsupported") notify("Notifications aren't supported here", "error");
-    else notify("Couldn't show notification: " + res.reason, "error");
+    if (res.ok) notify(t("setgen.testSent"));
+    else if (res.reason === "denied") notify(t("setgen.testBlocked"), "error");
+    else if (res.reason === "unsupported") notify(t("setgen.testUnsupported"), "error");
+    else notify(t("setgen.testFailed", { reason: res.reason }), "error");
   }
 
   let dragCat = $state(null);
@@ -194,7 +196,7 @@
   function removeBcc(i) { bccRules = bccRules.filter((_, x) => x !== i); }
   function saveBcc() {
     saveSettings({ autoBcc: bccRules.filter((r) => r.domain && r.bcc) });
-    notify("Auto-BCC rules saved");
+    notify(t("setgen.bccSaved"));
   }
 
   function toggleUnified(e) {
@@ -217,278 +219,274 @@
     </label>
   </section>
 
-  <h2 class="group-head">Mail behavior</h2>
+  <h2 class="group-head">{t("setgen.headMailBehavior")}</h2>
   <section class="card">
-    <h3>Compose window</h3>
-    <p class="hint">How a new message or reply opens.</p>
+    <h3>{t("setgen.composeTitle")}</h3>
+    <p class="hint">{t("setgen.composeHint")}</p>
     <label class="radio">
       <input type="radio" name="cmode" value="panel" checked={app.settings.composeMode === "panel"}
         onchange={() => setCompose({ composeMode: "panel" })} />
-      <div><b>Docked panel</b><span>Opens in a corner, non-blocking - keep reading and clicking while you write (like Spark).</span></div>
+      <div><b>{t("setgen.composePanel")}</b><span>{t("setgen.composePanelHint")}</span></div>
     </label>
     <label class="radio">
       <input type="radio" name="cmode" value="window" checked={app.settings.composeMode === "window"}
         onchange={() => setCompose({ composeMode: "window" })} />
-      <div><b>Separate window</b><span>Opens in its own movable window.</span></div>
+      <div><b>{t("setgen.composeWindow")}</b><span>{t("setgen.composeWindowHint")}</span></div>
     </label>
 
     {#if app.settings.composeMode === "panel"}
-      <label class="inline">Corner
+      <label class="inline">{t("setgen.corner")}
         <select value={app.settings.composePosition} onchange={(e) => setCompose({ composePosition: e.currentTarget.value })}>
-          <option value="bottom-right">Bottom-right</option>
-          <option value="bottom-left">Bottom-left</option>
+          <option value="bottom-right">{t("setgen.cornerBR")}</option>
+          <option value="bottom-left">{t("setgen.cornerBL")}</option>
         </select>
       </label>
     {/if}
     <label class="check" style="margin-top:6px">
       <input type="checkbox" checked={app.settings.spellCheck !== false} onchange={(e) => setCompose({ spellCheck: e.currentTarget.checked })} />
-      <div><b>Spell check</b><span>Underline misspellings as you type in the subject and message body, with right-click corrections. Uses your operating system's dictionaries for the current language - fully offline.</span></div>
+      <div><b>{t("setgen.spellCheck")}</b><span>{t("setgen.spellCheckHint")}</span></div>
     </label>
   </section>
 
   <section class="card">
-    <h3>Sending</h3>
+    <h3>{t("setgen.sendingTitle")}</h3>
     <label class="check">
       <input type="checkbox" checked={app.settings.undoSend} onchange={(e) => setCompose({ undoSend: e.currentTarget.checked })} />
-      <div><b>Undo send</b><span>After hitting Send, hold the message briefly so you can cancel - it shows a “Sending…” bar with a Cancel button.</span></div>
+      <div><b>{t("setgen.undoSend")}</b><span>{t("setgen.undoSendHint")}</span></div>
     </label>
     {#if app.settings.undoSend}
-      <label class="inline">Cancel window
+      <label class="inline">{t("setgen.cancelWindow")}
         <select value={app.settings.undoSendDelay} onchange={(e) => setCompose({ undoSendDelay: Number(e.currentTarget.value) })}>
-          <option value={3}>3 seconds</option>
-          <option value={5}>5 seconds</option>
-          <option value={10}>10 seconds</option>
+          <option value={3}>{t("setgen.seconds", { n: 3 })}</option>
+          <option value={5}>{t("setgen.seconds", { n: 5 })}</option>
+          <option value={10}>{t("setgen.seconds", { n: 10 })}</option>
         </select>
       </label>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Inbox</h3>
+    <h3>{t("setgen.inboxTitle")}</h3>
+    <label class="check">
+      <input type="checkbox" checked={(app.settings.readMarkMode || "leave") === "leave"}
+        onchange={(e) => setCompose({ readMarkMode: e.currentTarget.checked ? "leave" : "instant" })} />
+      <div><b>{t("setgen.readOnLeave")}</b><span>{t("setgen.readOnLeaveHint")}</span></div>
+    </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.openNextOnDone} onchange={(e) => setCompose({ openNextOnDone: e.currentTarget.checked })} />
-      <div><b>Open next after Done</b><span>When you mark the open message done, immediately open the next one - fast keyboard triage.</span></div>
+      <div><b>{t("setgen.openNext")}</b><span>{t("setgen.openNextHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.unifiedInbox} onchange={toggleUnified} />
-      <div><b>Unified inbox</b><span>Show one combined “All Inboxes” across every account.</span></div>
+      <div><b>{t("setgen.unified")}</b><span>{t("setgen.unifiedHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.threading} onchange={(e) => setCompose({ threading: e.currentTarget.checked })} />
-      <div><b>Conversation threading</b><span>Group messages with the same subject into one conversation; opening it shows the whole thread.</span></div>
+      <div><b>{t("setgen.threading")}</b><span>{t("setgen.threadingHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.bundles} onchange={(e) => setCompose({ bundles: e.currentTarget.checked })} />
-      <div><b>Bundle notifications</b><span>Collapse 3+ messages from the same newsletter/social/update sender into one expandable card.</span></div>
+      <div><b>{t("setgen.bundles")}</b><span>{t("setgen.bundlesHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.showNewsletterFeed !== false} onchange={(e) => setCompose({ showNewsletterFeed: e.currentTarget.checked })} />
-      <div><b>Newsletter Feed</b><span>Show the “Newsletter Feed” item in the sidebar. Turn off to hide it.</span></div>
+      <div><b>{t("setgen.nlFeed")}</b><span>{t("setgen.nlFeedHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.showPaperTrail !== false} onchange={(e) => setCompose({ showPaperTrail: e.currentTarget.checked })} />
-      <div><b>Paper Trail</b><span>Show the “Paper Trail” item (receipts, orders, confirmations) in the sidebar. Turn off to hide it.</span></div>
+      <div><b>{t("setgen.paperTrail")}</b><span>{t("setgen.paperTrailHint")}</span></div>
     </label>
-    <label class="inline">Follow-up nudge after
+    <label class="inline">{t("setgen.followupBefore")}
       <select value={app.settings.followupDays} onchange={(e) => setCompose({ followupDays: Number(e.currentTarget.value) })}>
-        <option value={2}>2 days</option>
-        <option value={3}>3 days</option>
-        <option value={5}>5 days</option>
-        <option value={7}>7 days</option>
+        <option value={2}>{t("setgen.followupDays", { n: 2 })}</option>
+        <option value={3}>{t("setgen.followupDays", { n: 3 })}</option>
+        <option value={5}>{t("setgen.followupDays", { n: 5 })}</option>
+        <option value={7}>{t("setgen.followupDays", { n: 7 })}</option>
       </select>
-      with no reply
+      {t("setgen.followupAfter")}
     </label>
-    <label class="inline">Search shortcut opens
+    <label class="inline">{t("setgen.searchStyle")}
       <select value={app.settings.searchStyle || "inline"} onchange={(e) => setCompose({ searchStyle: e.currentTarget.value })}>
-        <option value="inline">Inline search bar</option>
-        <option value="modal">Search window (modal)</option>
+        <option value="inline">{t("setgen.searchInline")}</option>
+        <option value="modal">{t("setgen.searchModal")}</option>
       </select>
     </label>
-    <span class="hint" style="margin:2px 0 0 2px">Which surface the search key ({app.settings.keybinds?.search || "/"}) opens. The command palette also doubles as search - type an operator like <code>from:</code> in it.</span>
+    <span class="hint" style="margin:2px 0 0 2px">{t("setgen.searchHintA", { key: app.settings.keybinds?.search || "/" })} <code>from:</code> {t("setgen.searchHintB")}</span>
   </section>
 
   <section class="card">
-    <h3>Smart Inbox</h3>
+    <h3>{t("setgen.smartTitle")}</h3>
     <label class="check">
       <input type="checkbox" checked={app.settings.smartInbox} onchange={(e) => setCompose({ smartInbox: e.currentTarget.checked })} />
-      <div><b>Enable Smart Inbox</b><span>Replaces “All Inboxes” (and inbox folders) with a focused list - important mail stays in the main flow while the categories you pick collapse into expandable groups with live counts.</span></div>
+      <div><b>{t("setgen.smartEnable")}</b><span>{t("setgen.smartEnableHint")}</span></div>
     </label>
     {#if app.settings.smartInbox}
-      <p class="hint" style="margin-top:10px">Group these (unchecked = left inline so you won't miss them):</p>
+      <p class="hint" style="margin-top:10px">{t("setgen.groupThese")}</p>
       <div class="smartcats">
         {#each SMART_CATS as c}
-          <label class="grp"><input type="checkbox" checked={!!app.settings.smartGroups[c.id]} onchange={(e) => toggleGroup(c.id, e.currentTarget.checked)} /> <span>{@html c.icon} {c.label}</span></label>
+          <label class="grp"><input type="checkbox" checked={!!app.settings.smartGroups[c.id]} onchange={(e) => toggleGroup(c.id, e.currentTarget.checked)} /> <span>{@html c.icon} {t(c.label)}</span></label>
         {/each}
       </div>
 
-      <label class="inline" style="margin-top:14px">Senders shown per group
+      <label class="inline" style="margin-top:14px">{t("setgen.previewCount")}
         <select value={app.settings.smartPreviewCount} onchange={(e) => saveSettings({ smartPreviewCount: Number(e.currentTarget.value) })}>
           <option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={6}>6</option>
         </select>
       </label>
 
-      <p class="hint" style="margin-top:14px">Where the groups sit</p>
-      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "sections") === "sections"} onchange={() => setPlacement("sections")} /> <span><b>Fixed sections (Spark classic)</b> - People / Notifications / Newsletters / Pins / Seen; unread mail sorts into its section, read mail settles into Seen</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>Date sections</b> - Today / Yesterday / This week… with the group cards parked at the end of Today</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "timeline"} onchange={() => setPlacement("timeline")} /> <span>Float by activity (group rises with its newest mail; newer mail pushes it down)</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "top"} onchange={() => setPlacement("top")} /> <span>Always at the top</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "afterN"} onchange={() => setPlacement("afterN")} /> <span>After
+      <p class="hint" style="margin-top:14px">{t("setgen.placement")}</p>
+      <label class="grp"><input type="radio" name="splace" checked={(app.settings.smartGroupPlacement ?? "sections") === "sections"} onchange={() => setPlacement("sections")} /> <span><b>{t("setgen.placeSections")}</b> - {t("setgen.placeSectionsDesc")}</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "dateSections"} onchange={() => setPlacement("dateSections")} /> <span><b>{t("setgen.placeDate")}</b> - {t("setgen.placeDateDesc")}</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "timeline"} onchange={() => setPlacement("timeline")} /> <span>{t("setgen.placeTimeline")}</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "top"} onchange={() => setPlacement("top")} /> <span>{t("setgen.placeTop")}</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "afterN"} onchange={() => setPlacement("afterN")} /> <span>{t("setgen.placeAfterBefore")}
         <select value={app.settings.smartGroupsAfter ?? 3} onchange={(e) => saveSettings({ smartGroupsAfter: Number(e.currentTarget.value) })} onclick={(e) => e.stopPropagation()}>
           <option value={1}>1</option><option value={2}>2</option><option value={3}>3</option><option value={4}>4</option><option value={5}>5</option>
         </select>
-        newest messages</span></label>
-      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "bottom"} onchange={() => setPlacement("bottom")} /> <span>Below all messages</span></label>
+        {t("setgen.placeAfterAfter")}</span></label>
+      <label class="grp"><input type="radio" name="splace" checked={app.settings.smartGroupPlacement === "bottom"} onchange={() => setPlacement("bottom")} /> <span>{t("setgen.placeBottom")}</span></label>
 
-      <p class="hint" style="margin-top:14px">Group order</p>
-      <label class="grp"><input type="radio" name="sorder" checked={app.settings.smartOrderMode !== "custom"} onchange={() => setOrderMode("recency")} /> <span>By recency (newest-active group on top)</span></label>
-      <label class="grp"><input type="radio" name="sorder" checked={app.settings.smartOrderMode === "custom"} onchange={() => setOrderMode("custom")} /> <span>Custom (drag to order)</span></label>
+      <p class="hint" style="margin-top:14px">{t("setgen.orderTitle")}</p>
+      <label class="grp"><input type="radio" name="sorder" checked={app.settings.smartOrderMode !== "custom"} onchange={() => setOrderMode("recency")} /> <span>{t("setgen.orderRecency")}</span></label>
+      <label class="grp"><input type="radio" name="sorder" checked={app.settings.smartOrderMode === "custom"} onchange={() => setOrderMode("custom")} /> <span>{t("setgen.orderCustom")}</span></label>
       {#if app.settings.smartOrderMode === "custom"}
         <div class="orderlist">
           {#each orderedCats as c (c)}
             <div class="orderrow" draggable="true"
               ondragstart={() => (dragCat = c)} ondragend={() => (dragCat = null)}
               ondragover={(e) => { e.preventDefault(); reorder(c); }}>
-              ⠿ {@html META[c]?.icon} {META[c]?.label}
+              ⠿ {@html META[c]?.icon} {META[c] ? t(META[c].label) : ""}
             </div>
           {/each}
         </div>
       {/if}
 
-      <p class="hint" style="margin-top:14px">Preview</p>
+      <p class="hint" style="margin-top:14px">{t("setgen.preview")}</p>
       <div class="preview-box">
-        <SmartGroupCard label="Newsletters" icon={icons.newspaper} count={5471} newCount={4} senders={previewSenders}
+        <SmartGroupCard label={t("setgen.catNewsletters")} icon={icons.newspaper} count={5471} newCount={4} senders={previewSenders}
           more={Math.max(0, 40 - previewSenders.length)} />
       </div>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Auto-BCC</h3>
-    <p class="hint">Automatically BCC outgoing mail by the recipient's domain - e.g. blind-copy your CRM or ticketing system. Use <code>*</code> to match every recipient.</p>
+    <h3>{t("setgen.bccTitle")}</h3>
+    <p class="hint">{t("setgen.bccHintA")} <code>*</code> {t("setgen.bccHintB")}</p>
     {#each bccRules as r, i}
       <div class="bccrow">
-        <input placeholder="domain (client.com or *)" bind:value={r.domain} />
+        <input placeholder={t("setgen.bccDomainPh")} bind:value={r.domain} />
         <input placeholder="bcc@yoursystem.com" bind:value={r.bcc} />
         <button class="btn ghost danger" onclick={() => removeBcc(i)}>{@html icons.close}</button>
       </div>
     {/each}
     <div class="bccactions">
-      <button class="btn" onclick={addBcc}>＋ Add rule</button>
-      <button class="btn primary" onclick={saveBcc}>Save</button>
+      <button class="btn" onclick={addBcc}>＋ {t("setgen.bccAdd")}</button>
+      <button class="btn primary" onclick={saveBcc}>{t("setgen.save")}</button>
     </div>
   </section>
 
-  <h2 class="group-head">Account &amp; system</h2>
+  <h2 class="group-head">{t("setgen.headAccountSystem")}</h2>
   <section class="card">
-    <h3>Backup &amp; migrate</h3>
-    <p class="hint"><b>Full backup (.rmail)</b> - the easy one. Includes <b>everything</b>: your accounts, passwords,
-      calendars, rules, signatures and settings, all encrypted with your master password. Move the file to another
-      computer, install RaplMail, set the <b>same master password</b>, and import - you're fully set up, no re-adding accounts.</p>
+    <h3>{t("setgen.backupTitle")}</h3>
+    <p class="hint">{@html t("setgen.backupFullHint")}</p>
     <div class="rowbtns">
-      <button class="btn primary" onclick={doExportFull} disabled={backingUp}>{@html icons.lock} {backingUp ? "Backing up…" : "Export full backup (.rmail)"}</button>
-      <button class="btn" onclick={() => rmailFile.click()}>Restore from .rmail…</button>
+      <button class="btn primary" onclick={doExportFull} disabled={backingUp}>{@html icons.lock} {backingUp ? t("setgen.backingUp") : t("setgen.exportFull")}</button>
+      <button class="btn" onclick={() => rmailFile.click()}>{t("setgen.restoreFrom")}</button>
       <input bind:this={rmailFile} type="file" accept=".rmail,application/octet-stream" hidden onchange={doImportFull} />
     </div>
-    <p class="hint" style="margin-top:14px">Or a lighter <b>config-only</b> export (settings, rules, signatures, sender tags - no accounts or passwords) as plain JSON.</p>
+    <p class="hint" style="margin-top:14px">{@html t("setgen.configOnlyHint")}</p>
     <div class="rowbtns">
-      <button class="btn" onclick={doExport}>{@html icons.sent} Export config</button>
-      <button class="btn" onclick={() => importFile.click()}>Import config…</button>
+      <button class="btn" onclick={doExport}>{@html icons.sent} {t("setgen.exportConfig")}</button>
+      <button class="btn" onclick={() => importFile.click()}>{t("setgen.importConfig")}</button>
       <input bind:this={importFile} type="file" accept="application/json,.json" hidden onchange={doImport} />
     </div>
   </section>
 
   <section class="card">
-    <h3>Local API <span class="tag">developer</span></h3>
-    <p class="hint">Expose a read-only mailbox metrics endpoint for dashboards and home-automation
-      (Home Assistant, ESP32, Grafana). It returns counts only - never message content - and is
-      protected by the API key below.</p>
+    <h3>{t("setgen.localApiTitle")} <span class="tag">{t("setgen.tagDeveloper")}</span></h3>
+    <p class="hint">{t("setgen.localApiHint")}</p>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.localApiEnabled}
         onchange={(e) => toggleLocalApi(e.currentTarget.checked)} />
-      <div><b>Enable local metrics API</b><span>When off, the endpoint returns 404.</span></div>
+      <div><b>{t("setgen.localApiEnable")}</b><span>{t("setgen.localApiEnableHint")}</span></div>
     </label>
     {#if app.settings.localApiEnabled}
       <div class="apibox">
         <div class="kv"><span>URL</span>
           <code>{metricsUrl}</code>
-          <button class="btn ghost" onclick={() => copyText(metricsUrl)}>Copy</button>
+          <button class="btn ghost" onclick={() => copyText(metricsUrl)}>{t("setgen.copy")}</button>
         </div>
-        <div class="kv"><span>API key</span>
+        <div class="kv"><span>{t("setgen.apiKey")}</span>
           <code class="key">{app.settings.localApiKey || "-"}</code>
-          <button class="btn ghost" onclick={() => copyText(app.settings.localApiKey)}>Copy</button>
-          <button class="btn ghost" onclick={regenKey}>Regenerate</button>
+          <button class="btn ghost" onclick={() => copyText(app.settings.localApiKey)}>{t("setgen.copy")}</button>
+          <button class="btn ghost" onclick={regenKey}>{t("setgen.regen")}</button>
         </div>
-        <div class="kv"><span>Test</span>
+        <div class="kv"><span>{t("setgen.test")}</span>
           <code>curl -H "X-API-Key: {app.settings.localApiKey}" {metricsUrl}</code>
-          <button class="btn ghost" onclick={() => copyText(`curl -H "X-API-Key: ${app.settings.localApiKey}" ${metricsUrl}`)}>Copy</button>
+          <button class="btn ghost" onclick={() => copyText(`curl -H "X-API-Key: ${app.settings.localApiKey}" ${metricsUrl}`)}>{t("setgen.copy")}</button>
         </div>
-        <p class="hint">JSON at <code>/metrics</code>, Prometheus text at <code>/metrics/prometheus</code>. Pass the key as
-          the <code>X-API-Key</code> header or <code>?key=</code> query param. To reach it from <b>other devices on your
-          LAN</b>, start the backend with <code>RAPLMAIL_HOST=0.0.0.0</code> and use this machine's LAN IP in place of the host.</p>
+        <p class="hint">{@html t("setgen.localApiDetails")}</p>
       </div>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Updates</h3>
-    <p class="hint">RaplMail is server-free: it asks GitHub for the latest published release and, if there's a
-      newer version, points you at its download page. Nothing is sent anywhere except a read-only check to
-      GitHub's public releases API.</p>
+    <h3>{t("setgen.updatesTitle")}</h3>
+    <p class="hint">{t("setgen.updatesHint")}</p>
     <div class="rowbtns">
-      <button class="btn primary" onclick={() => checkForUpdates()}>{@html icons.sync} Check for updates</button>
+      <button class="btn primary" onclick={() => checkForUpdates()}>{@html icons.sync} {t("setgen.checkUpdates")}</button>
     </div>
   </section>
 
   <section class="card">
-    <h3>Tray &amp; startup</h3>
-    <p class="hint">RaplMail can keep running in the system tray so new-mail sync and notifications keep working
-      with the window closed.</p>
+    <h3>{t("setgen.trayTitle")}</h3>
+    <p class="hint">{t("setgen.trayHint")}</p>
     <label class="check">
       <input type="checkbox" checked={app.settings.minimizeToTray !== false}
         onchange={(e) => setCloseToTray(e.currentTarget.checked)} />
-      <div><b>Minimize to tray on close</b><span>Clicking the window's ✕ hides RaplMail to the tray instead of quitting. Use the tray icon's <b>Quit</b> to exit fully. (Off = ✕ quits the app.)</span></div>
+      <div><b>{t("setgen.minimizeTray")}</b><span>{@html t("setgen.minimizeTrayHint")}</span></div>
     </label>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.launchOnStartup}
         onchange={(e) => setAutostart(e.currentTarget.checked)} />
-      <div><b>Launch at login</b><span>Start RaplMail automatically when you sign in (into the tray).</span></div>
+      <div><b>{t("setgen.launchLogin")}</b><span>{t("setgen.launchLoginHint")}</span></div>
     </label>
-    <p class="hint">These take effect in the installed app - not in the browser dev view.</p>
+    <p class="hint">{t("setgen.trayNote")}</p>
   </section>
 
-  <h2 class="group-head">Notifications &amp; scheduling</h2>
+  <h2 class="group-head">{t("setgen.headNotifSched")}</h2>
   <section class="card">
-    <h3>Notifications</h3>
+    <h3>{t("setgen.notifTitle")}</h3>
     {#if notificationsAvailable()}
       <label class="check">
         <input type="checkbox" checked={app.settings.notifyNewMail !== false && notifPerm === "granted"}
           onchange={(e) => toggleNotify(e.currentTarget.checked)} />
         <div>
-          <b>Desktop notification for new mail</b>
-          <span>Pops a system notification with the sender and subject when mail arrives.{#if notifPerm === "denied"} <em>Currently blocked in your OS/browser settings - re-enable it there first.</em>{/if}</span>
+          <b>{t("setgen.notifNewMail")}</b>
+          <span>{t("setgen.notifNewMailHint")}{#if notifPerm === "denied"} <em>{t("setgen.notifBlockedNote")}</em>{/if}</span>
         </div>
       </label>
       <label class="check">
         <input type="checkbox" checked={app.settings.notifyOnlyUnfocused !== false}
           onchange={(e) => saveSettings({ notifyOnlyUnfocused: e.currentTarget.checked })} />
         <div>
-          <b>Only when RaplMail isn't focused</b>
-          <span>Stay quiet while you're already looking at the app.</span>
+          <b>{t("setgen.onlyUnfocused")}</b>
+          <span>{t("setgen.onlyUnfocusedHint")}</span>
         </div>
       </label>
       <label class="check">
         <input type="checkbox" checked={!!app.settings.quietHoursEnabled}
           onchange={(e) => saveSettings({ quietHoursEnabled: e.currentTarget.checked })} />
         <div>
-          <b>Quiet hours</b>
-          <span>Silence notifications overnight.</span>
+          <b>{t("setgen.quietHours")}</b>
+          <span>{t("setgen.quietHoursHint")}</span>
         </div>
       </label>
       {#if app.settings.quietHoursEnabled}
-        <label class="inline" style="margin-left:28px">From
+        <label class="inline" style="margin-left:28px">{t("setgen.from")}
           <select value={app.settings.quietStart ?? 22} onchange={(e) => saveSettings({ quietStart: Number(e.currentTarget.value) })}>
             {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
-          </select> to
+          </select> {t("setgen.to")}
           <select value={app.settings.quietEnd ?? 7} onchange={(e) => saveSettings({ quietEnd: Number(e.currentTarget.value) })}>
             {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
           </select>
@@ -540,34 +538,34 @@
           onchange={(e) => playSound(app.settings.notifySound || "ding", Number(e.currentTarget.value) / 100)} />
         <span class="tnum" style="width:38px;text-align:right">{notifVol}%</span>
       </label>
-      <span class="hint" style="margin:2px 0 0 2px">A short chime plays when new mail arrives (even while the app is focused).</span>
+      <span class="hint" style="margin:2px 0 0 2px">{t("setgen.chimeHint")}</span>
       <p class="hint" style="margin-top:8px">{t("notif.muteHint")}</p>
       <button class="btn" style="margin-top:10px" onclick={sendTest}>{t("notif.test")}</button>
-      <p class="hint" style="margin-top:8px">No popup? It's almost always the OS: Windows <b>Settings → Notifications</b> must allow this app, and <b>Focus Assist / Do Not Disturb</b> must be off.</p>
+      <p class="hint" style="margin-top:8px">{@html t("setgen.noPopupHint")}</p>
     {:else}
-      <p class="hint">Desktop notifications aren't available in this environment.</p>
+      <p class="hint">{t("setgen.notifUnavailable")}</p>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Scheduling &amp; snooze times</h3>
-    <p class="hint">What the snooze / send-later presets actually mean.</p>
-    <label class="inline">“Later today” = now +
+    <h3>{t("setgen.schedTitle")}</h3>
+    <p class="hint">{t("setgen.schedHint")}</p>
+    <label class="inline">{t("setgen.laterTodayBefore")}
       <select value={app.settings.scheduleLaterHours ?? 3} onchange={(e) => saveSettings({ scheduleLaterHours: Number(e.currentTarget.value) })}>
         {#each [1,2,3,4,6,8] as h}<option value={h}>{h}</option>{/each}
-      </select> hours
+      </select> {t("setgen.laterTodayAfter")}
     </label>
-    <label class="inline">Morning (Tomorrow / weekend / next week) at
+    <label class="inline">{t("setgen.morningAt")}
       <select value={app.settings.scheduleMorningHour ?? 9} onchange={(e) => saveSettings({ scheduleMorningHour: Number(e.currentTarget.value) })}>
         {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
       </select>
     </label>
-    <label class="inline">“This evening” at
+    <label class="inline">{t("setgen.eveningAt")}
       <select value={app.settings.scheduleEveningHour ?? 18} onchange={(e) => saveSettings({ scheduleEveningHour: Number(e.currentTarget.value) })}>
         {#each Array.from({length:24},(_,i)=>i) as h}<option value={h}>{(h%12||12)}:00 {h<12?"AM":"PM"}</option>{/each}
       </select>
     </label>
-    <p class="hint" style="margin-top:8px">Need an exact time? The compose “Later ⌄” menu has a date &amp; time picker.</p>
+    <p class="hint" style="margin-top:8px">{t("setgen.exactTimeHint")}</p>
     <div class="local-note">{@html icons.info || ""}<span>{t("schedule.localOnly")}</span></div>
   </section>
 

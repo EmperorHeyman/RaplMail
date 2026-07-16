@@ -134,10 +134,13 @@ export default {
     "reader.showHideEarlierTitle": "Show / hide the earlier quoted messages",
     "reader.hideEarlier": "Hide earlier",
     "reader.showEarlier": "Show earlier messages",
-    "reader.stylingToggleTitle": "Toggle between the sender's original styling and your theme",
+    "reader.stylingToggleTitle": "Cycle how this mail is styled: your theme / forced dark / the sender's original design",
     "reader.originalStyling": "Original styling",
     "reader.dark": "Dark",
     "reader.adaptedToTheme": "Adapted to theme",
+    "reader.view.adapted": "Adapted to theme",
+    "reader.view.dark": "Dark",
+    "reader.view.original": "Original styling",
 
     // Iframe accessibility title.
     "reader.messageFrameTitle": "Message",
@@ -282,10 +285,13 @@ export default {
     "reader.showHideEarlierTitle": "Zobrazit / skrýt starší citované zprávy",
     "reader.hideEarlier": "Skrýt starší",
     "reader.showEarlier": "Zobrazit starší zprávy",
-    "reader.stylingToggleTitle": "Přepínat mezi původním vzhledem odesílatele a vaším motivem",
+    "reader.stylingToggleTitle": "Přepíná vzhled této zprávy: váš motiv / vynucený tmavý / původní design odesílatele",
     "reader.originalStyling": "Původní vzhled",
     "reader.dark": "Tmavý",
     "reader.adaptedToTheme": "Přizpůsobeno motivu",
+    "reader.view.adapted": "Přizpůsobeno motivu",
+    "reader.view.dark": "Tmavý režim",
+    "reader.view.original": "Původní vzhled",
 
     // Titulek rámce zprávy (pro čtečky obrazovky).
     "reader.messageFrameTitle": "Zpráva",

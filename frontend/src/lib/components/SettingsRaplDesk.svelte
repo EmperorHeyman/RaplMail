@@ -3,6 +3,7 @@
   import { app, saveSettings, notify } from "../store.svelte.js";
   import { rapldesk } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let instances = $state([]);
   let adding = $state(false);
@@ -13,64 +14,62 @@
   onMount(load);
 
   async function add() {
-    if (!form.url.trim() || !form.key.trim()) { notify("URL and API key are required", "error"); return; }
+    if (!form.url.trim() || !form.key.trim()) { notify(t("rapldesk.urlKeyRequired"), "error"); return; }
     busy = true;
     try {
       await rapldesk.add({ name: form.name.trim(), url: form.url.trim(), key: form.key.trim() });
       form = { name: "", url: "", key: "" };
       adding = false;
       await load();
-      notify("RAPL Desk connected");
-    } catch (e) { notify(e.message || "Couldn't connect", "error"); }
+      notify(t("rapldesk.connected"));
+    } catch (e) { notify(e.message || t("rapldesk.couldntConnect"), "error"); }
     finally { busy = false; }
   }
   async function remove(i) {
-    if (!confirm(`Remove ${i.name}?`)) return;
-    try { await rapldesk.remove(i.id); await load(); notify("Removed"); }
+    if (!confirm(t("rapldesk.removeConfirm", { name: i.name }))) return;
+    try { await rapldesk.remove(i.id); await load(); notify(t("rapldesk.removed")); }
     catch (e) { notify(e.message, "error"); }
   }
 </script>
 
 <div class="wrap">
   <section class="card">
-    <h3>RAPL Desk (ticketing)</h3>
-    <p class="hint">Connect one or more RaplDesk instances by base URL + API key. Tickets show up under
-      <b>Tickets</b> in the sidebar. Keys are stored encrypted in your vault (and never leave your machine
-      except to call that instance). The key's <b>scopes</b> decide what you can do - for full use grant
-      tickets.read/write, users.read, departments.read, firms.read and reports.read.</p>
+    <h3>{t("rapldesk.title")}</h3>
+    <p class="hint">{t("rapldesk.hintA")}
+      <b>{t("rapldesk.hintTickets")}</b>{t("rapldesk.hintB")}
+      <b>{t("rapldesk.hintScopes")}</b> {t("rapldesk.hintC")}</p>
 
     {#each instances as i}
       <div class="inst">
         <span class="dot" class:on={i.connected}></span>
-        <div class="meta"><b>{i.name}</b><span>{i.url}{i.connected ? "" : " · key missing"}</span></div>
-        <button class="btn ghost danger" onclick={() => remove(i)}>Remove</button>
+        <div class="meta"><b>{i.name}</b><span>{i.url}{i.connected ? "" : " · " + t("rapldesk.keyMissing")}</span></div>
+        <button class="btn ghost danger" onclick={() => remove(i)}>{t("rapldesk.remove")}</button>
       </div>
     {/each}
-    {#if instances.length === 0}<p class="hint" style="margin:0">No instances yet.</p>{/if}
+    {#if instances.length === 0}<p class="hint" style="margin:0">{t("rapldesk.noInstances")}</p>{/if}
 
     {#if adding}
       <div class="addform">
-        <label class="fr"><span>Name</span><input bind:value={form.name} placeholder="A123 Tickets" /></label>
-        <label class="fr"><span>Base URL</span><input bind:value={form.url} placeholder="https://tickets.a123systems.cz" /></label>
-        <label class="fr"><span>API key</span><input type="password" bind:value={form.key} placeholder="Bearer token" /></label>
+        <label class="fr"><span>{t("rapldesk.name")}</span><input bind:value={form.name} placeholder={t("rapldesk.phName")} /></label>
+        <label class="fr"><span>{t("rapldesk.baseUrl")}</span><input bind:value={form.url} placeholder="https://tickets.a123systems.cz" /></label>
+        <label class="fr"><span>{t("rapldesk.apiKey")}</span><input type="password" bind:value={form.key} placeholder={t("rapldesk.phKey")} /></label>
         <div class="rowbtns">
-          <button class="btn primary" onclick={add} disabled={busy}>{busy ? "Connecting…" : "Connect"}</button>
-          <button class="btn ghost" onclick={() => (adding = false)}>Cancel</button>
+          <button class="btn primary" onclick={add} disabled={busy}>{busy ? t("rapldesk.connecting") : t("rapldesk.connect")}</button>
+          <button class="btn ghost" onclick={() => (adding = false)}>{t("rapldesk.cancel")}</button>
         </div>
       </div>
     {:else}
-      <div class="rowbtns"><button class="btn primary" onclick={() => (adding = true)}>＋ Add instance</button></div>
+      <div class="rowbtns"><button class="btn primary" onclick={() => (adding = true)}>＋ {t("rapldesk.addInstance")}</button></div>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Your agent identity</h3>
-    <p class="hint">RaplDesk requires a user id when posting replies or creating tickets. Enter the user id of
-      your agent account so replies are attributed to you.</p>
-    <label class="fieldrow"><span>RaplDesk user id</span>
+    <h3>{t("rapldesk.identityTitle")}</h3>
+    <p class="hint">{t("rapldesk.identityHint")}</p>
+    <label class="fieldrow"><span>{t("rapldesk.userIdLabel")}</span>
       <input type="number" value={app.settings.raplDeskUserId || ""}
         onchange={(e) => saveSettings({ raplDeskUserId: e.currentTarget.value ? Number(e.currentTarget.value) : null })}
-        placeholder="e.g. 25" />
+        placeholder={t("rapldesk.phUserId")} />
     </label>
   </section>
 </div>

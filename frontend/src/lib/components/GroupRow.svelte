@@ -3,6 +3,7 @@
   import { listTime, relativeTime } from "../time.js";
   import { icons } from "../icons.js";
   import { avatarUrl } from "../api.js";
+  import { t } from "../i18n.svelte.js";
   let { gtype, msgs = [], latest = null, focused = false, expanded = false, checked = false,
         label = "", count = 0, icon = icons.folder, onactivate, ondoneall, onselect } = $props();
 
@@ -38,7 +39,7 @@
   <div class="row" role="button" tabindex="-1" class:focused class:unread={anyUnread} onclick={onactivate}>
     <button class="avatar" class:checked class:haslogo={hasLogo}
       style={acctColor ? `border-color:${acctColor}` : ""}
-      title="Select all" onclick={(e) => { e.stopPropagation(); onselect?.(); }}>
+      title={t("grouprow.selectAll")} onclick={(e) => { e.stopPropagation(); onselect?.(); }}>
       {#if checked}{@html icons.done}
       {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" onerror={() => (imgFailed = true)} />
       {:else}{initial}{/if}
@@ -48,11 +49,11 @@
         <span class="from">{latest.from_name || latest.from_addr}</span>
         <span class="time">{fmtTime(latest.date)}</span>
       </span>
-      <span class="subject">{latest.subject || "(no subject)"}</span>
-      <span class="snippet">{@html gtype === "thread" ? icons.chat : icons.folder} {gtype === "thread" ? "conversation" : "bundle"} · {latest.snippet}</span>
+      <span class="subject">{latest.subject || t("grouprow.noSubject")}</span>
+      <span class="snippet">{@html gtype === "thread" ? icons.chat : icons.folder} {gtype === "thread" ? t("grouprow.conversation") : t("grouprow.bundle")} · {latest.snippet}</span>
     </span>
     <span class="chip">{gtype === "bundle" ? (expanded ? "▾" : "▸") : ""} {msgCount}</span>
-    <button class="done-all" title={gtype === "thread" ? "Archive whole conversation" : "Done all"}
+    <button class="done-all" title={gtype === "thread" ? t("grouprow.archiveConversation") : t("grouprow.doneAll")}
       onclick={(e) => { e.stopPropagation(); ondoneall?.(); }}>{@html icons.done}</button>
   </div>
 </div>

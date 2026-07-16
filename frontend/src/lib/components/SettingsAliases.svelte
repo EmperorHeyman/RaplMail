@@ -3,6 +3,7 @@
   import { app, notify, loadAccountsAndFolders } from "../store.svelte.js";
   import { messages as msgApi, rules as rulesApi } from "../api.js";
   import { relativeTime } from "../time.js";
+  import { t } from "../i18n.svelte.js";
 
   let rows = $state([]);
   let loading = $state(true);
@@ -27,30 +28,28 @@
   onMount(() => { if (app.accounts.length === 0) loadAccountsAndFolders(); genAccount = app.accounts[0]?.id ?? null; load(); });
 
   async function copy(text) {
-    try { await navigator.clipboard.writeText(text); notify("Copied " + text); }
-    catch { notify("Couldn't copy", "error"); }
+    try { await navigator.clipboard.writeText(text); notify(t("setalias.copied", { text })); }
+    catch { notify(t("setalias.copyFailed"), "error"); }
   }
 
   // Mute an alias: a rule that archives anything addressed to it.
   async function muteAlias(r) {
-    if (!confirm(`Archive all future mail sent to ${r.alias}?`)) return;
+    if (!confirm(t("setalias.muteConfirm", { alias: r.alias }))) return;
     try {
       await rulesApi.create({
-        account_id: r.account_id, name: `Mute alias ${r.tag}`,
+        account_id: r.account_id, name: t("setalias.muteRuleName", { tag: r.tag }),
         match_field: "to", match_op: "contains", match_value: r.alias,
         action: "archive", action_arg: "", enabled: true,
       });
-      notify(`Muted ${r.alias} - new mail to it will be archived`);
+      notify(t("setalias.muted", { alias: r.alias }));
     } catch (e) { notify(e.message, "error"); }
   }
 </script>
 
 <div class="wrap">
   <section>
-    <h3>Generate a tracking alias</h3>
-    <p class="lead">Hand a unique <code>you+service@domain</code> address to each site. Mail still lands in your inbox,
-      but you can see exactly who you gave it to - and if it ever shows up elsewhere, you know who leaked it. Works on
-      Gmail, Outlook/M365, Fastmail and most modern servers.</p>
+    <h3>{t("setalias.genTitle")}</h3>
+    <p class="lead">{t("setalias.lead1")}<code>you+service@domain</code>{t("setalias.lead2")}</p>
     <div class="gen">
       {#if app.accounts.length > 1}
         <select bind:value={genAccount}>
@@ -58,21 +57,21 @@
         </select>
       {/if}
       <span class="plus">+</span>
-      <input bind:value={genTag} placeholder="service name, e.g. netflix" />
+      <input bind:value={genTag} placeholder={t("setalias.tagPh")} />
       <code class="result">{generated || "…"}</code>
-      <button class="btn primary" disabled={!generated} onclick={() => copy(generated)}>Copy</button>
+      <button class="btn primary" disabled={!generated} onclick={() => copy(generated)}>{t("setalias.copy")}</button>
     </div>
   </section>
 
   <section>
     <div class="head">
-      <h3>Aliases in use {#if rows.length}<span class="n">{rows.length}</span>{/if}</h3>
-      <button class="btn ghost" onclick={load} disabled={loading}>{loading ? "Scanning…" : "↻ Rescan"}</button>
+      <h3>{t("setalias.inUseTitle")} {#if rows.length}<span class="n">{rows.length}</span>{/if}</h3>
+      <button class="btn ghost" onclick={load} disabled={loading}>{loading ? t("setalias.scanning") : t("setalias.rescan")}</button>
     </div>
     {#if loading}
-      <p class="muted">Scanning your mail for sub-addresses…</p>
+      <p class="muted">{t("setalias.scanningMail")}</p>
     {:else if rows.length === 0}
-      <p class="muted">No tracking aliases detected yet. Generate one above and start using it when you sign up for things.</p>
+      <p class="muted">{t("setalias.empty")}</p>
     {:else}
       <div class="list">
         {#each rows as r}
@@ -80,12 +79,12 @@
             <div class="atop">
               <code class="aname" title={r.alias}>{r.alias}</code>
               <span class="badge" class:warn={r.distinct_senders > 1}>
-                {r.distinct_senders} {r.distinct_senders === 1 ? "sender" : "senders"}
+                {r.distinct_senders === 1 ? t("setalias.senderOne") : t("setalias.senderN", { n: r.distinct_senders })}
               </span>
-              <span class="cnt">{r.count.toLocaleString()} msgs</span>
+              <span class="cnt">{t("setalias.msgCount", { n: r.count.toLocaleString() })}</span>
               {#if r.last_seen}<span class="cnt">· {relativeTime(r.last_seen)}</span>{/if}
-              <button class="btn ghost copy" title="Copy" onclick={() => copy(r.alias)}>Copy</button>
-              <button class="btn ghost" title="Archive future mail to this alias" onclick={() => muteAlias(r)}>Mute</button>
+              <button class="btn ghost copy" title={t("setalias.copy")} onclick={() => copy(r.alias)}>{t("setalias.copy")}</button>
+              <button class="btn ghost" title={t("setalias.muteTitle")} onclick={() => muteAlias(r)}>{t("setalias.mute")}</button>
             </div>
             <div class="senders">
               {#each r.senders as s}
@@ -94,7 +93,7 @@
               {#if r.distinct_senders > r.senders.length}<span class="more">+{r.distinct_senders - r.senders.length}</span>{/if}
             </div>
             {#if r.distinct_senders > 1}
-              <div class="leak">⚠ More than one sender uses this alias - it may have been shared or leaked.</div>
+              <div class="leak">{t("setalias.leak")}</div>
             {/if}
           </div>
         {/each}

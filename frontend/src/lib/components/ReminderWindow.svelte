@@ -5,6 +5,7 @@
   // itself. Purely presentational - runs no app services.
   import { onMount } from "svelte";
   import { icons } from "./../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let ev = $state(null);
   let now = $state(Date.now());
@@ -20,10 +21,10 @@
   const left = $derived.by(() => {
     if (!ev?.start) return "";
     const ms = new Date(ev.start).getTime() - now;
-    if (ms <= 0) return "now";
+    if (ms <= 0) return t("reminder.now");
     const m = Math.floor(ms / 60000), s = Math.floor((ms % 60000) / 1000);
-    if (m >= 60) { const h = Math.floor(m / 60); return `${h}h ${m % 60}m`; }
-    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+    if (m >= 60) { const h = Math.floor(m / 60); return t("reminder.timeHM", { h, m: m % 60 }); }
+    return m > 0 ? t("reminder.timeMS", { m, s }) : t("reminder.timeS", { s });
   });
   const startText = $derived.by(() => {
     if (!ev?.start) return "";
@@ -39,13 +40,13 @@
 
 <div class="rw">
   <div class="ic">{@html icons.calendar || icons.clock}</div>
-  <div class="head">You've got <b>{left}</b> until</div>
-  <div class="title">{ev?.summary || "Event"}</div>
+  <div class="head">{t("reminder.headPrefix")} <b>{left}</b> {t("reminder.headSuffix")}</div>
+  <div class="title">{ev?.summary || t("reminder.event")}</div>
   <div class="meta">
     {#if startText}<span>{@html icons.clock} {startText}</span>{/if}
     {#if ev?.location}<span>{@html icons.pin || icons.folder} {ev.location}</span>{/if}
   </div>
-  <button class="dismiss" onclick={closeWin}>Dismiss</button>
+  <button class="dismiss" onclick={closeWin}>{t("reminder.dismiss")}</button>
 </div>
 
 <style>

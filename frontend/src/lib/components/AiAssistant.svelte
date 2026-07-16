@@ -3,6 +3,7 @@
   import { app, notify, openCompose, openMessageById, refreshMessages } from "../store.svelte.js";
   import { ai, messages as messagesApi, rules as rulesApi } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   // A NON-modal, docked chat window (like the compose panel): you keep clicking
   // and reading the app while it's open, drag it around, and can minimize it into
@@ -51,34 +52,36 @@
   }
   function stopDrag() { dragging = false; window.removeEventListener("pointermove", onMove); }
 
+  // (quick prompts and action/rule vocabularies are i18n keys, resolved with t())
   const QUICK = [
-    "Summarize this",
-    "What needs a reply?",
-    "Draft a reply",
-    "Mark all unread as read",
-    "How do I mark a message done?",
+    "aichat.qSummarize",
+    "aichat.qNeedsReply",
+    "aichat.qDraftReply",
+    "aichat.qMarkAllRead",
+    "aichat.qHowMarkDone",
   ];
 
   // Human labels for a proposed mailbox action (returned by /ai/agent).
   const OP_VERB = {
-    mark_seen: "Mark as read", mark_unseen: "Mark as unread",
-    mark_done: "Mark as done", mark_undone: "Mark as not done",
-    flag: "Flag", unflag: "Unflag", archive: "Archive", delete: "Delete",
+    mark_seen: "aichat.opMarkSeen", mark_unseen: "aichat.opMarkUnseen",
+    mark_done: "aichat.opMarkDone", mark_undone: "aichat.opMarkUndone",
+    flag: "aichat.opFlag", unflag: "aichat.opUnflag", archive: "aichat.opArchive", delete: "aichat.opDelete",
   };
   function filterDesc(f) {
     const p = [];
-    if (f.unread) p.push("unread");
-    if (f.seen) p.push("read");
-    if (f.flagged) p.push("flagged");
-    if (f.from) p.push(`from “${f.from}”`);
-    if (f.subject) p.push(`about “${f.subject}”`);
+    if (f.unread) p.push(t("aichat.fUnread"));
+    if (f.seen) p.push(t("aichat.fRead"));
+    if (f.flagged) p.push(t("aichat.fFlagged"));
+    if (f.from) p.push(t("aichat.fFrom", { v: f.from }));
+    if (f.subject) p.push(t("aichat.fAbout", { v: f.subject }));
     return p.length ? ` (${p.join(", ")})` : "";
   }
   function actionLabel(a) {
-    if (!a.count) return `Nothing matches ${(OP_VERB[a.op] || a.op).toLowerCase()}${filterDesc(a.filters)}.`;
-    const noun = a.count === 1 ? "email" : "emails";
-    const cap = a.capped ? ` (first ${a.ids.length})` : "";
-    return `${OP_VERB[a.op] || a.op} ${a.count} ${noun}${filterDesc(a.filters)}${cap}?`;
+    const verb = OP_VERB[a.op] ? t(OP_VERB[a.op]) : a.op;
+    if (!a.count) return t("aichat.nothingMatches", { verb: verb.toLowerCase(), filters: filterDesc(a.filters) });
+    const noun = a.count === 1 ? t("aichat.emailOne") : t("aichat.emailN");
+    const cap = a.capped ? ` (${t("aichat.firstN", { n: a.ids.length })})` : "";
+    return t("aichat.actionQuestion", { verb, count: a.count, noun, filters: filterDesc(a.filters), cap });
   }
   async function runAction(m) {
     const a = m.action;
@@ -89,18 +92,24 @@
       a.status = "done";
       refreshMessages({ background: true });
     } catch (e) {
-      a.status = "error"; a.error = e.message || "Action failed";
+      a.status = "error"; a.error = e.message || t("aichat.actionFailed");
     } finally { app.aiBusy = false; }
   }
   function cancelAction(m) { if (m.action.status === "pending") m.action.status = "cancelled"; }
 
   // A proposed filtering RULE from the agent ("automatically mark … done").
-  const RULE_FIELD = { from: "sender", from_domain: "sender domain", to: "recipient", subject: "subject", body: "body", category: "category" };
-  const RULE_OP = { contains: "contains", equals: "is exactly", ends_with: "ends with", regex: "matches" };
-  const RULE_ACT = { mark_done: "mark as done", mark_read: "mark as read", archive: "archive", delete: "delete", move: "move", block: "block", mute_notifications: "mute notifications" };
+  const RULE_FIELD = { from: "aichat.rfSender", from_domain: "aichat.rfSenderDomain", to: "aichat.rfRecipient", subject: "aichat.rfSubject", body: "aichat.rfBody", category: "aichat.rfCategory" };
+  const RULE_OP = { contains: "aichat.roContains", equals: "aichat.roEquals", ends_with: "aichat.roEndsWith", regex: "aichat.roRegex" };
+  const RULE_ACT = { mark_done: "aichat.raMarkDone", mark_read: "aichat.raMarkRead", archive: "aichat.raArchive", delete: "aichat.raDelete", move: "aichat.raMove", block: "aichat.raBlock", mute_notifications: "aichat.raMute" };
   function ruleLabel(rl) {
-    const to = rl.action === "move" && rl.action_arg ? ` to “${rl.action_arg}”` : "";
-    return `Create rule: if ${RULE_FIELD[rl.match_field] || rl.match_field} ${RULE_OP[rl.match_op] || rl.match_op} “${rl.match_value}” then ${RULE_ACT[rl.action] || rl.action}${to}.`;
+    const to = rl.action === "move" && rl.action_arg ? t("aichat.ruleTo", { arg: rl.action_arg }) : "";
+    return t("aichat.ruleLabel", {
+      field: RULE_FIELD[rl.match_field] ? t(RULE_FIELD[rl.match_field]) : rl.match_field,
+      op: RULE_OP[rl.match_op] ? t(RULE_OP[rl.match_op]) : rl.match_op,
+      value: rl.match_value,
+      action: RULE_ACT[rl.action] ? t(RULE_ACT[rl.action]) : rl.action,
+      to,
+    });
   }
   const ruleSpec = (rl) => ({ name: rl.name || "", enabled: true, order: 0, account_id: null,
     match_field: rl.match_field, match_op: rl.match_op, match_value: rl.match_value,
@@ -117,7 +126,7 @@
       rl.status = "done"; rl.applied = applied;
       refreshMessages({ background: true });
     } catch (e) {
-      rl.status = "error"; rl.error = e.message || "Couldn't create the rule";
+      rl.status = "error"; rl.error = e.message || t("aichat.ruleCreateFailed");
     } finally { app.aiBusy = false; }
   }
   function cancelRule(m) { if (m.rule.status === "pending") m.rule.status = "cancelled"; }
@@ -125,23 +134,23 @@
   function hasCtx(id) { return context.some((c) => c.id === id); }
   function addMsg(m) {
     if (!m || hasCtx(m.id)) return;
-    app.aiChatContext = [...app.aiChatContext, { id: m.id, from: m.from_name || m.from_addr || "?", subject: m.subject || "(no subject)", date: m.date }];
+    app.aiChatContext = [...app.aiChatContext, { id: m.id, from: m.from_name || m.from_addr || "?", subject: m.subject || t("aichat.noSubject"), date: m.date }];
   }
   function removeCtx(id) { app.aiChatContext = app.aiChatContext.filter((c) => c.id !== id); }
 
   function addOpen() {
     const m = app.messages.find((x) => x.id === app.selectedMessageId);
-    if (m) addMsg(m); else notify("Open a message first", "error");
+    if (m) addMsg(m); else notify(t("aichat.openFirst"), "error");
   }
   async function addThread() {
     const key = app.threadKey || app.aiAssistantSeed?.threadKey || app.aiAssistantSeed?.threadId;
-    if (!key) { notify("No conversation open", "error"); return; }
+    if (!key) { notify(t("aichat.noConvOpen"), "error"); return; }
     try { (await messagesApi.thread(key)).forEach(addMsg); }
-    catch { notify("Couldn't load the conversation", "error"); }
+    catch { notify(t("aichat.convLoadFailed"), "error"); }
   }
   function addList() {
     const take = app.messages.slice(0, 25);
-    if (!take.length) { notify("The list is empty", "error"); return; }
+    if (!take.length) { notify(t("aichat.listEmpty"), "error"); return; }
     take.forEach(addMsg);
   }
 
@@ -187,10 +196,10 @@
         conv = [...conv, { role: "assistant", content: ruleLabel(r.rule),
                            rule: { ...r.rule, status: "pending", count, sample } }];
       } else {
-        conv = [...conv, { role: "assistant", content: r.answer || "(no answer)" }];
+        conv = [...conv, { role: "assistant", content: r.answer || t("aichat.noAnswer") }];
       }
     } catch (e) {
-      conv = [...conv, { role: "assistant", content: "⚠ " + (e.message || "AI request failed") }];
+      conv = [...conv, { role: "assistant", content: "⚠ " + (e.message || t("aichat.requestFailed")) }];
     } finally {
       loading = false; app.aiBusy = false;
       scrollSoon();
@@ -204,7 +213,7 @@
   function clearConv() { conv = []; input = ""; queueMicrotask(autogrow); }
 
   async function copy(text) {
-    try { await navigator.clipboard.writeText(text); notify("Copied"); } catch { notify("Couldn't copy", "error"); }
+    try { await navigator.clipboard.writeText(text); notify(t("aichat.copied")); } catch { notify(t("aichat.copyFailed"), "error"); }
   }
   function toCompose(text) {
     openCompose({ to: "", subject: "", html: `<p>${text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/\n/g, "<br>")}</p>` });
@@ -221,46 +230,46 @@
 </script>
 
 {#if minimized}
-  <button class="ai-fab" onclick={() => (minimized = false)} title="AI assistant">
+  <button class="ai-fab" onclick={() => (minimized = false)} title={t("aichat.title")}>
     {@html icons.bolt}
     {#if conv.length}<span class="fab-badge">{conv.filter((m) => m.role === "assistant").length}</span>{/if}
   </button>
 {:else}
   <div class="panel" style={dockStyle} bind:this={panelEl}>
     <header onpointerdown={onHeaderDown}>
-      <span class="title">{@html icons.bolt} AI assistant</span>
+      <span class="title">{@html icons.bolt} {t("aichat.title")}</span>
       <div class="hbtns">
-        {#if conv.length}<button class="hb" title="Clear the conversation (start fresh)" onclick={clearConv}>{@html icons.trash || "🗑"}</button>{/if}
-        <button class="hb" title="Minimize to a circle" onclick={() => (minimized = true)}>-</button>
-        <button class="hb" title="Close" onclick={close}>{@html icons.close}</button>
+        {#if conv.length}<button class="hb" title={t("aichat.clearTip")} onclick={clearConv}>{@html icons.trash || "🗑"}</button>{/if}
+        <button class="hb" title={t("aichat.minimizeTip")} onclick={() => (minimized = true)}>-</button>
+        <button class="hb" title={t("aichat.close")} onclick={close}>{@html icons.close}</button>
       </div>
     </header>
 
     <div class="ctx">
       <div class="ctx-add">
-        <span class="ctx-lbl">Context</span>
-        <button class="addbtn" onclick={addOpen}>＋ Open</button>
-        <button class="addbtn" onclick={addThread}>＋ Conversation</button>
-        <button class="addbtn" onclick={addList}>＋ List</button>
+        <span class="ctx-lbl">{t("aichat.context")}</span>
+        <button class="addbtn" onclick={addOpen}>{t("aichat.addOpen")}</button>
+        <button class="addbtn" onclick={addThread}>{t("aichat.addConversation")}</button>
+        <button class="addbtn" onclick={addList}>{t("aichat.addList")}</button>
       </div>
       {#if context.length}
         <div class="chips">
           {#each context as c (c.id)}
             <span class="chip" title={c.subject}>
               <button class="chip-open" onclick={() => openCtx(c.id)}>{@html icons.mail} {c.from} - {c.subject}</button>
-              <button class="chip-x" title="Remove" onclick={() => removeCtx(c.id)}>{@html icons.close}</button>
+              <button class="chip-x" title={t("aichat.remove")} onclick={() => removeCtx(c.id)}>{@html icons.close}</button>
             </span>
           {/each}
         </div>
       {:else}
-        <p class="ctx-empty">Add emails as context, then ask - or just tell me what to do: “mark all unread as read”, “archive everything from noreply@…”, or “how do I snooze a mail?”</p>
+        <p class="ctx-empty">{t("aichat.ctxEmpty")}</p>
       {/if}
     </div>
 
     <div class="conv" bind:this={scroller}>
       {#if !conv.length}
         <div class="quick">
-          {#each QUICK as q}<button class="qchip" onclick={() => send(q)}>{q}</button>{/each}
+          {#each QUICK as q}<button class="qchip" onclick={() => send(t(q))}>{t(q)}</button>{/each}
         </div>
       {/if}
       {#each conv as m}
@@ -270,21 +279,21 @@
               <div class="act-head">{@html icons.bolt} {m.content}</div>
               {#if m.action.sample?.length}
                 <ul class="act-sample">
-                  {#each m.action.sample as s}<li><b>{s.from}</b> - {s.subject || "(no subject)"}</li>{/each}
-                  {#if m.action.count > m.action.sample.length}<li class="more">…and {m.action.count - m.action.sample.length} more</li>{/if}
+                  {#each m.action.sample as s}<li><b>{s.from}</b> - {s.subject || t("aichat.noSubject")}</li>{/each}
+                  {#if m.action.count > m.action.sample.length}<li class="more">{t("aichat.andMore", { n: m.action.count - m.action.sample.length })}</li>{/if}
                 </ul>
               {/if}
               {#if m.action.status === "pending"}
                 <div class="act-btns">
-                  <button class="act-go" onclick={() => runAction(m)}>{@html icons.done || ""} Do it</button>
-                  <button class="act-no" onclick={() => cancelAction(m)}>Cancel</button>
+                  <button class="act-go" onclick={() => runAction(m)}>{@html icons.done || ""} {t("aichat.doIt")}</button>
+                  <button class="act-no" onclick={() => cancelAction(m)}>{t("aichat.cancel")}</button>
                 </div>
               {:else if m.action.status === "running"}
-                <div class="act-status">Working…</div>
+                <div class="act-status">{t("aichat.working")}</div>
               {:else if m.action.status === "done"}
-                <div class="act-status ok">{@html icons.done || "✓"} Done</div>
+                <div class="act-status ok">{@html icons.done || "✓"} {t("aichat.done")}</div>
               {:else if m.action.status === "cancelled"}
-                <div class="act-status">Cancelled</div>
+                <div class="act-status">{t("aichat.cancelled")}</div>
               {:else if m.action.status === "error"}
                 <div class="act-status err">⚠ {m.action.error}</div>
               {/if}
@@ -295,27 +304,27 @@
               {#if m.rule.count != null}
                 <div class="act-affect">
                   {m.rule.count === 0
-                    ? "No emails you already have match this - it would only apply to future mail. Double-check the wording?"
-                    : `This would affect ${m.rule.count} email${m.rule.count === 1 ? "" : "s"} you already have, plus future mail.`}
+                    ? t("aichat.ruleNoMatch")
+                    : t(m.rule.count === 1 ? "aichat.ruleAffectOne" : "aichat.ruleAffectN", { n: m.rule.count })}
                 </div>
                 {#if m.rule.sample?.length}
                   <ul class="act-sample">
-                    {#each m.rule.sample.slice(0, 4) as s}<li>{s || "(no subject)"}</li>{/each}
-                    {#if m.rule.count > 4}<li class="more">…and {m.rule.count - 4} more</li>{/if}
+                    {#each m.rule.sample.slice(0, 4) as s}<li>{s || t("aichat.noSubject")}</li>{/each}
+                    {#if m.rule.count > 4}<li class="more">{t("aichat.andMore", { n: m.rule.count - 4 })}</li>{/if}
                   </ul>
                 {/if}
               {/if}
               {#if m.rule.status === "pending"}
                 <div class="act-btns">
-                  <button class="act-go" onclick={() => runRule(m)}>{@html icons.done || ""} Create rule</button>
-                  <button class="act-no" onclick={() => cancelRule(m)}>Cancel</button>
+                  <button class="act-go" onclick={() => runRule(m)}>{@html icons.done || ""} {t("aichat.createRule")}</button>
+                  <button class="act-no" onclick={() => cancelRule(m)}>{t("aichat.cancel")}</button>
                 </div>
               {:else if m.rule.status === "running"}
-                <div class="act-status">Creating…</div>
+                <div class="act-status">{t("aichat.creating")}</div>
               {:else if m.rule.status === "done"}
-                <div class="act-status ok">{@html icons.done || "✓"} Rule created{m.rule.applied ? ` · applied to ${m.rule.applied} existing` : ""}</div>
+                <div class="act-status ok">{@html icons.done || "✓"} {t("aichat.ruleCreated")}{m.rule.applied ? " · " + t("aichat.appliedExisting", { n: m.rule.applied }) : ""}</div>
               {:else if m.rule.status === "cancelled"}
-                <div class="act-status">Cancelled</div>
+                <div class="act-status">{t("aichat.cancelled")}</div>
               {:else if m.rule.status === "error"}
                 <div class="act-status err">⚠ {m.rule.error}</div>
               {/if}
@@ -324,18 +333,18 @@
             <div class="bubble">{m.content}</div>
             {#if m.role === "assistant"}
               <div class="turn-actions">
-                <button onclick={() => copy(m.content)}>{@html icons.copy || ""} Copy</button>
-                <button onclick={() => toCompose(m.content)}>{@html icons.compose || ""} New email</button>
+                <button onclick={() => copy(m.content)}>{@html icons.copy || ""} {t("aichat.copy")}</button>
+                <button onclick={() => toCompose(m.content)}>{@html icons.compose || ""} {t("aichat.newEmail")}</button>
               </div>
             {/if}
           {/if}
         </div>
       {/each}
-      {#if loading}<div class="turn assistant"><div class="bubble thinking">Thinking…</div></div>{/if}
+      {#if loading}<div class="turn assistant"><div class="bubble thinking">{t("aichat.thinking")}</div></div>{/if}
     </div>
 
     <footer>
-      <textarea class="ask" bind:this={askEl} bind:value={input} rows="1" placeholder="Ask…  (Enter to send · Shift+Enter for a new line)"
+      <textarea class="ask" bind:this={askEl} bind:value={input} rows="1" placeholder={t("aichat.askPh")}
         onkeydown={onAskKey} oninput={autogrow}></textarea>
       <button class="btn primary" onclick={() => send()} disabled={loading || !input.trim()}>{@html icons.sent || ""}</button>
     </footer>

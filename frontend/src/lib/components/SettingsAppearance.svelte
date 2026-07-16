@@ -2,6 +2,7 @@
   import { app, saveSettings, applyTheme, THEME_TOKENS, notify, LIGHT_THEME } from "../store.svelte.js";
   import { PRESETS, PRESET_CATEGORIES } from "../themes.js";
   import { isMacApp } from "../api.js";
+  import { t } from "../i18n.svelte.js";
 
   function setLiquidGlass(on) { saveSettings({ liquidGlass: on }); applyTheme(); }
 
@@ -12,14 +13,15 @@
   );
 
   // Configurable quick-action buttons (which buttons show on rows / in the reader).
+  // Labels are i18n keys, resolved with t() at render time.
   const ROW_CHOICES = [
-    ["none", "- None -"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
-    ["read", "Read / unread"], ["archive", "Archive"], ["delete", "Delete"],
+    ["none", "setapp.rowNone"], ["done", "setapp.optDone"], ["snooze", "setapp.optSnooze"], ["flag", "setapp.optFlag"],
+    ["read", "setapp.optReadUnread"], ["archive", "setapp.optArchive"], ["delete", "setapp.optDelete"],
   ];
   const READER_CHOICES = [
-    ["reply", "Reply"], ["replyAll", "Reply all"], ["forward", "Forward"],
-    ["archive", "Archive"], ["snooze", "Snooze"],
-    ["done", "Done"], ["flag", "Flag"], ["delete", "Delete"],
+    ["reply", "setapp.optReply"], ["replyAll", "setapp.optReplyAll"], ["forward", "setapp.optForward"],
+    ["archive", "setapp.optArchive"], ["snooze", "setapp.optSnooze"],
+    ["done", "setapp.optDone"], ["flag", "setapp.optFlag"], ["delete", "setapp.optDelete"],
   ];
   function setRowAction(index, key) {
     const cur = [...(app.settings.rowActions || ["snooze", "done"])];
@@ -33,36 +35,47 @@
     saveSettings({ readerActions: order.filter((k) => cur.has(k)) });
   }
 
+  // Token → i18n key for its human label (resolved with t() at render time).
   const LABELS = {
-    "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
-    "--surface-3": "Surface 3", "--border": "Border", "--text": "Text",
-    "--muted": "Muted text", "--accent": "Accent", "--done": "Done / success",
-    "--danger": "Danger", "--warning": "Warning",
+    "--bg": "setapp.tokBg", "--surface": "setapp.tokSurface", "--surface-2": "setapp.tokSurface2",
+    "--surface-3": "setapp.tokSurface3", "--border": "setapp.tokBorder", "--text": "setapp.tokText",
+    "--muted": "setapp.tokMuted", "--accent": "setapp.tokAccent", "--done": "setapp.tokDone",
+    "--danger": "setapp.tokDanger", "--warning": "setapp.tokWarning",
   };
 
   // Accent-led presets live in ../themes.js (shared with onboarding).
 
   // Quick reference shown under the Custom CSS box so users know what to target.
+  // Selectors are literal; descriptions are i18n keys.
   const SELECTORS = [
-    [".sidebar", "Left navigation pane"],
-    [".folder", "A nav row (inbox, folder, smart view)"],
-    [".folder.active", "The selected nav row"],
-    [".btn", "Any button"],
-    [".btn.primary", "Primary buttons (Compose, Send)"],
-    [".btn.ghost", "Subtle / secondary buttons"],
-    [".list", "Message-list column"],
-    [".row", "A message row in the list"],
-    [".row.unread", "Unread message rows"],
-    [".row.focused", "Keyboard-focused row"],
-    [".avatar", "Sender avatar disc"],
-    [".subject", "Subject line in a row"],
-    [".snippet", "Preview text in a row"],
-    [".thread, .reader", "Reading pane"],
-    [".card", "Settings / grouped panels"],
-    [".cat", "Category tab pill"],
-    [".bulkbar", "Multi-select action bar"],
-    [".sg", "Smart Inbox group card"],
+    [".sidebar", "setapp.selSidebar"],
+    [".folder", "setapp.selFolder"],
+    [".folder.active", "setapp.selFolderActive"],
+    [".btn", "setapp.selBtn"],
+    [".btn.primary", "setapp.selBtnPrimary"],
+    [".btn.ghost", "setapp.selBtnGhost"],
+    [".list", "setapp.selList"],
+    [".row", "setapp.selRow"],
+    [".row.unread", "setapp.selRowUnread"],
+    [".row.focused", "setapp.selRowFocused"],
+    [".avatar", "setapp.selAvatar"],
+    [".subject", "setapp.selSubject"],
+    [".snippet", "setapp.selSnippet"],
+    [".thread, .reader", "setapp.selReader"],
+    [".card", "setapp.selCard"],
+    [".cat", "setapp.selCat"],
+    [".bulkbar", "setapp.selBulkbar"],
+    [".sg", "setapp.selSg"],
   ];
+
+  // Built-in preset CATEGORY labels (preset names themselves stay untranslated).
+  const CAT_KEYS = {
+    "Essentials": "setapp.catEssentials",
+    "High contrast": "setapp.catHighContrast",
+    "Neutral": "setapp.catNeutral",
+    "Color": "setapp.catColor",
+    "Editor": "setapp.catEditor",
+  };
 
   const auto = $derived(app.settings.themeMode === "auto");
   function val(token, def) { return app.settings.theme[token] || def; }
@@ -73,7 +86,7 @@
   function applyPreset(p) {
     saveSettings({ theme: { ...p.theme }, themeMode: "manual" });
     applyTheme();
-    notify(`Theme: ${p.name}`);
+    notify(t("setapp.themeApplied", { name: p.name }));
   }
   // Presets grouped by category (in the order themes.js declares them).
   const DEF = Object.fromEntries(THEME_TOKENS);   // token -> default (dark) value
@@ -122,16 +135,16 @@
       "--border": H(27, 13), "--text": H(93, 16), "--muted": H(62, 12), "--accent": accent };
   }
   function applyGenerated() {
-    applyPreset({ name: "Generated", theme: generatePalette(genAccent, genBase) });
+    applyPreset({ name: t("setapp.generatedName"), theme: generatePalette(genAccent, genBase) });
   }
   // --- Your own saved presets ------------------------------------------------
   function saveAsPreset() {
-    const name = (prompt("Name this preset:") || "").trim();
+    const name = (prompt(t("setapp.namePresetPrompt")) || "").trim();
     if (!name) return;
     const id = (crypto.randomUUID?.() || String(Date.now())).replace(/[^a-z0-9]/gi, "").slice(0, 12);
     const list = [...(app.settings.userPresets || []), { id, name, theme: { ...app.settings.theme } }];
     saveSettings({ userPresets: list });
-    notify(`Saved preset "${name}"`);
+    notify(t("setapp.presetSaved", { name }));
   }
   function deleteUserPreset(id) {
     saveSettings({ userPresets: (app.settings.userPresets || []).filter((p) => p.id !== id) });
@@ -142,10 +155,10 @@
   // A flat list of everything you can assign to day/night: built-in presets +
   // your saved ones. We store the resolved theme object, matched back by value.
   const themeChoices = $derived([
-    { key: "dark", name: "Dark (default)", theme: {} },
+    { key: "dark", name: t("setapp.darkDefault"), theme: {} },
     { key: "light", name: "Light", theme: LIGHT_THEME },
     ...PRESETS.filter((p) => p.name !== "Dark" && p.name !== "Light").map((p) => ({ key: "b:" + p.name, name: p.name, theme: p.theme })),
-    ...userPresets.map((p) => ({ key: "u:" + p.id, name: p.name + " (yours)", theme: p.theme })),
+    ...userPresets.map((p) => ({ key: "u:" + p.id, name: t("setapp.presetYours", { name: p.name }), theme: p.theme })),
   ]);
   // Map a stored theme object back to its dropdown key. null = "not set" → the
   // per-slot default (Light for day, Dark for night).
@@ -174,49 +187,49 @@
   function reset() {
     saveSettings({ theme: {}, themeMode: "manual" });
     applyTheme();
-    notify("Theme reset to default");
+    notify(t("setapp.themeResetDone"));
   }
 </script>
 
 <div class="wrap">
   <section class="card">
-    <h3>Mode</h3>
+    <h3>{t("setapp.mode")}</h3>
     <label class="radio"><input type="radio" name="tmode" checked={!auto} onchange={() => setMode("manual")} />
-      <div><b>Manual</b><span>Use the preset / colors you pick below.</span></div></label>
+      <div><b>{t("setapp.manual")}</b><span>{t("setapp.manualHint")}</span></div></label>
     <label class="radio"><input type="radio" name="tmode" checked={auto} onchange={() => setMode("auto")} />
-      <div><b>Auto (day / night)</b><span>Switch themes by time of day. Overrides your manual colors while on.</span></div></label>
+      <div><b>{t("setapp.autoMode")}</b><span>{t("setapp.autoHint")}</span></div></label>
     {#if auto}
       <div class="daynight">
-        <label class="dn"><span>Day theme</span>
+        <label class="dn"><span>{t("setapp.dayTheme")}</span>
           <select value={keyForTheme(app.settings.dayTheme, "light")} onchange={(e) => setDayNight("dayTheme", e.currentTarget.value)}>
             {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>from</span>
+        <label class="dn"><span>{t("setapp.from")}</span>
           <select value={app.settings.dayStart ?? 7} onchange={(e) => setHour("dayStart", e.currentTarget.value)}>
-            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? t("setapp.am") : t("setapp.pm")}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>Night theme</span>
+        <label class="dn"><span>{t("setapp.nightTheme")}</span>
           <select value={keyForTheme(app.settings.nightTheme, "dark")} onchange={(e) => setDayNight("nightTheme", e.currentTarget.value)}>
             {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>from</span>
+        <label class="dn"><span>{t("setapp.from")}</span>
           <select value={app.settings.nightStart ?? 19} onchange={(e) => setHour("nightStart", e.currentTarget.value)}>
-            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? t("setapp.am") : t("setapp.pm")}</option>{/each}
           </select>
         </label>
       </div>
-      <p class="hint" style="margin:10px 0 0">Tip: build a look under Custom colors, hit <b>Save as preset</b>, then pick it here as your day or night theme.</p>
+      <p class="hint" style="margin:10px 0 0">{t("setapp.autoTip1")} <b>{t("setapp.saveAsPreset")}</b>{t("setapp.autoTip2")}</p>
     {/if}
   </section>
 
   <section class="card" class:dim={auto}>
-    <h3>Presets</h3>
-    <p class="hint">Each preview shows the actual background, panel and accent - pick a mood, then fine-tune below.</p>
+    <h3>{t("setapp.presets")}</h3>
+    <p class="hint">{t("setapp.presetsHint")}</p>
     {#if userPresets.length}
-      <div class="preset-cat">Yours</div>
+      <div class="preset-cat">{t("setapp.yours")}</div>
       <div class="presets">
         {#each userPresets as p (p.id)}
           <div class="preset upreset" class:active={isActivePreset(p)}>
@@ -228,13 +241,13 @@
               </span>
               <span class="preset-name">{p.name}</span>
             </button>
-            <button class="updel" title="Delete preset" onclick={() => deleteUserPreset(p.id)}>×</button>
+            <button class="updel" title={t("setapp.deletePreset")} onclick={() => deleteUserPreset(p.id)}>×</button>
           </div>
         {/each}
       </div>
     {/if}
     {#each presetGroups as g}
-      <div class="preset-cat">{g.cat}</div>
+      <div class="preset-cat">{CAT_KEYS[g.cat] ? t(CAT_KEYS[g.cat]) : g.cat}</div>
       <div class="presets">
         {#each g.items as p}
           <button class="preset" class:active={isActivePreset(p)} onclick={() => applyPreset(p)} title={p.name}>
@@ -251,27 +264,27 @@
   </section>
 
   <section class="card" class:dim={auto}>
-    <div class="head"><h3>Custom colors</h3>
+    <div class="head"><h3>{t("setapp.customColors")}</h3>
       <div class="head-btns">
-        <button class="btn ghost" onclick={saveAsPreset}>Save as preset</button>
-        <button class="btn ghost" onclick={reset}>Reset all</button>
+        <button class="btn ghost" onclick={saveAsPreset}>{t("setapp.saveAsPreset")}</button>
+        <button class="btn ghost" onclick={reset}>{t("setapp.resetAll")}</button>
       </div>
     </div>
     <div class="gen">
-      <span class="gen-lbl">Generate from one color</span>
-      <input class="gen-swatch" type="color" bind:value={genAccent} title="Accent color" />
+      <span class="gen-lbl">{t("setapp.genFromOne")}</span>
+      <input class="gen-swatch" type="color" bind:value={genAccent} title={t("setapp.accentColor")} />
       <div class="seg">
-        <button class="segbtn" class:on={genBase === "dark"} onclick={() => (genBase = "dark")}>Dark base</button>
-        <button class="segbtn" class:on={genBase === "light"} onclick={() => (genBase = "light")}>Light base</button>
+        <button class="segbtn" class:on={genBase === "dark"} onclick={() => (genBase = "dark")}>{t("setapp.darkBase")}</button>
+        <button class="segbtn" class:on={genBase === "light"} onclick={() => (genBase = "light")}>{t("setapp.lightBase")}</button>
       </div>
-      <button class="btn" onclick={applyGenerated}>Generate palette</button>
+      <button class="btn" onclick={applyGenerated}>{t("setapp.generatePalette")}</button>
     </div>
-    <p class="hint">Or tune each token below - every one is a CSS variable used across the whole app.</p>
+    <p class="hint">{t("setapp.tuneHint")}</p>
     <div class="tokens">
       {#each THEME_TOKENS as [token, def]}
         <label class="token">
           <input type="color" value={val(token, def)} oninput={(e) => setToken(token, e.currentTarget.value)} />
-          <span class="tname">{LABELS[token] || token}</span>
+          <span class="tname">{LABELS[token] ? t(LABELS[token]) : token}</span>
           <span class="tval">{val(token, def)}</span>
         </label>
       {/each}
@@ -279,11 +292,11 @@
   </section>
 
   <section class="card">
-    <h3>Shape & layout</h3>
+    <h3>{t("setapp.shapeLayout")}</h3>
     <!-- Live preview: a mock message row + button that reflect the roundness and
          density below as you drag, so you see the effect before committing. -->
     <div class="lp" style="--lp-r:{app.settings.radius}px">
-      <div class="lp-lbl">Preview</div>
+      <div class="lp-lbl">{t("setapp.preview")}</div>
       <div class="lp-card">
         <div class="lp-row" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
           <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
@@ -291,7 +304,7 @@
             <span class="lp-l1"></span>
             <span class="lp-l2"></span>
           </span>
-          <span class="lp-btn">Done</span>
+          <span class="lp-btn">{t("setapp.lpDone")}</span>
         </div>
         <div class="lp-row alt" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
           <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
@@ -305,27 +318,27 @@
     {#if isMacApp()}
       <label class="check">
         <input type="checkbox" checked={app.settings.liquidGlass !== false} onchange={(e) => setLiquidGlass(e.currentTarget.checked)} />
-        <div><b>Liquid Glass</b><span>Translucent window chrome over the desktop (macOS vibrancy). Turn off for fully opaque panes.</span></div>
+        <div><b>Liquid Glass</b><span>{t("setapp.liquidGlassHint")}</span></div>
       </label>
     {/if}
     <label class="slider-row">
-      <span>Text &amp; UI size</span>
+      <span>{t("setapp.textUiSize")}</span>
       <input type="range" min="0.8" max="1.4" step="0.05" value={app.settings.uiScale ?? 1} oninput={(e) => setScale(e.currentTarget.value)} />
       <span class="val">{Math.round((app.settings.uiScale ?? 1) * 100)}%</span>
     </label>
     <label class="slider-row">
-      <span>Corner roundness</span>
+      <span>{t("setapp.cornerRoundness")}</span>
       <input type="range" min="0" max="22" value={app.settings.radius} oninput={(e) => setRadius(e.currentTarget.value)} />
       <span class="val">{app.settings.radius}px</span>
     </label>
     <div class="field">
-      <b>Message density</b>
-      <span class="fhint">How tightly rows are packed in the message list.</span>
+      <b>{t("setapp.msgDensity")}</b>
+      <span class="fhint">{t("setapp.msgDensityHint")}</span>
       <div class="seg">
         {#each [
-          { v: "compact", t: "Compact", d: "Tightest - fit the most messages on screen." },
-          { v: "comfortable", t: "Comfortable", d: "The default balance of density and breathing room." },
-          { v: "cozy", t: "Cozy", d: "Roomiest - extra padding and a larger avatar." },
+          { v: "compact", t: t("setapp.densityCompact"), d: t("setapp.densityCompactTip") },
+          { v: "comfortable", t: t("setapp.densityComfortable"), d: t("setapp.densityComfortableTip") },
+          { v: "cozy", t: t("setapp.densityCozy"), d: t("setapp.densityCozyTip") },
         ] as o}
           <button class="segbtn" class:on={(app.settings.density || "comfortable") === o.v} title={o.d}
             onclick={() => { saveSettings({ density: o.v }); applyTheme(); }}>{o.t}</button>
@@ -333,11 +346,11 @@
       </div>
     </div>
     <div class="field">
-      <b>Reading width</b>
-      <span class="fhint">Cap the width of email bodies so long lines don't stretch across a wide screen.</span>
+      <b>{t("setapp.readingWidth")}</b>
+      <span class="fhint">{t("setapp.readingWidthHint")}</span>
       <div class="seg">
         {#each [
-          { v: 0, t: "Full" }, { v: 680, t: "Narrow" }, { v: 820, t: "Medium" }, { v: 1000, t: "Wide" },
+          { v: 0, t: t("setapp.widthFull") }, { v: 680, t: t("setapp.widthNarrow") }, { v: 820, t: t("setapp.widthMedium") }, { v: 1000, t: t("setapp.widthWide") },
         ] as o}
           <button class="segbtn" class:on={(app.settings.emailMaxWidth ?? 820) === o.v}
             onclick={() => saveSettings({ emailMaxWidth: o.v })}>{o.t}</button>
@@ -345,97 +358,96 @@
       </div>
     </div>
     <div class="field">
-      <b>Email appearance</b>
-      <span class="fhint">How email bodies are rendered in a dark theme.</span>
+      <b>{t("setapp.emailAppearance")}</b>
+      <span class="fhint">{t("setapp.emailAppearanceHint")}</span>
       <div class="seg">
         {#each [
-          { v: "dark", t: "Dark", d: "Force a dark background on every email - no white, ever." },
-          { v: "adaptive", t: "Adaptive", d: "Dark pane for plain mail; branded mail keeps its own design." },
-          { v: "original", t: "Original", d: "Show every email exactly as the sender designed it (white)." },
+          { v: "dark", t: t("setapp.emailDark"), d: t("setapp.emailDarkTip") },
+          { v: "adaptive", t: t("setapp.emailAdaptive"), d: t("setapp.emailAdaptiveTip") },
+          { v: "original", t: t("setapp.emailOriginal"), d: t("setapp.emailOriginalTip") },
         ] as o}
           <button class="segbtn" class:on={emailMode === o.v} title={o.d}
             onclick={() => saveSettings({ emailTheme: o.v })}>{o.t}</button>
         {/each}
       </div>
-      <span class="fhint">{emailMode === "dark" ? "Near-white backgrounds are recolored to your theme; saturated brand colors are kept." : emailMode === "adaptive" ? "Plain emails get a dark pane; designed emails are left untouched on white." : "No adaptation - emails render on a white reading pane as authored."}</span>
+      <span class="fhint">{emailMode === "dark" ? t("setapp.emailDarkNote") : emailMode === "adaptive" ? t("setapp.emailAdaptiveNote") : t("setapp.emailOriginalNote")}</span>
     </div>
     <div class="field">
-      <b>Reply / action buttons</b>
-      <span class="fhint">Where Reply · Forward · Done sit when reading a message.</span>
+      <b>{t("setapp.replyActionBtns")}</b>
+      <span class="fhint">{t("setapp.replyActionHint")}</span>
       <div class="seg">
-        <button class="segbtn" class:on={(app.settings.readerActionsPos || "top") === "top"} onclick={() => saveSettings({ readerActionsPos: "top" })}>Top</button>
-        <button class="segbtn" class:on={app.settings.readerActionsPos === "bottom"} onclick={() => saveSettings({ readerActionsPos: "bottom" })}>Bottom-right</button>
+        <button class="segbtn" class:on={(app.settings.readerActionsPos || "top") === "top"} onclick={() => saveSettings({ readerActionsPos: "top" })}>{t("setapp.posTop")}</button>
+        <button class="segbtn" class:on={app.settings.readerActionsPos === "bottom"} onclick={() => saveSettings({ readerActionsPos: "bottom" })}>{t("setapp.posBottomRight")}</button>
       </div>
     </div>
     <label class="check">
       <input type="checkbox" checked={app.settings.collapseQuotes !== false}
         onchange={(e) => saveSettings({ collapseQuotes: e.currentTarget.checked })} />
       <div>
-        <b>Collapse quoted replies</b>
-        <span>Show the new message plus the most-recent quoted reply, with older "On … wrote:" history behind a "Show earlier messages" toggle. Turn off to always show the full thread.</span>
+        <b>{t("setapp.collapseQuotes")}</b>
+        <span>{t("setapp.collapseQuotesHint")}</span>
       </div>
     </label>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.linkUnfurls}
         onchange={(e) => saveSettings({ linkUnfurls: e.currentTarget.checked })} />
       <div>
-        <b>Rich link previews</b>
-        <span>Show a preview card (title, image) for the main link in a message. Off by default - enabling fetches the linked page from your machine.</span>
+        <b>{t("setapp.linkPreviews")}</b>
+        <span>{t("setapp.linkPreviewsHint")}</span>
       </div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.highlightCode !== false}
         onchange={(e) => saveSettings({ highlightCode: e.currentTarget.checked })} />
       <div>
-        <b>Syntax-highlight code blocks</b>
-        <span>Color keywords, strings, and comments inside <code>&lt;pre&gt;</code> code blocks in messages. Language-agnostic.</span>
+        <b>{t("setapp.highlightCode")}</b>
+        <span>{t("setapp.highlightCodeHint1")} <code>&lt;pre&gt;</code> {t("setapp.highlightCodeHint2")}</span>
       </div>
     </label>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.relativeTime}
         onchange={(e) => saveSettings({ relativeTime: e.currentTarget.checked })} />
       <div>
-        <b>Relative timestamps</b>
-        <span>Show "3 hours ago" in the message list instead of a date/clock.</span>
+        <b>{t("setapp.relativeTime")}</b>
+        <span>{t("setapp.relativeTimeHint")}</span>
       </div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.senderAvatars !== false}
         onchange={(e) => saveSettings({ senderAvatars: e.currentTarget.checked })} />
       <div>
-        <b>Sender logos as avatars</b>
-        <span>Show each sender's brand logo by fetching their domain's favicon (cached locally after the first time). Falls back to initials. Off = always initials - and no domain lookups leave your machine.</span>
+        <b>{t("setapp.senderAvatars")}</b>
+        <span>{t("setapp.senderAvatarsHint")}</span>
       </div>
     </label>
-    <p class="hint" style="margin:12px 0 0">Tip: turn on <b>Customize layout</b> (lock icon in the sidebar) to drag-resize the columns.</p>
+    <p class="hint" style="margin:12px 0 0">{t("setapp.layoutTip1")} <b>{t("setapp.customizeLayout")}</b> {t("setapp.layoutTip2")}</p>
   </section>
 
   <section class="card">
-    <h3>Quick-action buttons</h3>
-    <p class="fhint">The two buttons that appear on each message row when you hover.</p>
+    <h3>{t("setapp.quickActions")}</h3>
+    <p class="fhint">{t("setapp.quickActionsHint")}</p>
     <div class="rowbtns">
       {#each [0, 1] as idx}
-        <label class="inline">{idx === 0 ? "Left" : "Right"}
+        <label class="inline">{idx === 0 ? t("setapp.left") : t("setapp.right")}
           <select value={(app.settings.rowActions || ["snooze", "done"])[idx]} onchange={(e) => setRowAction(idx, e.currentTarget.value)}>
-            {#each ROW_CHOICES as [val, label]}<option value={val}>{label}</option>{/each}
+            {#each ROW_CHOICES as [val, label]}<option value={val}>{t(label)}</option>{/each}
           </select>
         </label>
       {/each}
     </div>
-    <p class="fhint" style="margin-top:16px">Buttons shown under the recipient when reading a message.</p>
+    <p class="fhint" style="margin-top:16px">{t("setapp.readerBtnsHint")}</p>
     <div class="rdrcats">
       {#each READER_CHOICES as [val, label]}
         <label class="grp"><input type="checkbox"
           checked={(app.settings.readerActions || READER_CHOICES.map((c) => c[0])).includes(val)}
-          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{label}</span></label>
+          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{t(label)}</span></label>
       {/each}
     </div>
   </section>
 
   <section class="card">
-    <h3>Custom CSS</h3>
-    <p class="hint">Power-user escape hatch - applied app-wide and live. Target the classes and
-      CSS variables in the reference below.</p>
+    <h3>{t("setapp.customCss")}</h3>
+    <p class="hint">{t("setapp.customCssHint")}</p>
     <textarea class="css" spellcheck="false" placeholder={'.btn.primary { border-radius: 999px; }\n.row { font-size: 15px; }\n:root { --accent: #ff5d8f; }'}
       value={app.settings.customCss} oninput={(e) => setCss(e.currentTarget.value)}></textarea>
 
@@ -443,27 +455,27 @@
       <input type="checkbox" checked={!!app.settings.customCssInEmails}
         onchange={(e) => saveSettings({ customCssInEmails: e.currentTarget.checked })} />
       <div>
-        <b>Apply custom CSS inside emails</b>
-        <span>By default your CSS styles only the app, not message bodies. Enable to also inject it into the email reading pane.</span>
+        <b>{t("setapp.cssInEmails")}</b>
+        <span>{t("setapp.cssInEmailsHint")}</span>
       </div>
     </label>
 
     <details class="docs">
-      <summary>Reference - selectors &amp; variables</summary>
-      <p class="dh">Elements</p>
+      <summary>{t("setapp.reference")}</summary>
+      <p class="dh">{t("setapp.elements")}</p>
       <table>
         <tbody>
           {#each SELECTORS as [sel, desc]}
-            <tr><td><code>{sel}</code></td><td>{desc}</td></tr>
+            <tr><td><code>{sel}</code></td><td>{t(desc)}</td></tr>
           {/each}
         </tbody>
       </table>
-      <p class="dh">CSS variables <span class="dim">(override under <code>:root</code>)</span></p>
+      <p class="dh">{t("setapp.cssVariables")} <span class="dim">{t("setapp.overrideUnder")} <code>:root</code>)</span></p>
       <table>
         <tbody>
-          <tr><td><code>--radius</code></td><td>Corner roundness (also <code>--radius-sm</code>)</td></tr>
+          <tr><td><code>--radius</code></td><td>{t("setapp.cornerRoundness")} ({t("setapp.refAlso")} <code>--radius-sm</code>)</td></tr>
           {#each Object.entries(LABELS) as [token, label]}
-            <tr><td><code>{token}</code></td><td>{label}</td></tr>
+            <tr><td><code>{token}</code></td><td>{t(label)}</td></tr>
           {/each}
         </tbody>
       </table>

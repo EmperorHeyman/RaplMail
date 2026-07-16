@@ -1,21 +1,23 @@
 <script>
   import { saveSettings, notify, KB_DEFAULTS, kbAll } from "../store.svelte.js";
   import { keyCombo, comboLabel } from "../keys.js";
+  import { t } from "../i18n.svelte.js";
 
+  // Labels are i18n keys, resolved with t() at render time.
   const ACTIONS = [
-    { id: "next", label: "Next message" },
-    { id: "prev", label: "Previous message" },
-    { id: "open", label: "Open message / thread" },
-    { id: "done", label: "Mark done" },
-    { id: "reply", label: "Reply to the open message" },
-    { id: "forward", label: "Forward the open message" },
-    { id: "archive", label: "Archive" },
-    { id: "delete", label: "Delete (to Trash)" },
-    { id: "read", label: "Toggle read / unread" },
-    { id: "search", label: "Focus search" },
-    { id: "compose", label: "Compose new message" },
-    { id: "palette", label: "Command palette" },
-    { id: "help", label: "Shortcut cheatsheet" },
+    { id: "next", label: "setkeys.actNext" },
+    { id: "prev", label: "setkeys.actPrev" },
+    { id: "open", label: "setkeys.actOpen" },
+    { id: "done", label: "setkeys.actDone" },
+    { id: "reply", label: "setkeys.actReply" },
+    { id: "forward", label: "setkeys.actForward" },
+    { id: "archive", label: "setkeys.actArchive" },
+    { id: "delete", label: "setkeys.actDelete" },
+    { id: "read", label: "setkeys.actRead" },
+    { id: "search", label: "setkeys.actSearch" },
+    { id: "compose", label: "setkeys.actCompose" },
+    { id: "palette", label: "setkeys.actPalette" },
+    { id: "help", label: "setkeys.actHelp" },
   ];
   const DEFAULTS = KB_DEFAULTS;
 
@@ -28,31 +30,29 @@
     const combo = keyCombo(e);
     if (!combo) return; // wait past a lone modifier
     saveSettings({ keybinds: { ...kbAll(), [recording]: combo } });
-    notify(`Bound ${comboLabel(combo)}`);
+    notify(t("setkeys.bound", { combo: comboLabel(combo) }));
     recording = null;
   }
-  function reset() { saveSettings({ keybinds: { ...DEFAULTS } }); notify("Shortcuts reset"); }
+  function reset() { saveSettings({ keybinds: { ...DEFAULTS } }); notify(t("setkeys.resetDone")); }
 </script>
 
 <svelte:window on:keydown={onKey} />
 
 <div class="wrap">
   <p class="hint">
-    Click a binding, then press the key (or a combo like <kbd>Ctrl+N</kbd>, <kbd>Ctrl+Shift+K</kbd>).
-    Esc cancels. Single keys and modifier combos both work.
-    Workspace switching stays on <kbd>Ctrl+1…9</kbd>.
+    {t("setkeys.hint1")} <kbd>Ctrl+N</kbd>, <kbd>Ctrl+Shift+K</kbd>{t("setkeys.hint2")} <kbd>Ctrl+1…9</kbd>.
   </p>
   <div class="list">
     {#each ACTIONS as a}
       <div class="row">
-        <span class="label">{a.label}</span>
+        <span class="label">{t(a.label)}</span>
         <button class="key" class:recording={recording === a.id} onclick={() => (recording = a.id)}>
-          {recording === a.id ? "Press a key…" : comboLabel(kbAll()[a.id])}
+          {recording === a.id ? t("setkeys.pressKey") : comboLabel(kbAll()[a.id])}
         </button>
       </div>
     {/each}
   </div>
-  <button class="btn ghost" onclick={reset}>Reset to defaults</button>
+  <button class="btn ghost" onclick={reset}>{t("setkeys.resetBtn")}</button>
 </div>
 
 <style>

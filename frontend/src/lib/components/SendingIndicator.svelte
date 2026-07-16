@@ -2,6 +2,7 @@
   import { fly } from "svelte/transition";
   import { app, cancelSend } from "../store.svelte.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 </script>
 
 {#if app.pendingSend}
@@ -11,10 +12,10 @@
       <div class="top">
         <span class="spin">{@html icons.sync}</span>
         <div class="txt">
-          <b>Sending…</b>
+          <b>{t("sending.sending")}</b>
           <span class="subj">{app.pendingSend.label}</span>
         </div>
-        <button class="cancel" onclick={cancelSend}>Cancel</button>
+        <button class="cancel" onclick={cancelSend}>{t("sending.cancel")}</button>
       </div>
       <div class="bar"><span class="fill"></span></div>
     </div>

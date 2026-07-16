@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { debug, backendBase } from "../api.js";
   import { app, notify, saveSettings, syncAllAccounts, recategorizeOnce } from "../store.svelte.js";
+  import { t } from "../i18n.svelte.js";
 
   let records = $state([]);
   let health = $state(null);
@@ -35,15 +36,15 @@
   }
 
   async function clear() {
-    try { await debug.clearLogs(); records = []; lastSeq = 0; notify("Logs cleared"); }
+    try { await debug.clearLogs(); records = []; lastSeq = 0; notify(t("setdebug.logsCleared")); }
     catch (e) { notify(e.message, "error"); }
   }
 
   function copyAll() {
     const text = records.map((r) => `${r.ts} ${r.level} ${r.logger}: ${r.msg}`).join("\n");
     navigator.clipboard?.writeText(text).then(
-      () => notify("Copied logs to clipboard"),
-      () => notify("Couldn't copy", "error"));
+      () => notify(t("setdebug.copiedLogs")),
+      () => notify(t("setdebug.copyFailed"), "error"));
   }
 
   const fmtTs = (ts) => { try { return new Date(ts).toLocaleTimeString(); } catch { return ts; } };
@@ -72,32 +73,32 @@
       settings: redacted,
     };
     navigator.clipboard?.writeText(JSON.stringify(blob, null, 2)).then(
-      () => notify("Copied diagnostics to clipboard"),
-      () => notify("Couldn't copy", "error"));
+      () => notify(t("setdebug.copiedDiag")),
+      () => notify(t("setdebug.copyFailed"), "error"));
   }
   function relock() {
     saveSettings({ debugUnlocked: false });
-    notify("Developer mode hidden. Tap the version 5× to re-enable.");
+    notify(t("setdebug.devHidden"));
   }
   const base = (() => { try { return backendBase(); } catch { return "-"; } })();
 </script>
 
 <div class="wrap">
   <section class="card">
-    <h3>Developer tools</h3>
-    <p class="hint">Diagnostics and manual triggers. This section stays hidden until you tap the version 5 times.</p>
+    <h3>{t("setdebug.devTitle")}</h3>
+    <p class="hint">{t("setdebug.devHint")}</p>
     <div class="devgrid">
-      <button class="btn ghost" onclick={copyDiagnostics}>Copy diagnostics</button>
-      <button class="btn ghost" onclick={() => { syncAllAccounts(); notify("Sync triggered"); }}>Force sync all</button>
-      <button class="btn ghost" onclick={() => { recategorizeOnce(true); notify("Recategorizing inbox…"); }}>Recategorize inbox</button>
-      <button class="btn ghost danger" onclick={relock}>Hide developer mode</button>
+      <button class="btn ghost" onclick={copyDiagnostics}>{t("setdebug.copyDiag")}</button>
+      <button class="btn ghost" onclick={() => { syncAllAccounts(); notify(t("setdebug.syncTriggered")); }}>{t("setdebug.forceSync")}</button>
+      <button class="btn ghost" onclick={() => { recategorizeOnce(true); notify(t("setdebug.recatting")); }}>{t("setdebug.recat")}</button>
+      <button class="btn ghost danger" onclick={relock}>{t("setdebug.hideDev")}</button>
     </div>
-    <div class="kv"><span>Backend</span><code>{base}</code></div>
+    <div class="kv"><span>{t("setdebug.backend")}</span><code>{base}</code></div>
   </section>
 
   <section class="card">
-    <h3>Account health</h3>
-    <p class="hint">Live sync status per account. If one is stuck on <b>syncing</b> or shows an error, that's the culprit.</p>
+    <h3>{t("setdebug.healthTitle")}</h3>
+    <p class="hint">{t("setdebug.healthHint1")} <b>syncing</b> {t("setdebug.healthHint2")}</p>
     {#if health?.accounts?.length}
       <div class="acct-grid">
         {#each health.accounts as a}
@@ -105,18 +106,18 @@
             <span class="sdot {a.status || 'idle'}" title={a.status || 'idle'}></span>
             <div class="ameta">
               <b>{a.email}</b>
-              <span class="sub">{a.provider}{a.idle_active ? " · live (IDLE)" : ""}</span>
+              <span class="sub">{a.provider}{a.idle_active ? ` · ${t("setdebug.liveIdle")}` : ""}</span>
             </div>
             <div class="astat">
               <span class="st">{a.status || "idle"}</span>
-              <span class="sub">synced {fmtWhen(a.last_sync)}</span>
+              <span class="sub">{t("setdebug.syncedAt", { when: fmtWhen(a.last_sync) })}</span>
               {#if a.last_error}<span class="err" title={a.last_error}>⚠ {a.last_error}</span>{/if}
             </div>
           </div>
         {/each}
       </div>
     {:else}
-      <p class="hint" style="margin:0">No accounts.</p>
+      <p class="hint" style="margin:0">{t("setdebug.noAccounts")}</p>
     {/if}
     {#if health?.system}
       <p class="sysline">RaplMail v{appVersion || health.system.version} · Python {health.system.python} · {health.system.platform}</p>
@@ -125,15 +126,15 @@
 
   <section class="card logs">
     <div class="loghead">
-      <h3>Backend log</h3>
+      <h3>{t("setdebug.logTitle")}</h3>
       <div class="spacer"></div>
-      <select bind:value={level} onchange={reload} title="Minimum level">
-        {#each LEVELS as l}<option value={l}>{l || "All"}</option>{/each}
+      <select bind:value={level} onchange={reload} title={t("setdebug.minLevel")}>
+        {#each LEVELS as l}<option value={l}>{l || t("setdebug.allLevels")}</option>{/each}
       </select>
-      <button class="btn ghost" class:on={!paused} onclick={() => (paused = !paused)}>{paused ? "▶ Resume" : "⏸ Pause"}</button>
-      <label class="chk"><input type="checkbox" bind:checked={autoscroll} /> Auto-scroll</label>
-      <button class="btn ghost" onclick={copyAll}>Copy</button>
-      <button class="btn ghost danger" onclick={clear}>Clear</button>
+      <button class="btn ghost" class:on={!paused} onclick={() => (paused = !paused)}>{paused ? t("setdebug.resume") : t("setdebug.pause")}</button>
+      <label class="chk"><input type="checkbox" bind:checked={autoscroll} /> {t("setdebug.autoscroll")}</label>
+      <button class="btn ghost" onclick={copyAll}>{t("setdebug.copy")}</button>
+      <button class="btn ghost danger" onclick={clear}>{t("setdebug.clear")}</button>
     </div>
     <div class="logview" bind:this={logEl}>
       {#each records as r (r.seq)}
@@ -144,7 +145,7 @@
           <span class="msg">{r.msg}</span>
         </div>
       {/each}
-      {#if !records.length}<p class="hint" style="padding:12px">No log lines yet. Trigger a sync or send a message.</p>{/if}
+      {#if !records.length}<p class="hint" style="padding:12px">{t("setdebug.emptyLog")}</p>{/if}
     </div>
   </section>
 </div>

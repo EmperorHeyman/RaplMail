@@ -1,6 +1,7 @@
 <script>
   import { contacts } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   // Spark-style recipient field. Committed recipients render as pills (showing a
   // name when we know one, not the raw address); the trailing text stays an
@@ -140,7 +141,7 @@
   {#each pills as p, i (i + "|" + p.raw)}
     <span class="pill" class:bad={!p.valid} title={p.name ? `${p.name} <${p.addr}>` : p.addr}>
       <span class="pl">{p.label}</span>
-      <button class="x" title="Remove" onmousedown={(e) => { e.preventDefault(); removePill(i); }}>{@html icons.close}</button>
+      <button class="x" title={t("recip.remove")} onmousedown={(e) => { e.preventDefault(); removePill(i); }}>{@html icons.close}</button>
     </span>
   {/each}
   <input
@@ -167,7 +168,7 @@
   {/if}
 </div>
 {#if invalid.length}
-  <div class="rcpt-warn">⚠ Check {invalid.length === 1 ? "this address" : "these addresses"}: {invalid.map((p) => p.addr).join(", ")}</div>
+  <div class="rcpt-warn">{t(invalid.length === 1 ? "recip.checkOne" : "recip.checkN", { list: invalid.map((p) => p.addr).join(", ") })}</div>
 {/if}
 
 <style>

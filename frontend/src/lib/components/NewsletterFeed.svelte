@@ -4,6 +4,7 @@
   import { app, markDone, notify } from "../store.svelte.js";
   import { sanitizeTrackers, emailDoc, escapeHtml } from "../email.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let items = $state([]);    // { msg, detail }
   let loading = $state(true);
@@ -39,24 +40,24 @@
     const all = [...items];
     items = [];
     for (const it of all) await markDone(it.msg, true);
-    notify("Cleared the feed");
+    notify(t("newsfeed.cleared"));
   }
 </script>
 
 <section class="feed">
   <header>
-    <h2>{@html icons.newspaper} Newsletter Feed</h2>
+    <h2>{@html icons.newspaper} {t("newsfeed.title")}</h2>
     <div class="actions">
-      <button class="btn ghost" onclick={load}>Refresh</button>
-      {#if items.length}<button class="btn" onclick={doneAll}>{@html icons.done} Mark all done</button>{/if}
+      <button class="btn ghost" onclick={load}>{t("newsfeed.refresh")}</button>
+      {#if items.length}<button class="btn" onclick={doneAll}>{@html icons.done} {t("newsfeed.markAllDone")}</button>{/if}
     </div>
   </header>
 
   <div class="scroll">
     {#if loading && items.length === 0}
-      <p class="muted">Gathering your newsletters…</p>
+      <p class="muted">{t("newsfeed.gathering")}</p>
     {:else if items.length === 0}
-      <div class="empty"><div class="big">{@html icons.mail}</div>No newsletters right now.</div>
+      <div class="empty"><div class="big">{@html icons.mail}</div>{t("newsfeed.empty")}</div>
     {/if}
 
     {#each items as it (it.msg.id)}
@@ -64,15 +65,15 @@
         <div class="head">
           <div class="meta">
             <b>{it.detail.from_name || it.detail.from_addr}</b>
-            <span class="subj">{it.detail.subject || "(no subject)"}</span>
+            <span class="subj">{it.detail.subject || t("newsfeed.noSubject")}</span>
           </div>
           <span class="date">{fmt(it.detail.date)}</span>
-          <button class="done" title="Mark done" onclick={() => doneItem(it)}>{@html icons.done}</button>
+          <button class="done" title={t("newsfeed.markDone")} onclick={() => doneItem(it)}>{@html icons.done}</button>
         </div>
         <iframe title={it.detail.subject} sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={bodyDoc(it.detail)}></iframe>
       </article>
     {/each}
-    {#if loading && items.length > 0}<p class="muted">Loading more…</p>{/if}
+    {#if loading && items.length > 0}<p class="muted">{t("newsfeed.loadingMore")}</p>{/if}
   </div>
 </section>
 

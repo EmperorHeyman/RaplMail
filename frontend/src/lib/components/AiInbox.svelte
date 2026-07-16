@@ -3,6 +3,7 @@
   import { app, notify, openMessageById } from "../store.svelte.js";
   import { ai } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let tab = $state("digest");      // "digest" | "priority"
   let loading = $state(false);
@@ -13,7 +14,7 @@
     // Prefer a freshly-pushed scheduled briefing if we have one.
     if (!force && app.aiDigest) { digest = app.aiDigest; return; }
     loading = true;
-    try { const r = await ai.digest(); digest = r.digest || "(empty)"; app.aiDigest = ""; }
+    try { const r = await ai.digest(); digest = r.digest || t("aiinbox.empty"); app.aiDigest = ""; }
     catch (e) { notify(e.message, "error"); close(); }
     finally { loading = false; }
   }
@@ -32,19 +33,19 @@
 </script>
 
 <div class="overlay" onclick={close} role="presentation">
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="AI inbox assistant">
+  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label={t("aiinbox.aria")}>
     <header>
-      <h2>{@html icons.bolt} Inbox assistant</h2>
+      <h2>{@html icons.bolt} {t("aiinbox.title")}</h2>
       <div class="tabs">
-        <button class:active={tab === "digest"} onclick={() => pick("digest")}>Catch me up</button>
-        <button class:active={tab === "priority"} onclick={() => pick("priority")}>Prioritize</button>
+        <button class:active={tab === "digest"} onclick={() => pick("digest")}>{t("aiinbox.catchUp")}</button>
+        <button class:active={tab === "priority"} onclick={() => pick("priority")}>{t("aiinbox.prioritize")}</button>
       </div>
-      <button class="x" onclick={close} aria-label="Close">{@html icons.close}</button>
+      <button class="x" onclick={close} aria-label={t("aiinbox.close")}>{@html icons.close}</button>
     </header>
 
     <div class="body">
       {#if loading}
-        <div class="muted">Asking the model…</div>
+        <div class="muted">{t("aiinbox.asking")}</div>
       {:else if tab === "digest"}
         <pre class="digest">{digest}</pre>
       {:else if scores && scores.length}
@@ -58,12 +59,12 @@
           {/each}
         </div>
       {:else}
-        <div class="muted">No unread mail to prioritize. 🎉</div>
+        <div class="muted">{t("aiinbox.noUnread")}</div>
       {/if}
     </div>
     <footer>
-      <span class="hint">{@html icons.bolt} Runs on your configured AI provider · nothing is sent automatically</span>
-      <button class="btn ghost" onclick={() => (tab === "digest" ? loadDigest(true) : loadPriority())} disabled={loading}>↻ Refresh</button>
+      <span class="hint">{@html icons.bolt} {t("aiinbox.footer")}</span>
+      <button class="btn ghost" onclick={() => (tab === "digest" ? loadDigest(true) : loadPriority())} disabled={loading}>{t("aiinbox.refresh")}</button>
     </footer>
   </div>
 </div>

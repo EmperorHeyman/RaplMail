@@ -6,6 +6,7 @@
   import { contacts as contactsApi } from "../api.js";
   import { icons } from "../icons.js";
   import { OPERATORS, smartSplit, isOp, opParts, normalizeChips } from "../searchQuery.js";
+  import { t } from "../i18n.svelte.js";
 
   // `onexpand`, when provided, means a richer palette owns the search UX: focusing
   // the bar opens it instead of the inline whisper dropdown.
@@ -118,14 +119,14 @@
   {#each chips as c, i}
     {@const [op, val] = opParts(c)}
     <span class="chip"><span class="op">{op}</span><span class="val">{val}</span>
-      <button class="x" title="Remove" onmousedown={(e) => { e.preventDefault(); removeChip(i); }}>{@html icons.close}</button>
+      <button class="x" title={t("searchbar.remove")} onmousedown={(e) => { e.preventDefault(); removeChip(i); }}>{@html icons.close}</button>
     </span>
   {/each}
   <input
     class="search"
     bind:this={inputEl}
     type="text"
-    placeholder={chips.length ? "" : "Search…  from:  to:  has:attachment  is:unread  /regex/"}
+    placeholder={chips.length ? "" : t("searchbar.placeholder")}
     value={text}
     oninput={onInput}
     onkeydown={onKey}
@@ -133,7 +134,7 @@
     onblur={() => setTimeout(() => (open = false), 120)}
   />
   {#if chips.length || text.trim()}
-    <button class="clear" title="Clear search" onmousedown={(e) => { e.preventDefault(); clearAll(); }}>{@html icons.close}</button>
+    <button class="clear" title={t("searchbar.clear")} onmousedown={(e) => { e.preventDefault(); clearAll(); }}>{@html icons.close}</button>
   {/if}
 
   {#if open && sugg.length}

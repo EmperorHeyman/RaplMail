@@ -3,6 +3,7 @@
   import { app, saveSettings, notify, normalizeFeeds, CAL_PALETTE } from "../store.svelte.js";
   import { calendar as calApi } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   // Google Calendar write access (OAuth) - lets "New event" actually land on
   // your Google Calendar (the iMIP email trick is unreliable for self-events).
@@ -11,12 +12,12 @@
   onMount(async () => { try { gcal = await calApi.googleStatus(); } catch {} });
   async function connectGoogleCal() {
     gcalBusy = true;
-    try { gcal = await calApi.googleConnect(); notify(`Google Calendar connected (${gcal.email || "ok"})`); }
-    catch (e) { notify(e.message || "Google sign-in failed", "error"); }
+    try { gcal = await calApi.googleConnect(); notify(t("setcal.googleConnected", { email: gcal.email || "ok" })); }
+    catch (e) { notify(e.message || t("setcal.googleSigninFailed"), "error"); }
     finally { gcalBusy = false; }
   }
   async function disconnectGoogleCal() {
-    try { await calApi.googleDisconnect(); gcal = { connected: false, email: "" }; notify("Google Calendar disconnected"); }
+    try { await calApi.googleDisconnect(); gcal = { connected: false, email: "" }; notify(t("setcal.googleDisconnected")); }
     catch (e) { notify(e.message, "error"); }
   }
 
@@ -34,8 +35,8 @@
 
   // Reminders: combinable lead times (minutes before the event).
   const REMINDER_OPTS = [
-    { m: 0, t: "At start" }, { m: 5, t: "5 min" }, { m: 10, t: "10 min" },
-    { m: 30, t: "30 min" }, { m: 60, t: "1 hour" }, { m: 1440, t: "1 day" }, { m: 10080, t: "1 week" },
+    { m: 0, k: "setcal.remAtStart" }, { m: 5, k: "setcal.rem5m" }, { m: 10, k: "setcal.rem10m" },
+    { m: 30, k: "setcal.rem30m" }, { m: 60, k: "setcal.rem1h" }, { m: 1440, k: "setcal.rem1d" }, { m: 10080, k: "setcal.rem1w" },
   ];
   const reminders = () => app.settings.calendarReminders || [];
   function toggleReminder(m) {
@@ -52,11 +53,11 @@
       const r = await calApi.caldavSync();
       if (r.error) { notify(r.error, "error"); return; }
       const bits = [];
-      if (r.events) bits.push(`${r.events} CalDAV`);
-      if (r.ics_events) bits.push(`${r.ics_events} from feeds`);
-      if (r.contacts) bits.push(`${r.contacts} contact(s)`);
-      const removed = r.ics_removed ? `, removed ${r.ics_removed} stale` : "";
-      notify(`Synced ${bits.join(", ") || "0 events"}${removed}`);
+      if (r.events) bits.push(t("setcal.bitCaldav", { n: r.events }));
+      if (r.ics_events) bits.push(t("setcal.bitFeeds", { n: r.ics_events }));
+      if (r.contacts) bits.push(t("setcal.bitContacts", { n: r.contacts }));
+      const removed = r.ics_removed ? t("setcal.bitRemoved", { n: r.ics_removed }) : "";
+      notify(t("setcal.synced", { list: bits.join(", ") || t("setcal.zeroEvents") }) + removed);
     } catch (e) { notify(e.message, "error"); }
     finally { davSyncing = false; }
   }
@@ -64,107 +65,100 @@
 
 <div class="wrap">
   <section class="card">
-    <h3>Write to Google Calendar</h3>
-    <p class="hint">Subscribed iCal feeds are read-only. Connect your Google account once (calendar permission)
-      so events you create in RaplMail are written straight to your Google Calendar via the API - reliable,
-      unlike emailing yourself an invite.</p>
+    <h3>{t("setcal.googleTitle")}</h3>
+    <p class="hint">{t("setcal.googleHint")}</p>
     {#if gcal.connected}
       <div class="rowbtns" style="align-items:center">
-        <span class="hint" style="margin:0">✓ Connected{gcal.email ? ` as ${gcal.email}` : ""}</span>
-        <button class="btn" onclick={disconnectGoogleCal}>Disconnect</button>
+        <span class="hint" style="margin:0">{gcal.email ? t("setcal.connectedAs", { email: gcal.email }) : t("setcal.connected")}</span>
+        <button class="btn" onclick={disconnectGoogleCal}>{t("setcal.disconnect")}</button>
       </div>
     {:else}
       <div class="rowbtns">
-        <button class="btn primary" onclick={connectGoogleCal} disabled={gcalBusy}>{@html icons.google || ""} {gcalBusy ? "Waiting for Google…" : "Connect Google Calendar"}</button>
+        <button class="btn primary" onclick={connectGoogleCal} disabled={gcalBusy}>{@html icons.google || ""} {gcalBusy ? t("setcal.waitingGoogle") : t("setcal.connectGoogle")}</button>
       </div>
-      <p class="hint" style="margin-top:8px">A browser window opens for Google sign-in; approve the calendar permission and come back.</p>
+      <p class="hint" style="margin-top:8px">{t("setcal.googleBrowserHint")}</p>
     {/if}
   </section>
 
   <section class="card">
-    <h3>Subscribed calendars (iCal / ICS)</h3>
-    <p class="hint">Paste iCal feed URLs - one per line - and RaplMail pulls their events into your calendar.
-      Works with Google's "Secret address in iCal format", Outlook published calendars, any <code>.ics</code> or
-      <code>webcal://</code> link. Duplicates are merged by event ID and events removed from a feed are deleted on the
-      next sync. Read-only.</p>
+    <h3>{t("setcal.feedsTitle")}</h3>
+    <p class="hint">{@html t("setcal.feedsHint")}</p>
     <div class="feeds">
       {#each feeds as feed, i (i)}
         <div class="feedrow">
-          <input class="swatch" type="color" value={feed.color} title="Calendar color"
+          <input class="swatch" type="color" value={feed.color} title={t("setcal.calColor")}
             oninput={(e) => setColor(i, e.currentTarget.value)} />
-          <input class="url" value={feed.url} placeholder="https://…/basic.ics  or  webcal://…"
+          <input class="url" value={feed.url} placeholder={t("setcal.feedUrlPh")}
             onchange={(e) => setUrl(i, e.currentTarget.value)} />
-          <button class="rm" title="Remove feed" onclick={() => removeFeed(i)}>{@html icons.trash}</button>
+          <button class="rm" title={t("setcal.removeFeed")} onclick={() => removeFeed(i)}>{@html icons.trash}</button>
         </div>
       {/each}
-      {#if feeds.length === 0}<p class="hint" style="margin:0">No feeds yet - add one below.</p>{/if}
+      {#if feeds.length === 0}<p class="hint" style="margin:0">{t("setcal.noFeeds")}</p>{/if}
     </div>
     <div class="rowbtns">
-      <button class="btn" onclick={addFeed}>＋ Add feed</button>
-      <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? "Syncing…" : "Sync now"}</button>
+      <button class="btn" onclick={addFeed}>＋ {t("setcal.addFeed")}</button>
+      <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? t("setcal.syncing") : t("setcal.syncNow")}</button>
     </div>
   </section>
 
   <section class="card">
-    <h3>Reminders &amp; auto-sync</h3>
-    <p class="hint">Desktop reminders before an event starts - pick any combination (e.g. 10 minutes <i>and</i> 1 day <i>and</i> 1 week). Respects Quiet hours.</p>
+    <h3>{t("setcal.remindersTitle")}</h3>
+    <p class="hint">{@html t("setcal.remindersHint")}</p>
     <div class="chips remind">
       {#each REMINDER_OPTS as o}
-        <button class="rchip" class:on={reminders().includes(o.m)} onclick={() => toggleReminder(o.m)}>{o.t}</button>
+        <button class="rchip" class:on={reminders().includes(o.m)} onclick={() => toggleReminder(o.m)}>{t(o.k)}</button>
       {/each}
     </div>
-    {#if reminders().length === 0}<p class="hint" style="margin:8px 0 0">No reminders - you won't be notified about events.</p>{/if}
-    <label class="fieldrow" style="margin-top:14px"><span>Auto-sync every</span>
+    {#if reminders().length === 0}<p class="hint" style="margin:8px 0 0">{t("setcal.noReminders")}</p>{/if}
+    <label class="fieldrow" style="margin-top:14px"><span>{t("setcal.autoSyncEvery")}</span>
       <select value={app.settings.icsSyncMinutes ?? 30} onchange={(e) => saveSettings({ icsSyncMinutes: Number(e.currentTarget.value) })}>
-        <option value={15}>15 minutes</option>
-        <option value={30}>30 minutes</option>
-        <option value={60}>1 hour</option>
-        <option value={180}>3 hours</option>
+        <option value={15}>{t("setcal.min15")}</option>
+        <option value={30}>{t("setcal.min30")}</option>
+        <option value={60}>{t("setcal.hour1")}</option>
+        <option value={180}>{t("setcal.hours3")}</option>
       </select>
     </label>
-    <p class="hint" style="margin:6px 0 0">Subscribed calendars (and the “Sync” button on the Calendar) refresh automatically while RaplMail is open. The Calendar's <b>Sync</b> button pulls feeds + mail invites on demand.</p>
+    <p class="hint" style="margin:6px 0 0">{@html t("setcal.autoSyncHint")}</p>
   </section>
 
   <section class="card">
-    <h3>Calendar &amp; contacts (CalDAV / CardDAV)</h3>
-    <p class="hint">Add an external calendar/address book by CalDAV/CardDAV (Nextcloud, Fastmail, iCloud, Seznam,
-      Radicale…). RaplMail pulls events into its calendar and contacts into the address book. Read-only for now.</p>
+    <h3>{t("setcal.davTitle")}</h3>
+    <p class="hint">{t("setcal.davHint")}</p>
 
-    <label class="fieldrow"><span>CalDAV URL</span>
+    <label class="fieldrow"><span>{t("setcal.caldavUrl")}</span>
       <input placeholder="https://dav.example.com/cal/personal/" value={app.settings.caldavUrl || ""}
         onchange={(e) => saveSettings({ caldavUrl: e.currentTarget.value.trim() })} />
     </label>
-    <label class="fieldrow"><span>CardDAV URL</span>
+    <label class="fieldrow"><span>{t("setcal.carddavUrl")}</span>
       <input placeholder="https://dav.example.com/card/default/" value={app.settings.carddavUrl || ""}
         onchange={(e) => saveSettings({ carddavUrl: e.currentTarget.value.trim() })} />
     </label>
-    <label class="fieldrow"><span>Username</span>
+    <label class="fieldrow"><span>{t("setcal.username")}</span>
       <input value={app.settings.caldavUser || ""} onchange={(e) => saveSettings({ caldavUser: e.currentTarget.value })} />
     </label>
-    <label class="fieldrow"><span>Password</span>
+    <label class="fieldrow"><span>{t("setcal.password")}</span>
       <input type="password" value={app.settings.caldavPassword || ""} onchange={(e) => saveSettings({ caldavPassword: e.currentTarget.value })} />
     </label>
 
     <div class="rowbtns">
-      <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? "Syncing…" : "Sync now"}</button>
+      <button class="btn primary" onclick={syncDav} disabled={davSyncing}>{@html icons.sync} {davSyncing ? t("setcal.syncing") : t("setcal.syncNow")}</button>
     </div>
   </section>
 
   <section class="card">
-    <h3>Finding your CalDAV URL</h3>
+    <h3>{t("setcal.tipsTitle")}</h3>
     <ul class="tips">
-      <li><b>Seznam / emailprofi:</b> <code>https://cal.seznam.cz/calendars/&lt;you@domain&gt;/</code> · contacts: <code>https://contacts.seznam.cz/&lt;you@domain&gt;/</code></li>
+      <li><b>Seznam / emailprofi:</b> <code>https://cal.seznam.cz/calendars/&lt;you@domain&gt;/</code> · {t("setcal.tipContacts")}: <code>https://contacts.seznam.cz/&lt;you@domain&gt;/</code></li>
       <li><b>Nextcloud:</b> <code>https://&lt;host&gt;/remote.php/dav/calendars/&lt;user&gt;/personal/</code></li>
-      <li><b>Fastmail:</b> <code>https://caldav.fastmail.com/dav/calendars/user/&lt;you&gt;/</code> (use an app password)</li>
-      <li><b>iCloud:</b> enable then use the per-account CalDAV URL from your Apple ID (app-specific password).</li>
+      <li><b>Fastmail:</b> <code>https://caldav.fastmail.com/dav/calendars/user/&lt;you&gt;/</code> {t("setcal.tipFastmail")}</li>
+      <li><b>iCloud:</b> {t("setcal.tipIcloud")}</li>
     </ul>
-    <p class="hint">Tip: most servers also let you point at the account root (e.g. <code>…/dav/</code>) - RaplMail reads whatever events the URL returns.</p>
+    <p class="hint">{@html t("setcal.tipsHint")}</p>
   </section>
 
   <section class="card">
-    <h3>Built-in calendar</h3>
-    <p class="hint">Separately from CalDAV, RaplMail already extracts meeting invites from your mail into the calendar view -
-      open <b>Calendar</b> from the sidebar. The “Scan” button there back-fills events from older invites.</p>
+    <h3>{t("setcal.builtinTitle")}</h3>
+    <p class="hint">{@html t("setcal.builtinHint")}</p>
   </section>
 </div>
 

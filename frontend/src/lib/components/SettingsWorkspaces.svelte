@@ -1,11 +1,12 @@
 <script>
   import { app, saveSettings, notify } from "../store.svelte.js";
+  import { t } from "../i18n.svelte.js";
 
   let items = $state((app.settings.workspaces || []).map((w) => ({ ...w, accountIds: [...w.accountIds] })));
 
   function add() {
     const id = (crypto.randomUUID && crypto.randomUUID()) || `ws${items.length}-${Math.floor(performance.now())}`;
-    items = [...items, { id, name: "New workspace", accountIds: [] }];
+    items = [...items, { id, name: t("setws.newName"), accountIds: [] }];
   }
   function remove(i) { items = items.filter((_, idx) => idx !== i); }
   function toggleAccount(w, accId) {
@@ -13,37 +14,37 @@
     items = [...items];
   }
   function persist() {
-    const cleaned = items.map((w) => ({ id: w.id, name: w.name.trim() || "Workspace", accountIds: w.accountIds }));
+    const cleaned = items.map((w) => ({ id: w.id, name: w.name.trim() || t("setws.fallbackName"), accountIds: w.accountIds }));
     saveSettings({ workspaces: cleaned });
     items = cleaned.map((w) => ({ ...w, accountIds: [...w.accountIds] }));
-    notify("Workspaces saved");
+    notify(t("setws.saved"));
   }
 </script>
 
 <div class="wrap">
   <p class="lead">
-    Group accounts into workspaces to focus on one context at a time (e.g. <b>A123 Systems</b>,
-    <b>RAPL Group</b>, <b>Personal</b>). Switch with the pills at the top of the sidebar or
-    <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> (<kbd>Ctrl</kbd>+<kbd>0</kbd> = All). The sidebar and
-    unified inbox then show only that workspace's accounts.
+    {t("setws.leadIntro")} <b>A123 Systems</b>,
+    <b>RAPL Group</b>, <b>{t("setws.exPersonal")}</b>). {t("setws.leadSwitch")}
+    <kbd>Ctrl</kbd>+<kbd>1</kbd>…<kbd>9</kbd> (<kbd>Ctrl</kbd>+<kbd>0</kbd> = {t("setws.leadAll")}).
+    {t("setws.leadShow")}
   </p>
 
   {#each items as w, i}
     <div class="ws">
-      <input class="name" bind:value={w.name} placeholder="Workspace name" />
+      <input class="name" bind:value={w.name} placeholder={t("setws.namePh")} />
       <div class="accs">
         {#each app.accounts as a}
           <label class="acc"><input type="checkbox" checked={w.accountIds.includes(a.id)} onchange={() => toggleAccount(w, a.id)} /> {a.email}</label>
         {/each}
-        {#if app.accounts.length === 0}<span class="muted">Add accounts first.</span>{/if}
+        {#if app.accounts.length === 0}<span class="muted">{t("setws.addAccountsFirst")}</span>{/if}
       </div>
-      <button class="btn ghost danger" onclick={() => remove(i)}>Delete</button>
+      <button class="btn ghost danger" onclick={() => remove(i)}>{t("setws.delete")}</button>
     </div>
   {/each}
 
   <div class="actions">
-    <button class="btn" onclick={add}>＋ Add workspace</button>
-    <button class="btn primary" onclick={persist}>Save</button>
+    <button class="btn" onclick={add}>{t("setws.add")}</button>
+    <button class="btn primary" onclick={persist}>{t("setws.save")}</button>
   </div>
 </div>
 

@@ -16,28 +16,28 @@
 
   async function cancel(s) {
     await compose.cancelScheduled(s.id);
-    notify("Scheduled send cancelled");
+    notify(t("sched.cancelled"));
     await load();
   }
   const fmt = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
 </script>
 
 <section class="sched">
-  <header><h2>{@html icons.clock} Scheduled</h2><button class="btn ghost" onclick={load}>Refresh</button></header>
+  <header><h2>{@html icons.clock} {t("sched.title")}</h2><button class="btn ghost" onclick={load}>{t("sched.refresh")}</button></header>
   <div class="body stagger-in">
     <div class="local-note">{@html icons.info || icons.clock}<span>{t("schedule.localOnly")}</span></div>
     {#if loading}
-      <p class="muted">Loading…</p>
+      <p class="muted">{t("sched.loading")}</p>
     {:else if list.length === 0}
-      <div class="empty"><div class="big">{@html icons.clock}</div>No scheduled messages. Use “Later” in the compose window.</div>
+      <div class="empty"><div class="big">{@html icons.clock}</div>{t("sched.empty")}</div>
     {:else}
       {#each list as s (s.id)}
         <div class="row">
           <div class="info">
-            <b>{s.subject || "(no subject)"}</b>
-            <span>to {s.to_summary} · sends {fmt(s.send_at)}</span>
+            <b>{s.subject || t("sched.noSubject")}</b>
+            <span>{t("sched.toSends", { to: s.to_summary, when: fmt(s.send_at) })}</span>
           </div>
-          <button class="btn ghost danger" onclick={() => cancel(s)}>Cancel</button>
+          <button class="btn ghost danger" onclick={() => cancel(s)}>{t("sched.cancel")}</button>
         </div>
       {/each}
     {/if}

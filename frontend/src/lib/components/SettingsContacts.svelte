@@ -3,6 +3,7 @@
   import { notify } from "../store.svelte.js";
   import { contacts as api } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let list = $state([]);
   let q = $state("");
@@ -26,17 +27,17 @@
     busy = true;
     try {
       const r = await api.rescan();
-      notify(`Address book updated - ${r.scanned} contacts from your sent mail`);
+      notify(t("setcontacts.rescanDone", { n: r.scanned }));
       await load();
     } catch (e) { notify(e.message, "error"); } finally { busy = false; }
   }
 
   async function add() {
-    if (!newEmail.includes("@")) { notify("Enter a valid email", "error"); return; }
+    if (!newEmail.includes("@")) { notify(t("setcontacts.invalidEmail"), "error"); return; }
     await api.create({ email: newEmail, name: newName, favorite: false });
     newEmail = ""; newName = "";
     await load();
-    notify("Contact added");
+    notify(t("setcontacts.added"));
   }
 
   async function toggleFav(c) {
@@ -56,41 +57,37 @@
 
 <div class="wrap">
   <div class="head">
-    <input class="search" type="search" placeholder="Search contacts…" value={q} oninput={(e) => onSearch(e.currentTarget.value)} />
-    <button class="btn" onclick={rescan} disabled={busy}>{#if !busy}{@html icons.sync} {/if}{busy ? "Scanning…" : "Rescan sent mail"}</button>
+    <input class="search" type="search" placeholder={t("setcontacts.searchPh")} value={q} oninput={(e) => onSearch(e.currentTarget.value)} />
+    <button class="btn" onclick={rescan} disabled={busy}>{#if !busy}{@html icons.sync} {/if}{busy ? t("setcontacts.scanning") : t("setcontacts.rescan")}</button>
   </div>
 
-  <p class="explain">
-    RaplMail builds this automatically from people you email. It keeps known domains
-    (gmail, seznam, a123systems…) and anyone who replies, and skips one-off cold sends to
-    random/unknown domains and no-reply addresses.
-  </p>
+  <p class="explain">{t("setcontacts.explain")}</p>
 
   <div class="add-row">
-    <input placeholder="name (optional)" bind:value={newName} />
+    <input placeholder={t("setcontacts.namePh")} bind:value={newName} />
     <input placeholder="email@example.com" bind:value={newEmail} />
-    <button class="btn primary" onclick={add}>Add manually</button>
+    <button class="btn primary" onclick={add}>{t("setcontacts.addManually")}</button>
   </div>
 
   <div class="list">
     {#if list.length === 0}
-      <p class="muted">No contacts yet. Add an account, sync, then hit “Rescan sent mail”.</p>
+      <p class="muted">{t("setcontacts.empty")}</p>
     {/if}
     {#each list as c (c.id)}
       <div class="row">
-        <button class="fav" class:on={c.favorite} title="Favorite" onclick={() => toggleFav(c)}>{c.favorite ? "★" : "☆"}</button>
+        <button class="fav" class:on={c.favorite} title={t("setcontacts.favorite")} onclick={() => toggleFav(c)}>{c.favorite ? "★" : "☆"}</button>
         <div class="who">
           <b>{c.name || c.email}</b>
           {#if c.name}<span class="em">{c.email}</span>{/if}
         </div>
         <div class="meta">
-          {#if c.is_known_domain}<span class="pill known">known</span>{/if}
-          {#if c.source === "manual"}<span class="pill">manual</span>{/if}
-          <span class="stat" title="Times you emailed them">↗ {c.times_sent}</span>
-          <span class="stat" title="Times they emailed you">↘ {c.times_received}</span>
+          {#if c.is_known_domain}<span class="pill known">{t("setcontacts.known")}</span>{/if}
+          {#if c.source === "manual"}<span class="pill">{t("setcontacts.manual")}</span>{/if}
+          <span class="stat" title={t("setcontacts.timesSent")}>↗ {c.times_sent}</span>
+          <span class="stat" title={t("setcontacts.timesReceived")}>↘ {c.times_received}</span>
           <span class="date">{fmtDate(c.last_contacted)}</span>
         </div>
-        <button class="btn ghost danger" onclick={() => remove(c)}>Remove</button>
+        <button class="btn ghost danger" onclick={() => remove(c)}>{t("setcontacts.remove")}</button>
       </div>
     {/each}
   </div>

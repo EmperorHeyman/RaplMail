@@ -11,6 +11,14 @@ import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
 import sandbox from "./parts/sandbox.js";
+import tickets from "./parts/tickets.js";
+import calendarView from "./parts/calendarView.js";
+import ai from "./parts/ai.js";
+import settingsGeneral from "./parts/settingsGeneral.js";
+import settingsAccounts from "./parts/settingsAccounts.js";
+import appearance from "./parts/appearance.js";
+import settingsMisc from "./parts/settingsMisc.js";
+import miscui from "./parts/miscui.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -143,6 +151,43 @@ const base = {
 
   // Běžná hlášení.
   "toast.muteNotifOn": "Oznámení od {who} ztlumena",
+  "toast.queuedRetry": "Server je nedostupný - zařazeno do fronty, zkusí se to znovu. Podrobnosti v Nastavení / postranním panelu.",
+  "toast.sent": "Odesláno ✓",
+  "toast.sendFailed": "Odeslání selhalo: {error}",
+  "toast.sendCancelled": "Odesílání zrušeno",
+  "toast.deliveredPending": "Doručena zpráva, která se při zavření aplikace ještě odesílala",
+  "toast.undone": "Vráceno zpět",
+  "toast.couldntApprove": "Nepodařilo se schválit",
+  "toast.couldntBlock": "Nepodařilo se zablokovat",
+  "toast.couldntMuteNotif": "Nepodařilo se ztlumit oznámení",
+  "toast.couldntReclassify": "Nepodařilo se změnit kategorii",
+  "toast.couldntMute": "Nepodařilo se ztlumit",
+  "toast.syncing": "Synchronizuji…",
+  "toast.markedSafe": "Označeno jako bezpečné - odesílatel má nyní zelenou značku ✓",
+  "toast.unmarkedSafe": "Označení „bezpečný“ odebráno",
+  "toast.couldntPin": "Nepodařilo se připnout",
+  "toast.couldntMuteThread": "Nepodařilo se ztlumit konverzaci",
+  "toast.markedDone": "Označeno jako hotové",
+  "toast.couldntUndoConn": "Nepodařilo se vrátit zpět - zkontrolujte připojení",
+  "toast.couldntUpdateRestore": "Nepodařilo se aktualizovat - obnovuji",
+  "toast.briefingReady": "☀️ Ranní přehled je připraven - otevřete asistenta ve schránce",
+  "toast.startupFailed": "Nepodařilo se změnit nastavení spouštění: {error}",
+  "toast.approved": "{who} schválen - další pošta půjde do schránky",
+  "toast.blocked": "{who} zablokován",
+  "toast.senderCatReset": "Kategorie odesílatele obnovena",
+  "toast.senderCatSet": "Odesílatel → {cat}",
+  "toast.muted": "{who} ztlumen",
+  "toast.vipOn": "Označeno jako VIP ⭐",
+  "toast.vipOff": "Odebráno z VIP",
+  "toast.threadMuted": "Konverzace ztlumena",
+  "toast.addedToAiChat": "Přidáno do AI chatu: {subject}",
+  "toast.savedSearch": "Hledání „{name}“ uloženo",
+  "toast.newMailN": "Nové zprávy: {n}",
+  "toast.welcomeBack": "Vítejte zpět - odložené zprávy se vrátily: {n}",
+  "toast.readReceipt": "📬 {who} otevřel(a) {subject}",
+  "toast.someone": "Někdo",
+  "confirm.areYouSure": "Opravdu?",
+  "confirm.confirm": "Potvrdit",
 
   // S/MIME (Nastavení → S/MIME).
   "smime.identityTitle": "Váš certifikát S/MIME",
@@ -212,4 +257,6 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
+  ...tickets.cs, ...calendarView.cs, ...ai.cs, ...settingsGeneral.cs,
+  ...settingsAccounts.cs, ...appearance.cs, ...settingsMisc.cs, ...miscui.cs,
 };

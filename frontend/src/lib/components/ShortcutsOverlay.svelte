@@ -3,27 +3,28 @@
   import { kbAll } from "../store.svelte.js";
   import { comboLabel } from "../keys.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
   let { open = false, onclose } = $props();
 
   const kb = $derived(kbAll());
   const groups = $derived([
-    { title: "Triage", items: [
-      [`${comboLabel(kb.next)} / ${comboLabel(kb.prev)}`, "Move down / up"], [comboLabel(kb.open), "Open message / thread"],
-      [comboLabel(kb.done), "Mark done (toggle)"], [comboLabel(kb.reply), "Reply to the open message"],
-      [comboLabel(kb.forward), "Forward the open message"], [comboLabel(kb.archive), "Archive"],
-      [comboLabel(kb.delete), "Delete (to Trash)"], [comboLabel(kb.read), "Toggle read / unread"],
-      ["Esc", "Back to the list"], ["Ctrl/⌘ + Z", "Undo last action"],
-      ["Click avatar", "Select (Shift-click for a range)"], ["Right-click", "Actions menu"],
+    { title: t("shortcuts.gTriage"), items: [
+      [`${comboLabel(kb.next)} / ${comboLabel(kb.prev)}`, t("shortcuts.moveUpDown")], [comboLabel(kb.open), t("shortcuts.openMsg")],
+      [comboLabel(kb.done), t("shortcuts.markDoneToggle")], [comboLabel(kb.reply), t("shortcuts.reply")],
+      [comboLabel(kb.forward), t("shortcuts.forward")], [comboLabel(kb.archive), t("shortcuts.archive")],
+      [comboLabel(kb.delete), t("shortcuts.delete")], [comboLabel(kb.read), t("shortcuts.toggleRead")],
+      ["Esc", t("shortcuts.backToList")], ["Ctrl/⌘ + Z", t("shortcuts.undo")],
+      [t("shortcuts.clickAvatar"), t("shortcuts.selectRange")], [t("shortcuts.rightClick"), t("shortcuts.actionsMenu")],
     ]},
-    { title: "Navigate", items: [
-      [comboLabel(kb.search), "Focus search"], [comboLabel(kb.palette), "Command palette"],
-      ["Ctrl/⌘ + 1…9 / 0", "Switch workspace / All"], [comboLabel(kb.help), "This cheatsheet"],
-      ["g", "Go to… (quick-jump palette)"],
-      ["g then i / s / c / f", "Jump: Inbox / Snoozed / Calendar / Follow-ups"],
-      ["g then n / p / t / a", "Newsfeed / Paper Trail / Scheduled / Settings"],
+    { title: t("shortcuts.gNavigate"), items: [
+      [comboLabel(kb.search), t("shortcuts.focusSearch")], [comboLabel(kb.palette), t("shortcuts.palette")],
+      ["Ctrl/⌘ + 1…9 / 0", t("shortcuts.switchWorkspace")], [comboLabel(kb.help), t("shortcuts.cheatsheet")],
+      ["g", t("shortcuts.goTo")],
+      [t("shortcuts.gJumpKeys1"), t("shortcuts.jump1")],
+      [t("shortcuts.gJumpKeys2"), t("shortcuts.jump2")],
     ]},
-    { title: "Compose", items: [
-      [comboLabel(kb.compose), "New message"], ["Ctrl/⌘ + Enter", "Send"], [";shortcut + Space", "Expand a snippet"],
+    { title: t("shortcuts.gCompose"), items: [
+      [comboLabel(kb.compose), t("shortcuts.newMessage")], ["Ctrl/⌘ + Enter", t("shortcuts.send")], [t("shortcuts.snippetCombo"), t("shortcuts.expandSnippet")],
     ]},
   ]);
 
@@ -35,7 +36,7 @@
 {#if open}
   <div class="overlay" transition:fade={{ duration: 120 }} onclick={onclose}>
     <div class="sheet" transition:fly={{ y: 12, duration: 150 }} onclick={(e) => e.stopPropagation()}>
-      <header><h2>{@html icons.keyboard} Keyboard shortcuts</h2><button class="x" onclick={onclose}>{@html icons.close}</button></header>
+      <header><h2>{@html icons.keyboard} {t("shortcuts.title")}</h2><button class="x" onclick={onclose}>{@html icons.close}</button></header>
       <div class="cols">
         {#each groups as g}
           <div class="group">

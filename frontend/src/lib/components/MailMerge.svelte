@@ -3,6 +3,7 @@
   import { compose as composeApi } from "../api.js";
   import { escapeHtml } from "../email.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let accountId = $state(app.accounts[0]?.id ?? null);
   let subjectTpl = $state("");
@@ -90,10 +91,10 @@
   function close() { if (!sending) app.mailMergeOpen = false; }
 
   async function send() {
-    if (!accountId) { notify("Pick an account", "error"); return; }
-    if (!recipients.length) { notify("Add at least one recipient", "error"); return; }
-    if (!subjectTpl.trim() && !bodyTpl.trim()) { notify("Write a subject or body", "error"); return; }
-    if (!confirm(`Send ${recipients.length} individual message${recipients.length > 1 ? "s" : ""}? Each recipient gets their own copy (no shared To/Cc).`)) return;
+    if (!accountId) { notify(t("merge.pickAccount"), "error"); return; }
+    if (!recipients.length) { notify(t("merge.addRecipient"), "error"); return; }
+    if (!subjectTpl.trim() && !bodyTpl.trim()) { notify(t("merge.writeSomething"), "error"); return; }
+    if (!confirm(recipients.length === 1 ? t("merge.confirmSendOne") : t("merge.confirmSendN", { n: recipients.length }))) return;
     sending = true;
     progress = { done: 0, total: recipients.length, failed: 0 };
     for (const row of recipients) {
@@ -113,64 +114,66 @@
       progress = { ...progress };
     }
     sending = false;
-    notify(`Mail merge done - ${progress.done - progress.failed} sent${progress.failed ? `, ${progress.failed} failed` : ""}`);
+    notify(progress.failed
+      ? t("merge.doneWithFailures", { sent: progress.done - progress.failed, failed: progress.failed })
+      : t("merge.doneOk", { sent: progress.done - progress.failed }));
     if (!progress.failed) app.mailMergeOpen = false;
   }
 </script>
 
 <div class="overlay" onclick={close} role="presentation">
-  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label="Mail merge">
+  <div class="dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-label={t("merge.title")}>
     <header>
-      <h2>{@html icons.sent} Mail merge</h2>
-      <button class="x" onclick={close} aria-label="Close">{@html icons.close}</button>
+      <h2>{@html icons.sent} {t("merge.title")}</h2>
+      <button class="x" onclick={close} aria-label={t("merge.close")}>{@html icons.close}</button>
     </header>
 
     <div class="body">
       <div class="col">
-        <label class="f"><span>From</span>
+        <label class="f"><span>{t("merge.from")}</span>
           <select bind:value={accountId}>
             {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
           </select>
         </label>
-        <label class="f"><span>Subject</span>
-          <input bind:value={subjectTpl} placeholder="Hi {'{{'}name{'}}'}, your update" />
+        <label class="f"><span>{t("merge.subject")}</span>
+          <input bind:value={subjectTpl} placeholder={t("merge.subjectPlaceholder")} />
         </label>
-        <label class="lbl">Body - use <code>{'{{'}name{'}}'}</code> etc. for columns from your list</label>
+        <label class="lbl">{t("merge.bodyLabelPre")}<code>{'{{'}name{'}}'}</code>{t("merge.bodyLabelPost")}</label>
         <textarea class="bodyta" bind:value={bodyTpl} rows="8"
-          placeholder={"Hi {{name}},\n\nThanks for…\n\n- Me"}></textarea>
+          placeholder={t("merge.bodyPlaceholder")}></textarea>
         <label class="check">
           <input type="checkbox" bind:checked={useSignature} />
-          <span>Append my default signature</span>
+          <span>{t("merge.appendSignature")}</span>
         </label>
       </div>
 
       <div class="col">
-        <label class="lbl">Recipients - paste a CSV (with an <code>email</code> header) or one address per line</label>
+        <label class="lbl">{t("merge.recipientsLabelPre")}<code>email</code>{t("merge.recipientsLabelPost")}</label>
         <textarea class="recipta" bind:value={recipientsRaw} rows="8"
           placeholder={"email,name\nalice@x.com,Alice\nbob@y.com,Bob"}></textarea>
         <div class="status">
-          <b>{recipients.length}</b> recipient{recipients.length === 1 ? "" : "s"}
-          {#if vars.length}· columns: {#each vars as v}<code class="vchip">{'{{'}{v}{'}}'}</code>{/each}{/if}
+          <b>{recipients.length}</b> {recipients.length === 1 ? t("merge.recipientOne") : t("merge.recipientN")}
+          {#if vars.length}· {t("merge.columns")} {#each vars as v}<code class="vchip">{'{{'}{v}{'}}'}</code>{/each}{/if}
         </div>
         {#if missingVars.length}
-          <div class="mm-warn">⚠ No column for {#each missingVars as v}<code>{'{{'}{v}{'}}'}</code> {/each}- these render empty for every recipient.</div>
+          <div class="mm-warn">{t("merge.noColumnPre")}{#each missingVars as v}<code>{'{{'}{v}{'}}'}</code> {/each}{t("merge.noColumnPost")}</div>
         {/if}
         {#if rowsMissingData}
-          <div class="mm-warn">⚠ {rowsMissingData} recipient{rowsMissingData === 1 ? "" : "s"} have a blank value for a column you use - they'll get gaps (e.g. "Hi ,").</div>
+          <div class="mm-warn">{rowsMissingData === 1 ? t("merge.blankRowsOne") : t("merge.blankRowsN", { n: rowsMissingData })}</div>
         {/if}
         {#if preview}
           <div class="preview">
             <div class="pv-h">
-              <span>Preview · {preview.to}</span>
+              <span>{t("merge.preview")} · {preview.to}</span>
               {#if recipients.length > 1}
                 <span class="pv-nav">
-                  <button onclick={() => (previewIdx = (previewIdx - 1 + recipients.length) % recipients.length)} title="Previous recipient">‹</button>
+                  <button onclick={() => (previewIdx = (previewIdx - 1 + recipients.length) % recipients.length)} title={t("merge.prevRecipient")}>‹</button>
                   {Math.min(previewIdx, recipients.length - 1) + 1}/{recipients.length}
-                  <button onclick={() => (previewIdx = (previewIdx + 1) % recipients.length)} title="Next recipient">›</button>
+                  <button onclick={() => (previewIdx = (previewIdx + 1) % recipients.length)} title={t("merge.nextRecipient")}>›</button>
                 </span>
               {/if}
             </div>
-            <div class="pv-s">{preview.subject || "(no subject)"}</div>
+            <div class="pv-s">{preview.subject || t("merge.noSubject")}</div>
             <div class="pv-b">{preview.body}</div>
           </div>
         {/if}
@@ -178,10 +181,10 @@
     </div>
 
     <footer>
-      {#if progress}<span class="prog">{progress.done}/{progress.total} sent{progress.failed ? ` · ${progress.failed} failed` : ""}</span>{/if}
-      <button class="btn ghost" onclick={close} disabled={sending}>Cancel</button>
+      {#if progress}<span class="prog">{t("merge.progress", { done: progress.done, total: progress.total })}{progress.failed ? t("merge.progressFailed", { n: progress.failed }) : ""}</span>{/if}
+      <button class="btn ghost" onclick={close} disabled={sending}>{t("merge.cancel")}</button>
       <button class="btn primary" onclick={send} disabled={sending || !recipients.length}>
-        {sending ? "Sending…" : `Send ${recipients.length || ""} message${recipients.length === 1 ? "" : "s"}`}
+        {sending ? t("merge.sending") : recipients.length === 1 ? t("merge.sendOne") : t("merge.sendN", { n: recipients.length })}
       </button>
     </footer>
   </div>

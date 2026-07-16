@@ -4,13 +4,13 @@
   import { messages as msgApi, calendar as calApi } from "../api.js";
   import { listTime } from "../time.js";
   import { icons } from "../icons.js";
-  import { currentLocale } from "../i18n.svelte.js";
+  import { t } from "../i18n.svelte.js";
 
   // Home-screen AI: type plainly (or tap a chip); opens the assistant with the
   // unread inbox loaded as context and auto-asks - e.g. "shrň nové maily".
   let aiQ = $state("");
-  const recapPrompt = () => (currentLocale() === "cs" ? "Shrň mi nové maily" : "Summarize my new mail");
-  const needsReplyPrompt = () => (currentLocale() === "cs" ? "Které maily vyžadují odpověď?" : "Which emails need a reply?");
+  const recapPrompt = () => t("dash.recapPrompt");
+  const needsReplyPrompt = () => t("dash.needsReplyPrompt");
   function askInbox(prompt) {
     const p = (prompt ?? aiQ).trim();
     if (!p) return;
@@ -30,7 +30,7 @@
 
   const greeting = $derived.by(() => {
     const h = now.getHours();
-    return h < 5 ? "Good night" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening";
+    return h < 5 ? t("dash.greetingNight") : h < 12 ? t("dash.greetingMorning") : h < 18 ? t("dash.greetingAfternoon") : t("dash.greetingEvening");
   });
   // Tie the hero's aurora to the time of day so the greeting and the color agree:
   // indigo night → warm-gold morning → bright-blue afternoon → sunset evening.
@@ -87,10 +87,10 @@
     const today = new Date(now); today.setHours(0, 0, 0, 0);
     const day = new Date(d); day.setHours(0, 0, 0, 0);
     const diff = Math.round((day - today) / 86400000);
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-    if (diff === 0) return `Today · ${t}`;
-    if (diff === 1) return `Tomorrow · ${t}`;
-    return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) + ` · ${t}`;
+    const tm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    if (diff === 0) return `${t("dash.today")} · ${tm}`;
+    if (diff === 1) return `${t("dash.tomorrow")} · ${tm}`;
+    return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) + ` · ${tm}`;
   }
 
   // --- week strip ----------------------------------------------------------
@@ -104,7 +104,7 @@
     const d = dayKey(day);
     return d >= dayKey(s) && d <= dayKey(end);
   }
-  const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const DOW = $derived([t("dash.dowSun"), t("dash.dowMon"), t("dash.dowTue"), t("dash.dowWed"), t("dash.dowThu"), t("dash.dowFri"), t("dash.dowSat")]);
   const week = $derived.by(() => {
     const base = new Date(now); base.setHours(0, 0, 0, 0);
     return Array.from({ length: 7 }, (_, i) => {
@@ -124,11 +124,11 @@
         <h1>{greeting}{firstName ? `, ${firstName}` : ""}</h1>
         <p class="date">{dateStr}</p>
         <div class="stats">
-          <span class="stat"><b>{unread}</b> unread</span>
+          <span class="stat"><b>{unread}</b> {t("dash.statUnread")}</span>
           <span class="dot">·</span>
-          <span class="stat"><b>{eventsToday}</b> event{eventsToday === 1 ? "" : "s"} today</span>
+          <span class="stat"><b>{eventsToday}</b> {eventsToday === 1 ? t("dash.statEventOne") : t("dash.statEventN")}</span>
           <span class="dot">·</span>
-          <span class="stat"><b>{app.accounts.length}</b> account{app.accounts.length === 1 ? "" : "s"}</span>
+          <span class="stat"><b>{app.accounts.length}</b> {app.accounts.length === 1 ? t("dash.statAccountOne") : t("dash.statAccountN")}</span>
         </div>
       </div>
       <div class="clock">{clock}</div>
@@ -137,13 +137,13 @@
 
   <!-- Week at a glance -->
   <section class="card week">
-    <div class="card-h">{@html icons.calendar} <b>This week</b>
-      <button class="link" onclick={() => (app.view = "calendar")}>Open calendar →</button>
+    <div class="card-h">{@html icons.calendar} <b>{t("dash.thisWeek")}</b>
+      <button class="link" onclick={() => (app.view = "calendar")}>{t("dash.openCalendar")}</button>
     </div>
     <div class="weekgrid">
       {#each week as col, i}
         <button class="day" class:today={i === 0} onclick={() => (app.view = "calendar")}>
-          <span class="dname">{i === 0 ? "Today" : DOW[col.d.getDay()]}</span>
+          <span class="dname">{i === 0 ? t("dash.today") : DOW[col.d.getDay()]}</span>
           <span class="dnum">{col.d.getDate()}</span>
           <span class="dots">
             {#each col.evs.slice(0, 4) as e}<span class="d" style="background:{evColor(e)}" title={e.summary}></span>{/each}
@@ -157,34 +157,34 @@
   <div class="grid">
     <!-- Up next: calendar -->
     <section class="card cal">
-      <div class="card-h">{@html icons.calendar} <b>Up next</b>
-        <button class="link" onclick={() => (app.view = "calendar")}>Calendar →</button>
+      <div class="card-h">{@html icons.calendar} <b>{t("dash.upNext")}</b>
+        <button class="link" onclick={() => (app.view = "calendar")}>{t("dash.calendarLink")}</button>
       </div>
       {#if loading}
-        <p class="muted">Loading…</p>
+        <p class="muted">{t("dash.loading")}</p>
       {:else if upNext.length}
         <ul class="events">
           {#each upNext as e}
             <li style="--evc:{evColor(e)}">
-              <span class="when">{e.all_day ? evWhen(e.start).split(" · ")[0] + " · all day" : evWhen(e.start)}</span>
-              <span class="summary">{e.summary || "(untitled)"}</span>
+              <span class="when">{e.all_day ? evWhen(e.start).split(" · ")[0] + " · " + t("dash.allDay") : evWhen(e.start)}</span>
+              <span class="summary">{e.summary || t("dash.untitled")}</span>
               {#if e.location}<span class="loc">{e.location}</span>{/if}
             </li>
           {/each}
         </ul>
       {:else}
-        <p class="muted">Nothing scheduled. Add a calendar in Settings → Calendar &amp; Contacts.</p>
+        <p class="muted">{t("dash.noEvents")}</p>
       {/if}
     </section>
 
     <!-- Latest mail -->
     <section class="card mail">
-      <div class="card-h">{@html icons.inbox} <b>Latest mail</b>
-        {#if unread}<span class="badge">{unread} unread</span>{/if}
-        <button class="link" onclick={goInbox}>Inbox →</button>
+      <div class="card-h">{@html icons.inbox} <b>{t("dash.latestMail")}</b>
+        {#if unread}<span class="badge">{t("dash.unreadBadge", { n: unread })}</span>{/if}
+        <button class="link" onclick={goInbox}>{t("dash.inboxLink")}</button>
       </div>
       {#if loading}
-        <p class="muted">Loading…</p>
+        <p class="muted">{t("dash.loading")}</p>
       {:else if recent.length}
         <ul class="mails">
           {#each recent as m}
@@ -192,38 +192,38 @@
               <button class="mrow" class:unread={!m.is_seen} onclick={() => openMail(m)}>
                 <span class="av">{initial(m.from_name || m.from_addr)}</span>
                 <span class="who">{m.from_name || m.from_addr}</span>
-                <span class="subj">{m.subject || "(no subject)"}</span>
+                <span class="subj">{m.subject || t("dash.noSubject")}</span>
                 <span class="t">{listTime(m.date)}</span>
               </button>
             </li>
           {/each}
         </ul>
       {:else}
-        <p class="muted">Inbox is empty. 🎉</p>
+        <p class="muted">{t("dash.emptyInbox")}</p>
       {/if}
     </section>
   </div>
 
   {#if aiEnabled()}
     <section class="card aicard">
-      <div class="card-h">{@html icons.bolt} <b>Ask AI about your inbox</b>
-        <button class="link" onclick={() => openAiAssistant()}>Open chat →</button>
+      <div class="card-h">{@html icons.bolt} <b>{t("dash.askAi")}</b>
+        <button class="link" onclick={() => openAiAssistant()}>{t("dash.openChat")}</button>
       </div>
       <form class="airow" onsubmit={(e) => { e.preventDefault(); askInbox(); }}>
-        <input bind:value={aiQ} placeholder={'Ask plainly…  e.g. “shrň nové maily” or “find the audi crash plate email”'} />
-        <button class="btn primary" type="submit" disabled={!aiQ.trim()}>{@html icons.sent || ""} Ask</button>
+        <input bind:value={aiQ} placeholder={t("dash.aiPlaceholder")} />
+        <button class="btn primary" type="submit" disabled={!aiQ.trim()}>{@html icons.sent || ""} {t("dash.ask")}</button>
       </form>
       <div class="aichips">
-        <button class="qchip" onclick={() => askInbox(recapPrompt())}>{@html icons.bolt} Recap new mail</button>
-        <button class="qchip" onclick={() => askInbox(needsReplyPrompt())}>Needs a reply?</button>
+        <button class="qchip" onclick={() => askInbox(recapPrompt())}>{@html icons.bolt} {t("dash.recapChip")}</button>
+        <button class="qchip" onclick={() => askInbox(needsReplyPrompt())}>{t("dash.needsReplyChip")}</button>
       </div>
     </section>
   {/if}
 
   <div class="quick">
-    <button class="qbtn" onclick={() => openCompose({ to: "", subject: "", html: "" })}>{@html icons.compose} New message</button>
-    <button class="qbtn" onclick={goInbox}>{@html icons.inbox} Go to inbox</button>
-    <button class="qbtn" onclick={() => (app.view = "calendar")}>{@html icons.calendar} Calendar</button>
+    <button class="qbtn" onclick={() => openCompose({ to: "", subject: "", html: "" })}>{@html icons.compose} {t("dash.newMessage")}</button>
+    <button class="qbtn" onclick={goInbox}>{@html icons.inbox} {t("dash.goInbox")}</button>
+    <button class="qbtn" onclick={() => (app.view = "calendar")}>{@html icons.calendar} {t("dash.calendar")}</button>
     <a class="qbtn rapl" href="https://rapl-group.eu/" target="_blank" rel="noreferrer">{@html icons.globe || ""} rapl-group.eu</a>
   </div>
 </section>

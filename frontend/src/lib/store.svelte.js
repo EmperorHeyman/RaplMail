@@ -1100,6 +1100,9 @@ export function markUnsubscribed(addr) {
 let _calEvents = [];
 const _firedReminders = new Set();
 let _calTimers = null;
+const _remSnoozed = new Map();   // eventKey -> ms timestamp to re-fire at
+const _remMuted = new Set();     // eventKey -> skip every remaining reminder
+const REM_ACTIONS = "raplmail.reminder.actions";  // handoff queue from the popup window
 
 export async function syncCalendarFeeds() {
   const s = app.settings;
@@ -1125,6 +1128,15 @@ function _eventKey(e) {
   if (!uid || uid.startsWith("nouid:")) return `${e.summary || ""}|${e.start || ""}`;
   return uid;
 }
+// Second dedup identity, for copies of one meeting that DON'T share a UID (two
+// calendars that each generated their own invite). Same title + same start
+// minute = the same thing as far as the user is concerned, so it must not pop
+// twice at once.
+function _nameKey(e) {
+  const name = (e.summary || "").trim().toLowerCase().replace(/\s+/g, " ");
+  const t = new Date(e.start).getTime();
+  return `n:${name}|${Number.isFinite(t) ? Math.floor(t / 60000) : e.start}`;
+}
 function _remindLabel(min) {
   if (min <= 0) return "now";
   if (min < 60) return `in ${min} min`;
@@ -1139,23 +1151,66 @@ function _checkReminders() {
   // only governs new-mail notifications.
   if (!offsets.length) return;
   const now = Date.now();
+  const seenNow = new Set();   // one pop per meeting per tick, whatever the copy
   for (const e of _calEvents) {
     if (!e.start || e.cancelled) continue;
+    const ek = _eventKey(e), nk = _nameKey(e);
+    if (_remMuted.has(ek) || _remMuted.has(nk)) continue;   // "mute the rest" from the popup
     const t = new Date(e.start).getTime();
+    // Snoozed: hold every reminder for this meeting until the snooze runs out,
+    // then pop once more with whatever time is actually left.
+    const until = _remSnoozed.get(ek) ?? _remSnoozed.get(nk);
+    if (until != null) {
+      if (now < until) continue;
+      _remSnoozed.delete(ek); _remSnoozed.delete(nk);
+      if (now < t + 60000 && !seenNow.has(nk)) {
+        seenNow.add(nk);
+        fireReminder(e, Math.max(0, Math.round((t - now) / 60000)));
+      }
+      continue;
+    }
     for (const min of offsets) {
       const due = t - min * 60000;
-      const key = `${_eventKey(e)}:${min}`;
+      const key = `${ek}:${min}`, nkey = `${nk}:${min}`;
       // Fire once past the lead time, up to the event start - a fixed 90s
       // window silently skipped reminders when the machine slept across it.
-      if (now >= due && now < t + 60000 && !_firedReminders.has(key)) {
+      if (now >= due && now < t + 60000 &&
+          !_firedReminders.has(key) && !_firedReminders.has(nkey) && !seenNow.has(nk)) {
         // Keys older than the reminder window can never fire again - don't let
         // a long-running session accumulate them forever.
         if (_firedReminders.size > 500) _firedReminders.clear();
-        _firedReminders.add(key);
+        _firedReminders.add(key); _firedReminders.add(nkey);
+        seenNow.add(nk);
         fireReminder(e, min);
       }
     }
   }
+}
+// Drain the actions the standalone reminder window left behind. That window has
+// no Tauri capabilities beyond closing itself (see capabilities/default.json),
+// so it hands its buttons back through localStorage instead of calling in.
+function _drainReminderActions() {
+  let queue;
+  try { queue = JSON.parse(localStorage.getItem(REM_ACTIONS) || "[]"); } catch { queue = []; }
+  if (!Array.isArray(queue) || !queue.length) return;
+  localStorage.removeItem(REM_ACTIONS);
+  for (const a of queue) {
+    if (!a?.key) continue;
+    if (a.action === "snooze") {
+      const mins = Math.max(1, Math.min(1440, Number(a.minutes) || 5));
+      const at = Date.now() + mins * 60000;
+      _remSnoozed.set(a.key, at);
+      if (a.nameKey) _remSnoozed.set(a.nameKey, at);
+      // Let it fire again: the lead-time keys for this meeting are already burnt.
+      _remMuted.delete(a.key); if (a.nameKey) _remMuted.delete(a.nameKey);
+    } else if (a.action === "mute") {
+      _remMuted.add(a.key);
+      if (a.nameKey) _remMuted.add(a.nameKey);
+      _remSnoozed.delete(a.key); if (a.nameKey) _remSnoozed.delete(a.nameKey);
+    }
+  }
+  if (_remMuted.size > 500) _remMuted.clear();
+  _checkReminders();   // a just-expired snooze shouldn't wait for the next tick
 }
 // Fire a calendar reminder: play the (separate) calendar sound, and either pop a
 // small standalone reminder window ("you've got X till …") or fall back to a
@@ -1172,12 +1227,17 @@ async function fireReminder(e, min) {
         location: e.location || "",
         minutes: min,
         label: _remindLabel(min),
+        // Identities the popup echoes back with its snooze/mute action.
+        key: _eventKey(e),
+        nameKey: _nameKey(e),
+        // Are there still later reminders to mute for this event?
+        hasLater: (app.settings.calendarReminders || []).some((o) => o < min),
       };
       localStorage.setItem("raplmail.reminder.seed", JSON.stringify(seed));
       const url = `${location.pathname}${location.search}#reminder`;
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       new WebviewWindow(`reminder-${e.id}-${min}`, {
-        url, title: "Reminder", width: 380, height: 240,
+        url, title: "Reminder", width: 380, height: 300,
         resizable: false, alwaysOnTop: true, focus: true, skipTaskbar: false,
       });
       return;
@@ -1329,6 +1389,7 @@ export function startCalendarServices() {
   _calTimers = [
     setInterval(_checkReminders, 60000),                                   // reminders: every minute
     setInterval(_loadUpcomingEvents, 5 * 60000),                           // refresh window: every 5 min
+    setInterval(_drainReminderActions, 3000),                              // popup snooze/mute: every 3s
   ];
   _scheduleFeedSync();                                                     // auto-sync feeds
 }

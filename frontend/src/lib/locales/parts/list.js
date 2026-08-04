@@ -146,8 +146,8 @@ export default {
     // Opakující se krátká slova akcí.
     "list.done": "Hotovo",
     "list.read": "Přečteno",
-    "list.flag": "Vlajka",
-    "list.unflag": "Zrušit vlajku",
+    "list.flag": "Praporek",
+    "list.unflag": "Odebrat praporek",
     "list.snooze": "Odložit",
     "list.archive": "Archivovat",
     "list.delete": "Smazat",
@@ -216,7 +216,7 @@ export default {
     "list.catNewsletters": "Newslettery",
     "list.catSocial": "Sociální sítě",
     "list.catUpdates": "Aktualizace",
-    "list.catPromotions": "Akce",
+    "list.catPromotions": "Nabídky",
     "list.catNotifications": "Upozornění",
     "list.catInvitations": "Pozvánky",
     "list.catInvitationResponses": "Odpovědi na pozvánky",
@@ -247,7 +247,7 @@ export default {
     "list.couldntUpdate": "Nepodařilo se aktualizovat",
     "list.couldntMarkGroupDone": "Nepodařilo se označit skupinu jako hotovou",
     "list.bulkRead": "{n} označeno jako přečtené",
-    "list.bulkFlagged": "{n} označeno vlajkou",
+    "list.bulkFlagged": "{n} označeno praporkem",
     "list.bulkSnoozed": "{n} odloženo",
     "list.bulkArchived": "{n} archivováno",
     "list.bulkDeleted": "{n} smazáno",
@@ -262,7 +262,7 @@ export default {
 
     // Lišta hromadných akcí a nápověda v patičce.
     "list.nSelected": "{n} vybráno",
-    "list.hintMove": "pohyb",
+    "list.hintMove": "přesun",
     "list.hintToggleDone": "přepnout hotové",
     "list.hintOpen": "otevřít",
 
@@ -276,9 +276,9 @@ export default {
     "list.older": "Starší",
 
     // Karta chytré skupiny.
-    "list.newCount": "{n} nových",
+    "list.newCount": "nových: {n}",
     "list.showNewTip": "Zobrazit jen novou poštu v této skupině",
-    "list.doneAll": "Hotovo vše",
+    "list.doneAll": "Vyřídit vše",
     "list.doneAllTip": "Označit celou skupinu jako hotovou",
   },
 };

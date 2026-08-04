@@ -157,9 +157,9 @@ export default {
     "reader.forward": "Přeposlat",
     "reader.done": "Hotovo",
     "reader.restore": "Obnovit",
-    "reader.flag": "Vlajka",
-    "reader.flagged": "Označeno vlajkou",
-    "reader.doneAll": "Vše hotovo",
+    "reader.flag": "Praporek",
+    "reader.flagged": "S praporkem",
+    "reader.doneAll": "Vyřídit vše",
 
     // Akce AI.
     "reader.catchMeUp": "Shrň mi to",
@@ -212,11 +212,11 @@ export default {
     "reader.pgpSignatureVerified": "Podpis PGP ověřen",
     "reader.pgpSignatureUnverified": "Podpis PGP - nelze ověřit",
     "reader.importPublicKey": "importujte veřejný klíč odesílatele",
-    "reader.smimeEncrypted": "Šifrováno S/MIME",
+    "reader.smimeEncrypted": "Šifrováno pomocí S/MIME",
     "reader.smimeDecryptedLocally": "dešifrováno lokálně vaším certifikátem",
     "reader.smimeNoKey": "pro dešifrování naimportujte svůj certifikát S/MIME (Nastavení → S/MIME)",
     "reader.smimeSigned": "Podepsáno S/MIME",
-    "reader.smimeUnknownSigner": "certifikát podepisujícího je přítomen",
+    "reader.smimeUnknownSigner": "certifikát podepisujícího je přiložen",
     "reader.failedAuth": "Ověření selhalo - tato zpráva může být podvržená.",
     "reader.failedAuthShort": "Ověření selhalo",
     "reader.senderAuthenticated": "Odesílatel ověřen",
@@ -244,18 +244,18 @@ export default {
 
     // Pruh sledovacích prvků (čtečka - plný).
     "reader.blockedTrackerOne": "Zablokován 1 sledovací pixel · běžné obrázky se zobrazují.",
-    "reader.blockedTrackerN": "Zablokováno {n} sledovacích pixelů · běžné obrázky se zobrazují.",
+    "reader.blockedTrackerN": "Zablokováno sledovacích pixelů: {n} · běžné obrázky se zobrazují.",
     "reader.hide": "Skrýt",
     "reader.details": "Podrobnosti",
     "reader.loadEverything": "Načíst vše",
 
     // Poznámka o sledovacích prvcích (vlákno - krátká).
     "reader.blockedPixelOne": "Zablokován 1 sledovací pixel",
-    "reader.blockedPixelN": "Zablokováno {n} sledovacích pixelů",
+    "reader.blockedPixelN": "Zablokováno sledovacích pixelů: {n}",
 
     // Přílohy.
     "reader.attachmentOne": "1 příloha",
-    "reader.attachmentN": "{n} příloh",
+    "reader.attachmentN": "Přílohy: {n}",
     "reader.openFile": "Otevřít {name}",
     "reader.saveToDownloads": "Uložit do Stažených",
     "reader.saveAllTitle": "Uložit všechny přílohy do Stažených",
@@ -266,9 +266,9 @@ export default {
     "reader.savedTo": "Uloženo do {path}",
     "reader.downloaded": "Staženo",
     "reader.savedToDownloadsOne": "Uložena 1 příloha do Stažených",
-    "reader.savedToDownloadsN": "Uloženo {n} příloh do Stažených",
+    "reader.savedToDownloadsN": "Do Stažených uloženo příloh: {n}",
     "reader.downloadedOne": "Stažena 1 příloha",
-    "reader.downloadedN": "Staženo {n} příloh",
+    "reader.downloadedN": "Staženo příloh: {n}",
     "reader.couldntOpenAttachment": "Přílohu se nepodařilo otevřít",
     "reader.couldntSaveAttachment": "Přílohu se nepodařilo uložit",
     "reader.couldntSaveAttachments": "Přílohy se nepodařilo uložit",
@@ -292,7 +292,7 @@ export default {
 
     // Zobrazení vlákna.
     "reader.messagesInConversationOne": "1 zpráva v této konverzaci",
-    "reader.messagesInConversation": "{n} zpráv v této konverzaci",
+    "reader.messagesInConversation": "Zprávy v této konverzaci: {n}",
     "reader.conversationDone": "Konverzace hotova",
     "reader.conversationArchived": "Konverzace archivována",
     "reader.archiveAll": "Archivovat vše",

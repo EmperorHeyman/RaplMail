@@ -11,6 +11,7 @@ import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
 import sandbox from "./parts/sandbox.js";
+import calendar from "./parts/calendar.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -81,7 +82,7 @@ const base = {
   "onboarding.hlSnoozeBody": "Odložte poštu na později a naplánujte odeslání zpráv na ten správný čas.",
   "onboarding.hlAiTitle": "Lokální AI asistent",
   "onboarding.hlAiBody": "Shrnování, návrhy odpovědí, třídění a hledání - vše běží u vás v počítači, cloud není potřeba.",
-  "onboarding.hlKeysTitle": "Na prvním místě klávesnice",
+  "onboarding.hlKeysTitle": "Všechno z klávesnice",
   "onboarding.hlKeysBody": "Proletíte poštou pomocí zkratek. Klávesou ? je kdykoli zobrazíte všechny.",
   "onboarding.settingsTitle": "Přizpůsobte si to",
   "onboarding.settingsBody": "Vše níže si můžete nastavit podle sebe. Klepnutím na oblast tam rovnou přejdete - nebo dejte Dokončit a prozkoumejte to později.",
@@ -190,7 +191,7 @@ const base = {
   "utility.sortMost": "Nejvíce přijato",
   "utility.sortRecent": "Nejnovější",
   "utility.sortUnread": "Nejméně čtené",
-  "utility.sortName": "Název",
+  "utility.sortName": "Podle jména",
   "utility.filterPlaceholder": "Filtrovat odesílatele…",
   "utility.onlyUnsub": "Jen odhlásitelné",
   "utility.unsubscribed": "Odhlášeno",
@@ -211,4 +212,5 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
+  ...calendar.cs,
 };

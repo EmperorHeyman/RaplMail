@@ -20,7 +20,7 @@ export default {
     "goto.inbox": "Doručená pošta",
     "goto.allInboxes": "Všechny schránky",
     "goto.snoozed": "Odložené",
-    "goto.followups": "Připomínky",
+    "goto.followups": "K vyřízení",
     "goto.paperTrail": "Doklady",
     "goto.newsfeed": "Kanál newsletterů",
     "goto.calendar": "Kalendář",

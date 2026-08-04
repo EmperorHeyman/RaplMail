@@ -15,6 +15,7 @@ import search from "./parts/search.js";
 import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
 import sandbox from "./parts/sandbox.js";
+import calendar from "./parts/calendar.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -215,4 +216,5 @@ export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
   ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
+  ...calendar.en,
 };

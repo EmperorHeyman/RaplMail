@@ -95,7 +95,7 @@ export default {
   cs: {
     "settingsNav.sync": "Synchronizace zařízení",
 
-    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek - každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení, připnutí a pravidla se synchronizují automaticky; nastavení a podpisy se přenáší jen když je odešlete nebo stáhnete (níže). Přečteno/vlajka se už synchronizují přes IMAP.",
+    "dsync.intro": "Udržujte dvě (nebo více) instalace RaplMailu v souladu bez cloudového účtu. Data přenáší jedna z vašich vlastních schránek - každá změna je zašifrována heslem, které nikdy neopustí vaše zařízení, a uložena do skryté složky. 'Hotovo', odložení, připnutí a pravidla se synchronizují automaticky; nastavení a podpisy se přenáší jen když je odešlete nebo stáhnete (níže). Přečteno a praporky se synchronizují už přes IMAP.",
     "dsync.loading": "Načítání…",
 
     "dsync.enable": "Synchronizovat toto zařízení",
@@ -142,7 +142,7 @@ export default {
     "dsync.snapThisDevice": "toto zařízení",
     "dsync.snapPushed": "odesláno",
     "dsync.snapChanged": "nastavení naposledy změněno",
-    "dsync.snapSummary": "{rules} pravidel · {signatures} podpisů · {cats} štítků odesílatelů",
+    "dsync.snapSummary": "pravidla: {rules} · podpisy: {signatures} · štítky odesílatelů: {cats}",
     "dsync.snapApply": "Použít",
     "dsync.applying": "Používám…",
     "dsync.applied": "Nastavení použito ze zařízení {label}.",
@@ -161,12 +161,12 @@ export default {
     "dsync.credMasterPh": "hlavní heslo trezoru",
     "dsync.credPushLabel": "Heslo pro údaje",
     "dsync.credPushBtn": "Odeslat údaje",
-    "dsync.credPushed": "Údaje pro {n} účtů publikovány (šifrovaně).",
+    "dsync.credPushed": "Publikovány údaje (šifrovaně) pro účty: {n}",
     "dsync.credPullBtn": "Stáhnout údaje",
     "dsync.credPullTitle": "Stáhnout přihlašovací údaje",
     "dsync.credPullHint": "Vyberte trezor údajů zařízení. Poté zadáte tajemství - nic se nedešifruje, dokud to neuděláte.",
     "dsync.credNone": "Zatím nenalezen žádný snímek údajů. Nejprve odešlete z jiného zařízení.",
-    "dsync.credCount": "{n} účtů",
+    "dsync.credCount": "účtů: {n}",
     "dsync.credChoose": "Vybrat",
     "dsync.credEnterTitle": "Zadejte tajemství pro údaje",
     "dsync.credUnlock": "Odemknout",
@@ -174,7 +174,7 @@ export default {
     "dsync.credChooseHint": "Importují se jen zaškrtnuté účty. Účty, které už máte, se přeskočí.",
     "dsync.credExists": "již zde",
     "dsync.credImport": "Importovat vybrané",
-    "dsync.credImported": "Importováno {n} účtů.",
+    "dsync.credImported": "Importováno účtů: {n}",
     "dsync.credPickOne": "Vyberte alespoň jeden účet k importu.",
 
     "dsync.howTitle": "Jak to funguje",

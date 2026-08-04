@@ -198,7 +198,13 @@
   }
 
   function buildItems(msgs) {
-    if (smartActive()) {
+    // A search is its own flat result set: refreshMessages() drops the Smart
+    // Inbox fetch while app.search is set, so the cached app.smartGroupData
+    // describes the *pre-search* folder. Rendering those cards next to results
+    // showed unrelated newsletter/social mail (and expanding one fetched by
+    // category with no `q`). Sender bundles are skipped for the same reason -
+    // a `from:` search is all one sender, so it collapsed to a single bundle.
+    if (smartActive() && !app.search) {
       const items = msgs.map((m) => ({ kind: "msg", msg: m }));
       const n = app.settings.smartPreviewCount || 4;
       const groups = [];
@@ -291,7 +297,7 @@
           ? { kind: "group", gtype: "thread", key: g[0].thread_id, msgs: g, latest: g[0] }
           : { kind: "msg", msg: g[0] });
     }
-    if (app.settings.bundles) {
+    if (app.settings.bundles && !app.search) {
       const counts = {};
       for (const m of msgs) if (NOTIF.has(m.category)) counts[m.from_addr] = (counts[m.from_addr] || 0) + 1;
       const senders = new Set(Object.keys(counts).filter((s) => counts[s] >= 3));
@@ -785,7 +791,7 @@
   // loaded stream or hidden inside a Smart Inbox group card.
   const hasUnread = $derived(
     app.messages.some((m) => !m.is_seen) ||
-    (smartActive() && Object.values(app.smartGroupData || {}).some((g) => (g?.unread || 0) > 0))
+    (smartActive() && !app.search && Object.values(app.smartGroupData || {}).some((g) => (g?.unread || 0) > 0))
   );
 
   const CATS = $derived.by(() => ([

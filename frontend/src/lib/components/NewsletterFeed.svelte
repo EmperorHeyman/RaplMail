@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { messages as messagesApi } from "../api.js";
   import { app, markDone, notify } from "../store.svelte.js";
-  import { sanitizeTrackers, emailDoc, escapeHtml } from "../email.js";
+  import { sanitizeTrackers, emailDoc, plainBody } from "../email.js";
   import { icons } from "../icons.js";
 
   let items = $state([]);    // { msg, detail }
@@ -27,7 +27,7 @@
 
   function bodyDoc(detail) {
     const p = sanitizeTrackers(detail.html || "", app.settings.blockTrackers);
-    return emailDoc(p.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(detail.text || "")}</pre>`);
+    return emailDoc(p.html || plainBody(detail.text || ""));
   }
   function fmt(iso) { return iso ? new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" }) : ""; }
 

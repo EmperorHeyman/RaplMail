@@ -3,7 +3,7 @@
   import { untrack } from "svelte";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment, subscriptions } from "../api.js";
   import { icons } from "../icons.js";
-  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, autoLink } from "../email.js";
+  import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, plainBody } from "../email.js";
   import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
   import { fade } from "svelte/transition";
@@ -216,7 +216,7 @@
   const hasEarlier = $derived(!!quoteSplit.earlier);
   const collapseOn = $derived(app.settings.collapseQuotes !== false);
   const bodyHtml = $derived.by(() => {
-    const fallback = processed.html || `<pre style="white-space:pre-wrap;word-break:break-word;font-family:inherit">${autoLink(detail?.text || "")}</pre>`;
+    const fallback = processed.html || plainBody(detail?.text || "");
     if (!detail) return "";
     if (!hasQuote || !collapseOn || showQuoted) return fallback; // full message, exact original nesting
     return quoteSplit.main + quoteSplit.recent;                  // new text + most-recent reply only

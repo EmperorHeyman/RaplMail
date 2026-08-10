@@ -198,7 +198,15 @@ export function renderInlineDiff(html) {
  *  a color-coded diff when the block is a git patch / unified diff. */
 export function highlightCodeBlocks(html) {
   if (!html || !/<pre[\s>]/i.test(html)) return html;
-  return html.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_full, inner) => {
+  return html.replace(/<pre\b([^>]*)>([\s\S]*?)<\/pre>/gi, (_full, attrs, inner) => {
+    // The plain-text body wrapper is prose, not a code block - it only wears a
+    // <pre> to keep the sender's line breaks. Highlighting it would drop its
+    // "look like normal text" styling and drown it in a code-block surface.
+    // A plain-text *patch* mail is still worth coloring, so keep that path.
+    if (/rapl-plain/i.test(attrs)) {
+      const t = decodeEntities(inner.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, ""));
+      return looksLikeDiff(t) ? `<pre class="rapl-code rapl-diff">${renderDiff(t)}</pre>` : _full;
+    }
     const codeMatch = inner.match(/<code\b[^>]*>([\s\S]*?)<\/code>/i);
     const body = codeMatch ? codeMatch[1] : inner;
     const text = decodeEntities(body.replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, ""));
@@ -244,15 +252,36 @@ function _lum(c) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
+const LIGHT = 0.82;   // luminance above this = "basically white/very light"
+
+/**
+ * Rewrite near-white backgrounds and dark text inside a CSS source string - an
+ * email's own <style> block. Those rules are invisible to the attribute-level
+ * pass below and land AFTER our page CSS, so an untouched `body{background:#fff}`
+ * repaints the reading pane white underneath our light text.
+ */
+function recolorCss(css, bg, text) {
+  return css
+    .replace(/background(-color)?\s*:\s*([^;}!]+)/gi, (full, suf, val) => {
+      const l = _lum(val.trim());
+      return (!Number.isNaN(l) && l >= LIGHT) ? `background${suf || ""}:${bg}` : full;
+    })
+    .replace(/([{;]|^)(\s*)color\s*:\s*([^;}!]+)/gi,
+      (full, sep, ws, val) => (isDarkColor(val) ? `${sep}${ws}color:${text}` : full));
+}
+
 /**
  * Force a dark reading surface for ANY email: rewrite near-white backgrounds to
  * the theme's dark background and dark text to light, while leaving saturated
  * brand colors alone. This is the "Dark" email mode - guarantees no white pane.
+ * "Adaptive" runs the same pass, but only on mail that has no design of its own.
  */
 function recolorForDark(html, bg, text) {
-  const LIGHT = 0.82;   // luminance above this = "basically white/very light"
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
+    for (const st of doc.querySelectorAll("style")) {
+      st.textContent = recolorCss(st.textContent || "", bg, text);
+    }
     for (const el of doc.querySelectorAll("[bgcolor]")) {
       const l = _lum(el.getAttribute("bgcolor"));
       if (!Number.isNaN(l) && l >= LIGHT) el.setAttribute("bgcolor", bg);
@@ -329,6 +358,16 @@ export function autoLink(text) {
   return escapeHtml(text || "").replace(_URL_RE, (u) => `<a href="${u}" target="_blank" rel="noreferrer">${u}</a>`);
 }
 
+/**
+ * Body HTML for a message that has no HTML part. The <pre> only preserves the
+ * sender's line breaks - `rapl-plain` marks it as prose so the code highlighter
+ * skips it and the page CSS renders it in the normal reading font (a plain note
+ * used to come out as a monospace code block on a light slab).
+ */
+export function plainBody(text) {
+  return `<pre class="rapl-plain">${autoLink(text || "")}</pre>`;
+}
+
 // --- link hygiene: strip tracking params + unwrap redirect wrappers ----------
 // Query-param families that only exist to track you (Google/Meta/ESP analytics).
 const _TRACK_PREFIX = /^(utm_|__?hs|hsenc|hsmi|mc_|pk_|mtm_|matomo_|piwik_|vero_|oly_|ns_|s_|ga_|_ga|elq|trk_|sc_)/i;
@@ -397,6 +436,15 @@ const _PLAIN_BG = /^(?:#fff(?:fff)?|#ffffffff|white|transparent|none|inherit|ini
 function emailHasOwnTheme(html) {
   try {
     const doc = new DOMParser().parseFromString(html, "text/html");
+    // A design can also live in the mail's own <style> block, not just inline.
+    for (const st of doc.querySelectorAll("style")) {
+      const css = (st.textContent || "").toLowerCase();
+      if (/background(?:-image)?\s*:[^;}]*url\(/.test(css)) return true;
+      for (const m of css.matchAll(/background(?:-color)?\s*:\s*([^;}!]+)/g)) {
+        const v = m[1].trim();
+        if (v && !_PLAIN_BG.test(v)) return true;
+      }
+    }
     for (const el of doc.querySelectorAll("[bgcolor],[background],[style]")) {
       if (el.getAttribute("background")) return true; // background-image attribute
       const bg = (el.getAttribute("bgcolor") || "").trim();
@@ -410,28 +458,6 @@ function emailHasOwnTheme(html) {
     }
     return false;
   } catch { return false; }
-}
-
-/**
- * Recolor only the DARK inline text colors in a plain email to a light theme
- * color, so dark-on-dark text stays readable. Light/colored text and everything
- * else (links, borders, images) is left untouched.
- */
-function darkenPlainBody(html, lightText) {
-  try {
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    for (const el of doc.querySelectorAll("font[color]")) {
-      if (isDarkColor(el.getAttribute("color"))) el.removeAttribute("color");
-    }
-    for (const el of doc.querySelectorAll("[style]")) {
-      const style = el.getAttribute("style");
-      // `(^|;)\s*color` deliberately won't match `background-color` / `border-color`.
-      const next = style.replace(/(^|;)(\s*)color\s*:\s*([^;]+)/gi,
-        (full, sep, ws, val) => (isDarkColor(val) ? `${sep}${ws}color:${lightText}` : full));
-      if (next !== style) el.setAttribute("style", next);
-    }
-    return doc.body.innerHTML;
-  } catch { return html; }
 }
 
 /**
@@ -455,7 +481,8 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   if (raw) mode = "original";
   const themeIsDark = isDarkColor(currentBg());
   const force = mode === "dark" && themeIsDark;                       // recolor everything
-  const dark = force || (mode === "adaptive" && themeIsDark && !emailHasOwnTheme(bodyHtml));
+  const ownTheme = emailHasOwnTheme(bodyHtml);                        // branded / custom-designed mail
+  const dark = force || (mode === "adaptive" && themeIsDark && !ownTheme);
   const original = mode === "original";
   // Opt-in: let the user's custom CSS also style email bodies (default off - emails untouched).
   const userCss = !original && app?.settings?.customCssInEmails ? (app?.settings?.customCss || "") : "";
@@ -469,12 +496,20 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
   // wrappers so a click can't leak tracking params. "Show original" keeps links.
   if (!original && s.stripTrackingParams !== false) body = cleanLinks(body);
 
-  // Reading-width cap (Appearance → Reading width): center the body at a
-  // comfortable column on wide screens so long lines don't stretch edge-to-edge.
-  // 0 = full width. `margin: 16px auto` centers; the max-width is a soft cap so
-  // fixed-width branded tables (usually <=600px) still sit centered.
+  // Reading-width cap (Appearance → Reading width): keep line length comfortable
+  // on a wide screen. 0 = full width. Branded mail is a designed page, so it stays
+  // CENTERED; a plain typed message is anchored LEFT like in every other mail
+  // client - centering a three-line note left it stranded mid-pane with the empty
+  // reading surface stretching away on both sides.
   const maxW = Number(app?.settings?.emailMaxWidth ?? 0);
-  const bodyBox = maxW > 0 ? `margin:16px auto;max-width:${maxW}px;` : "margin:16px;";
+  const bodyBox = maxW > 0
+    ? `margin:16px;${ownTheme ? "margin-inline:auto;" : ""}max-width:${maxW}px;`
+    : "margin:16px;";
+  // Long unbreakable strings (share links, tracking URLs, hashes) otherwise push
+  // the whole document wider than the frame and hand the reader a sideways
+  // scrollbar. `break-word` doesn't disturb table layouts; links may break anywhere.
+  const wrapCss = `body{overflow-wrap:break-word;} a{overflow-wrap:anywhere;}
+    pre.rapl-plain{font:inherit;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;}`;
 
   let pageCss;
   if (dark) {
@@ -483,14 +518,15 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
     const muted = themeVar("--muted", "#9aa0a6");
     const border = themeVar("--border", "#33363d");
     const link = themeVar("--accent", "#5b8def");
-    // "Dark" mode forcibly recolors near-white backgrounds too; "adaptive" only
-    // recolors dark text on the (already plain) body.
-    body = force ? recolorForDark(body, bg, text) : darkenPlainBody(body, text);
+    // Same pass either way: "dark" forces it on every mail, "adaptive" only gets
+    // here for mail that has no design of its own.
+    body = recolorForDark(body, bg, text);
     pageCss =
       `html{background:${bg};}` +
       `body{font:14px/1.6 system-ui,sans-serif;color:${text};background:${bg};${bodyBox}}` +
       `a{color:${link};} img{max-width:100%;height:auto;}` +
-      `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}`;
+      `blockquote{border-left:3px solid ${border};margin:0;padding-left:12px;color:${muted};}` +
+      wrapCss;
   } else {
     // Default (non-"original") light pane: guard against white-on-white - recolor
     // near-white text that isn't on its own dark background so it stays readable.
@@ -499,16 +535,24 @@ export function emailDoc(bodyHtml, { raw = false } = {}) {
       `html{background:#fff;}` +
       `body{font:14px/1.6 system-ui,sans-serif;color:#1a1a1a;background:#fff;${bodyBox}}` +
       `a{color:#1a56db;} img{max-width:100%;height:auto;}` +
-      `blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}`;
+      `blockquote{border-left:3px solid #d0d5dd;margin:0;padding-left:12px;color:#667085;}` +
+      wrapCss;
   }
+  // Code blocks carry their own surface, so they need a dark variant too - the
+  // light slab inherits the pane's light text and turns the block invisible.
+  const c = dark
+    ? { bg: "#161b22", bd: "#30363d", fg: "#e6edf3", k: "#ff7b72", s: "#a5d6ff", cm: "#8b949e", n: "#79c0ff", l: "#d2a8ff",
+        addBg: "#12261e", addFg: "#7ee787", delBg: "#2d1214", delFg: "#ffa198", hunkBg: "#0d2942", hunkFg: "#79c0ff", meta: "#8b949e" }
+    : { bg: "#f6f8fa", bd: "#e1e4e8", fg: "#1a1a1a", k: "#cf222e", s: "#0a3069", cm: "#6e7781", n: "#0550ae", l: "#8250df",
+        addBg: "#e6ffec", addFg: "#116329", delBg: "#ffebe9", delFg: "#a40e26", hunkBg: "#f1f8ff", hunkFg: "#0550ae", meta: "#6e7781" };
   const codeCss = highlight
-    ? `pre.rapl-code{background:#f6f8fa;border:1px solid #e1e4e8;border-radius:8px;padding:12px 14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
-       pre.rapl-code .hl-k{color:#cf222e;font-weight:600;} pre.rapl-code .hl-s{color:#0a3069;}
-       pre.rapl-code .hl-c{color:#6e7781;font-style:italic;} pre.rapl-code .hl-n{color:#0550ae;}
-       pre.rapl-code .hl-l{color:#8250df;}
+    ? `pre.rapl-code{background:${c.bg};border:1px solid ${c.bd};color:${c.fg};border-radius:8px;padding:12px 14px;overflow:auto;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;}
+       pre.rapl-code .hl-k{color:${c.k};font-weight:600;} pre.rapl-code .hl-s{color:${c.s};}
+       pre.rapl-code .hl-c{color:${c.cm};font-style:italic;} pre.rapl-code .hl-n{color:${c.n};}
+       pre.rapl-code .hl-l{color:${c.l};}
        pre.rapl-diff .d-line{display:block;white-space:pre-wrap;word-break:break-word;}
-       pre.rapl-diff .d-add{background:#e6ffec;color:#116329;} pre.rapl-diff .d-del{background:#ffebe9;color:#a40e26;}
-       pre.rapl-diff .d-hunk{color:#0550ae;background:#f1f8ff;} pre.rapl-diff .d-file{color:#6e7781;font-weight:600;} pre.rapl-diff .d-meta{color:#6e7781;}`
+       pre.rapl-diff .d-add{background:${c.addBg};color:${c.addFg};} pre.rapl-diff .d-del{background:${c.delBg};color:${c.delFg};}
+       pre.rapl-diff .d-hunk{color:${c.hunkFg};background:${c.hunkBg};} pre.rapl-diff .d-file{color:${c.meta};font-weight:600;} pre.rapl-diff .d-meta{color:${c.meta};}`
     : "";
   return `<!doctype html><html><head><meta charset="utf-8">
     <style>${pageCss}

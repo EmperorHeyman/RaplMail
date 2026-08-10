@@ -2,7 +2,7 @@
   import { app, openCompose, notify, refreshMessages, refreshQueue, setMessageSeen, threadPrefetch, sandboxAttachment } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, revealPath, openExternal, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
-  import { sanitizeTrackers, escapeHtml, emailDoc } from "../email.js";
+  import { sanitizeTrackers, escapeHtml, emailDoc, plainBody } from "../email.js";
   import { senderHue, avatarColor, initialOf as initialFor } from "../avatar.js";
   import { fileExt, fileKind } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
@@ -365,7 +365,7 @@
               {/if}
               <iframe title={t("reader.messageFrameTitle")} use:frameAuto={m}
                 sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-                srcdoc={emailDoc(s.html || `<pre style="white-space:pre-wrap;font-family:inherit">${escapeHtml(bodies[m.id].text || "")}</pre>`)}></iframe>
+                srcdoc={emailDoc(s.html || plainBody(bodies[m.id].text || ""))}></iframe>
             {:else}
               <div class="loadingbody">{t("reader.loading")}</div>
             {/if}

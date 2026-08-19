@@ -10,6 +10,7 @@
   import ThreadView from "./ThreadView.svelte";
   import SuspiciousModal from "./SuspiciousModal.svelte";
   import AttachmentMenu from "./AttachmentMenu.svelte";
+  import MeetingCard from "./MeetingCard.svelte";
 
   // A conversation opened explicitly (threadKey set) always shows as a thread,
   // independent of the list-grouping setting - so "View conversation" works even
@@ -827,6 +828,9 @@
         </div>
       {/if}
     {/if}
+    {#if detail.meeting}
+      <MeetingCard meeting={detail.meeting} subject={detail.subject} />
+    {/if}
     {#if attachments.length}
       <div class="attachments">
         <span class="att-label">{@html icons.attachment} {attachments.length === 1 ? t("reader.attachmentOne") : t("reader.attachmentN", { n: attachments.length })}</span>
@@ -959,7 +963,8 @@
   /* The reader is the scroll container: the header + badge strip scroll away with
      the message body (they used to be pinned while only the iframe scrolled, which
      ate half the pane on tall headers). The body iframe sizes itself to content. */
-  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; background: var(--bg); }
+  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); }
   /* Wraps the single message so it cross-fades in when you switch mails (keyed on
      the selected id) instead of hard-popping. */
   .msgfade { display: flex; flex-direction: column; min-width: 0; }
@@ -1124,5 +1129,5 @@
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
   /* Height is set inline from the measured content height (see measureFrame) so
      the whole message scrolls in the reader rather than inside the frame. */
-  iframe { display: block; border: none; width: 100%; background: var(--bg); }
+  iframe { display: block; border: none; width: 100%; background: var(--surface); }
 </style>

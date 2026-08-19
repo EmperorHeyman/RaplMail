@@ -388,7 +388,7 @@
 <style>
   .sidebar {
     background: var(--surface);
-    border-right: 1px solid var(--hairline);
+    border: 1px solid var(--border); border-radius: var(--radius-lg);
     display: flex; flex-direction: column;
     padding: 12px 10px 10px; gap: 10px;
     min-height: 0; height: 100%; overflow: hidden;

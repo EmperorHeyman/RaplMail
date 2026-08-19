@@ -179,6 +179,7 @@ export const app = $state({
   semantic: false,               // current search is meaning-based (local embeddings) vs keyword
   view: "mail",                  // "mail" | "settings" | "scheduled" | "newsfeed"
   settingsTab: null,             // when set, Settings opens to this tab
+  calendarFocus: null,           // ISO date the calendar should jump to ("Show in calendar")
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
   ruleModal: null,               // { message } - open the quick "New rule" modal
   introTour: false,              // re-show the onboarding intro (debug / "show me around again")
@@ -262,9 +263,14 @@ export async function retryQueue() {
 
 // Customizable color tokens (mirror app.css :root) with their built-in defaults.
 export const THEME_TOKENS = [
-  ["--bg", "#0b0d12"], ["--surface", "#12151d"], ["--surface-2", "#1a1e29"],
-  ["--surface-3", "#232937"], ["--border", "#262c3b"], ["--text", "#e8ebf2"],
-  ["--muted", "#8f97ab"], ["--accent", "#5e8bff"], ["--done", "#34d399"],
+  // --app-bg is the window's ground that the panes sit on as inset cards. It is
+  // DERIVED one perceptual step below --bg in app.css, so leaving it unset is the
+  // normal case - it's listed here only so a preset (or the user) can pin it, which
+  // pure-black themes need since nothing is darker than #000.
+  ["--app-bg", "#080a0f"],
+  ["--bg", "#0f1116"], ["--surface", "#171a21"], ["--surface-2", "#1f232b"],
+  ["--surface-3", "#292e38"], ["--border", "#3a4250"], ["--text", "#e6e9ef"],
+  ["--muted", "#8b93a1"], ["--accent", "#5e8bff"], ["--done", "#34d399"],
   ["--danger", "#f26d79"], ["--warning", "#f5b83d"],
 ];
 
@@ -312,6 +318,7 @@ export function applyTheme() {
   const r = app.settings.radius ?? 11;
   root.style.setProperty("--radius", `${r}px`);
   root.style.setProperty("--radius-sm", `${Math.max(3, r - 4)}px`);
+  root.style.setProperty("--radius-lg", `${r + 4}px`);
   // UI scale (font/zoom). WebView2/Chromium honors `zoom`, which scales the whole
   // px-based UI cleanly.
   const scale = app.settings.uiScale ?? 1;

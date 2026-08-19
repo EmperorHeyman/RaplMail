@@ -68,6 +68,20 @@
     await load(); scan();
   });
 
+  // "Show in calendar" on a mail's meeting card hands us the event's date - land
+  // on that day instead of today. An effect (not onMount) so it also works when
+  // the calendar is already the open view.
+  $effect(() => {
+    const iso = app.calendarFocus;
+    if (!iso) return;
+    app.calendarFocus = null;
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return;
+    cursor = d;
+    selected = d;
+    load();
+  });
+
   // --- week time grid ------------------------------------------------------
   const HOURS = Array.from({ length: 24 }, (_, i) => i);
   const HOUR_H = 44;   // px per hour
@@ -428,7 +442,8 @@
 </section>
 
 <style>
-  .cal { display: flex; flex-direction: column; min-width: 0; height: 100%; background: var(--bg); }
+  .cal { display: flex; flex-direction: column; min-width: 0; height: 100%; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
   .hbtns { display: flex; gap: 8px; align-items: center; }
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   .segbtn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; color: var(--muted); }

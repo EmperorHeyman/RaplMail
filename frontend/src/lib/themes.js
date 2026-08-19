@@ -17,11 +17,11 @@ export const PRESETS = [
 
   // ── High contrast - pure black / pure white, strong separation ─────────────
   // True black (great for OLED): neutral greys, no blue tint.
-  { name: "True Black", category: "High contrast", theme: { "--bg": "#000000", "--surface": "#0a0a0a", "--surface-2": "#141414", "--surface-3": "#1f1f1f", "--border": "#2b2b2b", "--text": "#f5f5f5", "--muted": "#a3a3a3", "--accent": "#4f8cff", "--done": "#34d399", "--danger": "#f26d79", "--warning": "#f5b83d" } },
+  { name: "True Black", category: "High contrast", theme: { "--app-bg": "#000000", "--bg": "#0b0b0b", "--surface": "#151515", "--surface-2": "#1f1f1f", "--surface-3": "#2a2a2a", "--border": "#3a3a3a", "--text": "#f5f5f5", "--muted": "#a3a3a3", "--accent": "#4f8cff", "--done": "#34d399", "--danger": "#f26d79", "--warning": "#f5b83d" } },
   // Maximum legibility: black bg, pure-white text, brighter muted + stronger borders.
-  { name: "Contrast Dark", category: "High contrast", theme: { "--bg": "#000000", "--surface": "#0d0d0d", "--surface-2": "#171717", "--surface-3": "#232323", "--border": "#454545", "--text": "#ffffff", "--muted": "#c8c8c8", "--accent": "#74a7ff", "--done": "#3ee6a0", "--danger": "#ff6b78", "--warning": "#ffc93c" } },
+  { name: "Contrast Dark", category: "High contrast", theme: { "--app-bg": "#000000", "--bg": "#0e0e0e", "--surface": "#1a1a1a", "--surface-2": "#252525", "--surface-3": "#303030", "--border": "#565656", "--text": "#ffffff", "--muted": "#c8c8c8", "--accent": "#74a7ff", "--done": "#3ee6a0", "--danger": "#ff6b78", "--warning": "#ffc93c" } },
   // Maximum legibility, light: white bg, black text, strong borders, deep accents.
-  { name: "Contrast Light", category: "High contrast", theme: { "--bg": "#ffffff", "--surface": "#ffffff", "--surface-2": "#f0f0f0", "--surface-3": "#e4e4e4", "--border": "#a8a8a8", "--text": "#000000", "--muted": "#333333", "--accent": "#0b48c9", "--done": "#077a4c", "--danger": "#bd1a29", "--warning": "#7a5200" } },
+  { name: "Contrast Light", category: "High contrast", theme: { "--bg": "#f7f7f7", "--surface": "#ffffff", "--surface-2": "#f0f0f0", "--surface-3": "#e4e4e4", "--border": "#a8a8a8", "--text": "#000000", "--muted": "#333333", "--accent": "#0b48c9", "--done": "#077a4c", "--danger": "#bd1a29", "--warning": "#7a5200" } },
   // Warm off-white - easy on the eyes for long reading.
   { name: "Paper", category: "High contrast", theme: { "--bg": "#f6f1e7", "--surface": "#fffcf5", "--surface-2": "#efe8d8", "--surface-3": "#e6ddc9", "--border": "#d9cfb6", "--text": "#2c2519", "--muted": "#6e6350", "--accent": "#a65d2e", "--done": "#4e7a3f", "--danger": "#b23a48", "--warning": "#9a6a12" } },
   // Cool, crisp light.
@@ -44,6 +44,9 @@ export const PRESETS = [
   { name: "Sunset", category: "Color", theme: { "--accent": "#ff7a59", "--warning": "#ffb02e" } },
   { name: "Rose", category: "Color", theme: { "--accent": "#ff5d8f" } },
   { name: "Slate", category: "Color", theme: { "--accent": "#9aa6bf", "--bg": "#101216", "--surface": "#191c22" } },
+  // The default neutral ramp with warm amber/teal status colours - the palette the
+  // layered-panel layout was designed against.
+  { name: "Amber", category: "Color", theme: { "--accent": "#f0a53a", "--done": "#22c55e", "--danger": "#ef4444", "--warning": "#f5b83d" } },
 
   // ── Editor - for those who like their mail like their VSCode ───────────────
   { name: "One Dark", category: "Editor", theme: { "--bg": "#282c34", "--surface": "#21252b", "--surface-2": "#2c313a", "--surface-3": "#3a3f4b", "--border": "#3a3f4b", "--text": "#abb2bf", "--muted": "#7f848e", "--accent": "#61afef", "--done": "#98c379", "--danger": "#e06c75", "--warning": "#e5c07b" } },

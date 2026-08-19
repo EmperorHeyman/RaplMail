@@ -243,11 +243,11 @@
 
     {#if app.customizing}
       {#if !app.settings.sidebarCollapsed}
-        <div class="resizer" style="left: var(--sidebar-w)" title="Drag to resize the sidebar"
+        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--pane-gap) * 1.5)" title="Drag to resize the sidebar"
              onpointerdown={(e) => startResize("sidebar", e)}></div>
       {/if}
       {#if app.view === "mail"}
-        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--list-w))" title="Drag to resize the message list"
+        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--list-w) + var(--pane-gap) * 2.5)" title="Drag to resize the message list"
              onpointerdown={(e) => startResize("list", e)}></div>
       {/if}
       <div class="customize-banner">
@@ -291,8 +291,11 @@
   .app {
     display: grid;
     grid-template-columns: var(--sidebar-w) var(--list-w) 1fr;
+    gap: var(--pane-gap);
+    padding: var(--pane-gap);
     height: 100%;
     position: relative;
+    background: var(--app-bg);
   }
   .app.customizing { user-select: none; }
   /* While dragging a divider, stop the message iframe (and other panes) from

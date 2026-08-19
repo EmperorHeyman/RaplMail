@@ -229,7 +229,8 @@
 </section>
 
 <style>
-  .dash { flex: 1; overflow-y: auto; padding: 26px 30px 34px; display: flex; flex-direction: column; gap: 18px; min-width: 0; }
+  .dash { flex: 1; overflow-y: auto; padding: 26px 30px 34px; display: flex; flex-direction: column; gap: 18px; min-width: 0;
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); }
   /* Staggered entrance: hero, then cards, then quick actions. */
   .dash > * { animation: rise-in var(--t-slow) var(--ease) backwards; }
   .dash > *:nth-child(2) { animation-delay: 40ms; }

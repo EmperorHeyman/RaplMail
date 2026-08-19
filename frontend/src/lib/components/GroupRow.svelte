@@ -59,10 +59,11 @@
 {/if}
 
 <style>
-  .wrap { position: relative; }
+  .wrap { position: relative; margin: 3px 7px; border-radius: var(--radius); overflow: hidden; }
   .acct-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3; }
-  .row { display: flex; gap: 11px; align-items: flex-start; padding: 11px 14px; border-bottom: 1px solid var(--border); background: var(--bg); cursor: pointer; }
-  .row:hover { background: var(--surface); }
+  .row { display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border-radius: inherit;
+    background: var(--surface); cursor: pointer; transition: background var(--t-fast) var(--ease); }
+  .row:hover { background: var(--surface-2); }
   .row.focused { box-shadow: inset 3px 0 0 var(--accent); }
   .row.unread .from, .row.unread .subject { font-weight: 700; }
   .avatar { flex: none; box-sizing: border-box; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; line-height: 1; background: linear-gradient(135deg, var(--accent), #8a6df0); color: #fff; cursor: pointer; border: 2px solid transparent; }

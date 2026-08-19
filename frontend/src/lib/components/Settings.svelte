@@ -197,7 +197,8 @@
 </section>
 
 <style>
-  .settings { display: flex; min-width: 0; overflow: hidden; }
+  .settings { display: flex; min-width: 0; overflow: hidden; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); }
   /* Vertical settings nav - 15 sections don't fit a horizontal tab strip. */
   .snav {
     flex: none; width: 220px; display: flex; flex-direction: column; gap: 10px;

@@ -149,6 +149,21 @@ export default {
     "reader.conversationArchived": "Conversation archived",
     "reader.archiveAll": "Archive all",
     "reader.couldntUpdate": "Couldn't update",
+
+    // Meeting card (MeetingCard.svelte) - when the mail is about a calendar event.
+    "reader.meetInvite": "Meeting",
+    "reader.meetUpdate": "Meeting updated",
+    "reader.meetCancel": "Meeting canceled",
+    "reader.meetReply": "Meeting response",
+    "reader.meetAllDay": "all day",
+    "reader.meetFromCalendar": "from your calendar",
+    "reader.meetFromCalendarWhy": "This mail doesn't say when the meeting is - the time was matched from a meeting of the same name in your calendar.",
+    "reader.meetRecurring": "Repeating - next occurrence",
+    "reader.meetRecurringWhy": "This meeting repeats. The mail doesn't say which occurrence it means, so the next one is shown.",
+    "reader.meetNoTime": "This mail doesn't say when the meeting is",
+    "reader.meetLinkOnly": "Outlook sent a web link instead of a real invitation. To get invitations with the date attached, open Outlook on the web → Settings → POP and IMAP → \"Send meeting invitations in iCalendar format\".",
+    "reader.meetShowInCalendar": "Show in calendar",
+    "reader.meetOpenInOutlook": "Open in Outlook",
   },
   cs: {
     // Akční tlačítka (čtečka + vlákno).
@@ -297,5 +312,20 @@ export default {
     "reader.conversationArchived": "Konverzace archivována",
     "reader.archiveAll": "Archivovat vše",
     "reader.couldntUpdate": "Nepodařilo se aktualizovat",
+
+    // Karta schůzky (MeetingCard.svelte) - když se e-mail týká události v kalendáři.
+    "reader.meetInvite": "Schůzka",
+    "reader.meetUpdate": "Schůzka změněna",
+    "reader.meetCancel": "Schůzka zrušena",
+    "reader.meetReply": "Odpověď na schůzku",
+    "reader.meetAllDay": "celý den",
+    "reader.meetFromCalendar": "z vašeho kalendáře",
+    "reader.meetFromCalendarWhy": "V tomto e-mailu není, kdy schůzka je - čas jsme dohledali podle stejně nazvané schůzky ve vašem kalendáři.",
+    "reader.meetRecurring": "Opakuje se - nejbližší termín",
+    "reader.meetRecurringWhy": "Tato schůzka se opakuje. E-mail neuvádí, o který termín jde, proto zobrazujeme nejbližší.",
+    "reader.meetNoTime": "V tomto e-mailu není, kdy schůzka je",
+    "reader.meetLinkOnly": "Outlook poslal místo skutečné pozvánky jen webový odkaz. Aby pozvánky obsahovaly datum, otevřete Outlook na webu → Nastavení → POP a IMAP → „Odesílat pozvánky na schůzky ve formátu iCalendar“.",
+    "reader.meetShowInCalendar": "Zobrazit v kalendáři",
+    "reader.meetOpenInOutlook": "Otevřít v Outlooku",
   },
 };

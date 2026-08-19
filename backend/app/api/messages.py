@@ -66,6 +66,7 @@ class MessageDetail(MessageOut):
     smime: dict | None = None     # {type, verified, signer, decrypted} for S/MIME mail
     first_time_sender: bool = False  # inbox mail from an unknown sender (inline screener prompt)
     ai_reason: str = ""           # cached AI screening rationale (verdict is on MessageOut)
+    meeting: dict | None = None   # the meeting this mail is about, and when (app.sync.meeting)
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -730,12 +731,23 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
     except Exception:
         first_time = False
 
+    # Meeting mail: work out when the meeting actually is. Exchange strips the
+    # iCalendar part out of invites/cancellations for IMAP mailboxes and leaves
+    # only an Outlook Web link, so the body alone never says - see app.sync.meeting.
+    try:
+        from app.sync.meeting import resolve as resolve_meeting
+        # Fall back to the plain-text part: some senders (and PGP-decrypted mail)
+        # have no HTML, and Exchange's link footprint is in both alternatives.
+        meeting = resolve_meeting(session, msg, html or text_body or "")
+    except Exception:
+        meeting = None
+
     base = _to_out(msg)
     return MessageDetail(**base.model_dump(), html=html, text=text_body,
                          cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe,
                          attachments=list(msg.attachments or []), auth=auth, warnings=warnings,
                          pgp=pgp_info, smime=smime_info, first_time_sender=first_time,
-                         ai_reason=msg.ai_reason or "")
+                         ai_reason=msg.ai_reason or "", meeting=meeting)
 
 
 def _decode_att_payload(a: dict) -> "bytes | None":

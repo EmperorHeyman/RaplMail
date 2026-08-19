@@ -77,7 +77,8 @@
 </section>
 
 <style>
-  .feed { display: flex; flex-direction: column; min-width: 0; background: var(--bg); grid-column: 2 / -1; }
+  .feed { display: flex; flex-direction: column; min-width: 0; background: var(--bg); grid-column: 2 / -1;
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
   header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border); }
   h2 { margin: 0; font-size: 18px; }
   .actions { display: flex; gap: 8px; }

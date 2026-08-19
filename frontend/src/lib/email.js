@@ -423,7 +423,9 @@ function themeVar(name, fallback) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
   } catch { return fallback; }
 }
-function currentBg() { return themeVar("--bg", "#0e1014"); }
+// The email renders inside the reader's body card, so its page colour is the
+// card's surface - matching --bg would punch a darker hole in the card.
+function currentBg() { return themeVar("--surface", "#171a21"); }
 
 const _PLAIN_BG = /^(?:#fff(?:fff)?|#ffffffff|white|transparent|none|inherit|initial|unset)$/i;
 

@@ -1,18 +1,23 @@
 :root {
   /* ── Core palette (user-themeable via Settings → Appearance; see THEME_TOKENS) ── */
-  --bg: #0b0d12;
-  --surface: #12151d;
-  --surface-2: #1a1e29;
-  --surface-3: #232937;
-  --border: #262c3b;
-  --text: #e8ebf2;
-  --muted: #8f97ab;
+  --bg: #0f1116;
+  --surface: #171a21;
+  --surface-2: #1f232b;
+  --surface-3: #292e38;
+  --border: #3a4250;
+  --text: #e6e9ef;
+  --muted: #8b93a1;
   --accent: #5e8bff;
   --done: #34d399;
   --danger: #f26d79;
   --warning: #f5b83d;
 
   /* ── Derived tones - computed from the palette so custom themes propagate ── */
+  /* The window's own ground, one step BELOW --bg. Panes sit on it as inset cards
+     with a gap, so the app reads as separate layered panels instead of one flat
+     sheet. Derived rather than declared so every preset - including the light and
+     editor ones - gets the extra depth step for free. */
+  --app-bg: color-mix(in srgb, var(--bg) 88%, #000);
   --faint: color-mix(in srgb, var(--muted) 64%, var(--bg));
   --accent-hover: color-mix(in srgb, var(--accent) 84%, #ffffff);
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
@@ -33,6 +38,8 @@
   /* ── Shape ── */
   --radius: 11px;
   --radius-sm: 7px;
+  --radius-lg: 15px;   /* pane cards */
+  --pane-gap: 8px;     /* the ground showing between panes */
 
   /* ── Motion - fast, decisive, never floaty ── */
   --ease: cubic-bezier(0.2, 0, 0, 1);
@@ -46,6 +53,14 @@
   font-optical-sizing: auto;
 }
 
+/* One perceptual step darker beats a flat percentage: multiplying a near-black
+   --bg barely moves it, while the same multiplier on a white one drops a heavy
+   grey. A fixed OKLCH lightness step lands the same on both. The color-mix above
+   stays as the fallback for engines without relative color syntax. */
+@supports (color: oklch(from red l c h)) {
+  :root { --app-bg: oklch(from var(--bg) calc(l - 0.032) c h); }
+}
+
 * { box-sizing: border-box; }
 
 html, body, #app {
@@ -54,7 +69,7 @@ html, body, #app {
 }
 
 body {
-  background: var(--bg);
+  background: var(--app-bg);
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;

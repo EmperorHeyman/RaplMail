@@ -329,7 +329,8 @@
 </section>
 
 <style>
-  .tickets { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  .tickets { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
   header { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 11px; }
   .htop { display: flex; align-items: center; gap: 10px; }
   .htop h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 7px; }

@@ -8,6 +8,7 @@
   import { t } from "../i18n.svelte.js";
   import SuspiciousModal from "./SuspiciousModal.svelte";
   import AttachmentMenu from "./AttachmentMenu.svelte";
+  import MeetingCard from "./MeetingCard.svelte";
 
   let list = $state([]);          // thread messages, oldest first
   let bodies = $state({});        // id -> detail
@@ -344,6 +345,9 @@
               {@const s = sanitizeTrackers(bodies[m.id].html || "", app.settings.blockTrackers)}
               {@const atts = (bodies[m.id].attachments || []).filter((a) => !a.inline)}
               {#if s.blocked > 0}<div class="tnote">{@html icons.shield} {s.blocked === 1 ? t("reader.blockedPixelOne") : t("reader.blockedPixelN", { n: s.blocked })}</div>{/if}
+              {#if bodies[m.id].meeting}
+                <MeetingCard meeting={bodies[m.id].meeting} subject={m.subject} />
+              {/if}
               {#if atts.length}
                 <div class="atts">
                   {#each atts as a}

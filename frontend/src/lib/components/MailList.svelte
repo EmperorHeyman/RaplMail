@@ -36,13 +36,16 @@
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
+  // `tone` colours each group's icon tile. Deliberately fixed hues rather than
+  // theme tokens: the point is telling the groups apart, which a single accent
+  // can't do, and a 15% tint of any of these reads fine on light and dark alike.
   const CAT_META = $derived.by(() => ({
-    updates: { label: t("list.catNotifications"), icon: icons.bell },
-    newsletters: { label: t("list.catNewsletters"), icon: icons.newspaper },
-    social: { label: t("list.catSocial"), icon: icons.chat },
-    promotions: { label: t("list.catPromotions"), icon: icons.tag },
-    invitations: { label: t("list.catInvitations"), icon: icons.calendar },
-    invitation_responses: { label: t("list.catInvitationResponses"), icon: icons.done },
+    updates: { label: t("list.catNotifications"), icon: icons.bell, tone: "#3b82f6" },
+    newsletters: { label: t("list.catNewsletters"), icon: icons.newspaper, tone: "#a855f7" },
+    social: { label: t("list.catSocial"), icon: icons.chat, tone: "#14b8a6" },
+    promotions: { label: t("list.catPromotions"), icon: icons.tag, tone: "#f0a53a" },
+    invitations: { label: t("list.catInvitations"), icon: icons.calendar, tone: "#22c55e" },
+    invitation_responses: { label: t("list.catInvitationResponses"), icon: icons.done, tone: "#0ea5e9" },
   }));
   const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
@@ -978,6 +981,7 @@
             <SmartGroupCard
               label={CAT_META[item.category]?.label || item.category}
               icon={CAT_META[item.category]?.icon || icons.folder}
+              tone={CAT_META[item.category]?.tone || ""}
               count={item.count} unread={item.unread} newCount={item.new} senders={item.senders} more={item.more}
               focused={i === focusIndex} expanded={expandedKeys.has(item.key)} mode={modeOf(item.category)}
               onToggle={() => { focusIndex = i; activate(item); }}
@@ -1012,7 +1016,8 @@
 </section>
 
 <style>
-  .list { display: flex; flex-direction: column; border-right: 1px solid var(--hairline); min-height: 0; background: var(--bg); }
+  .list { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
   header { padding: 14px 16px 11px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 10px; }
   .row1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .row1-actions { display: flex; align-items: center; gap: 10px; flex: none; }

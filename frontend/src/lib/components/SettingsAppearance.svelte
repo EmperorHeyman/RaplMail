@@ -31,7 +31,7 @@
   }
 
   const LABELS = {
-    "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
+    "--app-bg": "Window ground", "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
     "--surface-3": "Surface 3", "--border": "Border", "--text": "Text",
     "--muted": "Muted text", "--accent": "Accent", "--done": "Done / success",
     "--danger": "Danger", "--warning": "Warning",

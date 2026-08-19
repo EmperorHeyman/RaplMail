@@ -11,6 +11,54 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.4] - 2026-08-19
+
+### Added
+- **Meeting card: "when is this?" on calendar mail.** Exchange/M365 mailboxes with
+  *Send meeting invitations in iCalendar format* turned off (the POP/IMAP default)
+  strip the calendar attachment out of every invitation, update and cancellation
+  and replace the body with an Outlook Web Access link - so a mail like
+  "Canceled: IT Ticketing" arrived with **no date or time anywhere in it** and the
+  only way to find out which meeting it meant was to click through to webmail.
+  The reader (and each message in a conversation) now shows a card above the body
+  with the day, the time and the length, plus location, organizer and a
+  "repeating" hint. The time comes from the mail's own iCalendar part when it has
+  one; otherwise the meeting is matched by name against your local calendar (ICS
+  subscription / CalDAV) around the mail's own date, and the card says
+  **"from your calendar"** so an inferred time is never passed off as fact. For a
+  repeating meeting the next occurrence still to come is shown, and the card links
+  straight to the day in **Calendar** or opens the item in Outlook on the web.
+  When nothing anywhere says when, the card says exactly that instead of leaving
+  you with a wall of link text - and explains the Outlook setting that fixes it at
+  the source.
+
+### Changed
+- **Layered panels instead of one flat sheet.** The sidebar, message list and
+  reader now sit on the window as **inset cards** - each one bordered, rounded and
+  separated by a gap that shows the window's ground behind it - and message rows,
+  group rows and category groups are cards in their own right rather than strips
+  divided by hairlines. The panes used to be painted the *same* colour as the page
+  with only a 1px hairline between them, and rows had no fill at all, which is why
+  the whole window read as a single dark expanse no matter which preset was picked.
+- **A ground tone below the background.** A new `--app-bg` token sits one
+  perceptual step (OKLCH lightness, not a flat percentage) below `--bg`, so the
+  window has four readable depth levels - ground, pane, card, raised. It's derived,
+  so **every** preset gains the extra step without being rewritten; a preset or the
+  user can still pin it explicitly (Appearance → *Window ground*), which the
+  pure-black themes now do so their panes lift off the page while the page itself
+  stays true `#000`.
+- **Borders you can see.** `--border` went from 1.41:1 against the surface to
+  1.72:1 - the old value was too faint to read as an edge, which mattered much more
+  once panes and rows started relying on it.
+- **Category groups carry a colour.** Notifications, Newsletters, Social,
+  Promotions, Invitations and Invitation responses each get a soft tinted icon
+  tile, so the groups are told apart at a glance instead of by icon shape alone.
+- **Default dark palette retuned** to a slightly warmer, more neutral grey ramp,
+  and `Contrast Light` / `True Black` / `Contrast Dark` had `--bg` lifted off
+  `--surface` (they were identical, so a pane and the cards inside it rendered the
+  same colour). Every one of the 27 presets now has a visible step at every level.
+- **New `Amber` preset** - the default ramp with warm amber/green status colours.
+
 ## [0.8.5] - 2026-07-08
 
 ### Added

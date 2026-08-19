@@ -2,7 +2,7 @@
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
   let { label, icon, count = 0, unread = 0, newCount = 0, senders = [], more = 0,
-        expanded = false, focused = false, mode = "all",
+        expanded = false, focused = false, mode = "all", tone = "",
         onToggle, onNewBadge, onSender, onDoneAll } = $props();
 
   // One quiet line: "Netflix, GitHub, Medium +9"
@@ -14,7 +14,8 @@
   });
 </script>
 
-<div class="sg" class:focused class:open={expanded} class:hasnew={newCount > 0}>
+<div class="sg" class:focused class:open={expanded} class:hasnew={newCount > 0}
+     style={tone ? `--tone:${tone}` : ""}>
   <button class="sg-head" onclick={onToggle}>
     <span class="ic">{@html icon}</span>
     <span class="main">
@@ -40,22 +41,28 @@
 </div>
 
 <style>
-  /* Flat, Spark-style group section - no box, sits in the list like a row. */
+  /* A card in the list, matching the message rows around it. */
   .sg {
     position: relative; display: flex; align-items: center; gap: 8px;
-    padding: 0 14px 0 0; border-bottom: 1px solid var(--hairline);
-    background: var(--bg);
-    transition: background var(--t-fast) var(--ease);
+    margin: 4px 7px; padding: 0 12px 0 0;
+    border: 1px solid var(--hairline); border-radius: var(--radius);
+    background: var(--surface);
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
   }
-  .sg:hover { background: var(--surface); }
+  .sg:hover { background: var(--surface-2); border-color: var(--border); }
   .sg.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
   .sg.open { box-shadow: inset 2px 0 0 var(--accent-soft-2); }
   .sg.open.focused { box-shadow: inset 3px 0 0 var(--accent); }
 
-  .sg-head { flex: 1; display: flex; align-items: center; gap: 11px; min-width: 0; padding: 10px 0 10px 14px; text-align: left; }
-  .ic { display: grid; place-items: center; width: 20px; flex: none; color: var(--muted); transition: color var(--t-fast) var(--ease); }
-  .ic :global(svg) { width: 17px; height: 17px; }
-  .hasnew .ic, .open .ic { color: var(--accent); }
+  .sg-head { flex: 1; display: flex; align-items: center; gap: 11px; min-width: 0; padding: 9px 0 9px 10px; text-align: left; }
+  /* Soft tinted tile per category (`--tone`), so the groups are told apart by
+     colour at a glance instead of by icon shape alone. Falls back to the accent. */
+  .ic { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 9px;
+    background: color-mix(in srgb, var(--tone, var(--accent)) 15%, transparent);
+    color: var(--tone, var(--accent));
+    transition: background var(--t-fast) var(--ease); }
+  .ic :global(svg) { width: 16px; height: 16px; }
+  .hasnew .ic, .open .ic { background: color-mix(in srgb, var(--tone, var(--accent)) 26%, transparent); }
 
   .main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
   .l1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -79,7 +86,7 @@
 
   /* Revealed on hover / keyboard focus, like the row actions. */
   .doneall { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 600;
-    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--bg);
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2);
     opacity: 0; transform: scale(0.94);
     transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
       color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), transform var(--t) var(--ease-spring); }

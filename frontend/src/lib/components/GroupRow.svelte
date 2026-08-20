@@ -1,6 +1,6 @@
 <script>
   import { app } from "../store.svelte.js";
-  import { listTime, relativeTime } from "../time.js";
+  import { listTime, relativeTime } from "../time.svelte.js";
   import { icons } from "../icons.js";
   import { avatarUrl } from "../api.js";
   let { gtype, msgs = [], latest = null, focused = false, expanded = false, checked = false,

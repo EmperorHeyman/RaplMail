@@ -2,13 +2,13 @@
 says. Covers subject classification, the Exchange link-only footprint, matching
 the local calendar (cross-account, prefix-insensitive), and which occurrence of a
 recurring series a mail is taken to mean."""
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
 from app.core.db import get_engine
 from app.models import Account, CalendarEvent, Folder, Message
-from app.sync.meeting import classify, normalize_title, owa_url, resolve
+from app.sync.meeting import _as_utc_naive, classify, normalize_title, owa_url, resolve
 
 # A real Exchange link-only cancellation body: an OWA deep link to the calendar
 # item plus the "turn on iCalendar format" tip, and no date anywhere.
@@ -37,6 +37,9 @@ _seq = [9000]   # unique account emails / message uids across tests in this modu
 
 
 def _mk_mail(s, subject, when, *, html="", account_id=None):
+    """`when` is an aware UTC instant. The column is naive, so the naive form is
+    what gets stored and the aware value is put back on the instance afterwards -
+    keeping these tests independent of the runner's local timezone."""
     _seq[0] += 1
     if account_id is None:
         acct = Account(email=f"meet-{_seq[0]}@example.com")
@@ -45,8 +48,9 @@ def _mk_mail(s, subject, when, *, html="", account_id=None):
     folder = Folder(account_id=account_id, path="INBOX", name="INBOX")
     s.add(folder); s.commit(); s.refresh(folder)
     msg = Message(account_id=account_id, folder_id=folder.id, uid=_seq[0],
-                  subject=subject, date=when, body_html=html)
+                  subject=subject, date=when.replace(tzinfo=None), body_html=html)
     s.add(msg); s.commit(); s.refresh(msg)
+    msg.date = when
     return msg
 
 
@@ -89,7 +93,7 @@ def test_link_only_cancellation_resolves_from_the_local_calendar(client):
                             start=datetime(2026, 8, 21, 9), end=datetime(2026, 8, 21, 10)))
         s.commit()
 
-        msg = _mk_mail(s, "Canceled: IT Ticketing", datetime(2026, 8, 19, 9, 28), html=OWA_BODY)
+        msg = _mk_mail(s, "Canceled: IT Ticketing", datetime(2026, 8, 19, 9, 28, tzinfo=timezone.utc), html=OWA_BODY)
         card = resolve(s, msg, msg.body_html)
 
     assert card is not None
@@ -114,7 +118,7 @@ def test_recurring_series_reports_the_next_occurrence_not_the_first(client):
 
         # Sent at 16:23 on the 19th: the 19th's occurrence is already over, so the
         # cancellation is about the 20th.
-        msg = _mk_mail(s, "Zrušeno: Ranní porada", datetime(2026, 8, 19, 16, 23),
+        msg = _mk_mail(s, "Zrušeno: Ranní porada", datetime(2026, 8, 19, 16, 23, tzinfo=timezone.utc),
                        html=OWA_BODY, account_id=acct.id)
         card = resolve(s, msg, msg.body_html)
 
@@ -127,7 +131,7 @@ def test_own_ics_part_wins_over_a_calendar_match(client):
     with _s() as s:
         acct = Account(email="meet-own@example.com")
         s.add(acct); s.commit(); s.refresh(acct)
-        msg = _mk_mail(s, "Accepted: MSIC", datetime(2026, 5, 25, 14), account_id=acct.id)
+        msg = _mk_mail(s, "Accepted: MSIC", datetime(2026, 5, 25, 14, tzinfo=timezone.utc), account_id=acct.id)
         # Parsed straight out of this mail's text/calendar part.
         s.add(CalendarEvent(account_id=acct.id, uid="MSIC@outlook.com", message_id=msg.id,
                             summary="MSIC", method="REPLY", organizer="boss@example.com",
@@ -147,7 +151,7 @@ def test_own_ics_part_wins_over_a_calendar_match(client):
 def test_link_only_mail_with_nothing_to_match_still_says_so(client):
     _wipe_events()
     with _s() as s:
-        msg = _mk_mail(s, "Canceled: A meeting nobody has", datetime(2026, 8, 19, 9), html=OWA_BODY)
+        msg = _mk_mail(s, "Canceled: A meeting nobody has", datetime(2026, 8, 19, 9, tzinfo=timezone.utc), html=OWA_BODY)
         card = resolve(s, msg, msg.body_html)
 
     assert card["source"] == "none"
@@ -159,11 +163,21 @@ def test_link_only_mail_with_nothing_to_match_still_says_so(client):
 def test_ordinary_mail_produces_no_card(client):
     _wipe_events()
     with _s() as s:
-        msg = _mk_mail(s, "Invoice 2026-08 attached", datetime(2026, 8, 19, 9),
+        msg = _mk_mail(s, "Invoice 2026-08 attached", datetime(2026, 8, 19, 9, tzinfo=timezone.utc),
                        html="<p>Hello, please find the invoice attached.</p>")
         assert resolve(s, msg, msg.body_html) is None
 
         # A meeting-ish prefix alone isn't enough - the calendar has to know it.
-        msg2 = _mk_mail(s, "Accepted: something we never scheduled", datetime(2026, 8, 19, 9),
+        msg2 = _mk_mail(s, "Accepted: something we never scheduled", datetime(2026, 8, 19, 9, tzinfo=timezone.utc),
                         html="<p>Thanks!</p>")
         assert resolve(s, msg2, msg2.body_html) is None
+
+
+def test_message_dates_are_read_as_local_not_utc():
+    # imapclient hands us naive LOCAL times; event times are stored naive UTC. The
+    # conversion has to bridge that, or a recurring series resolves to the wrong
+    # occurrence by the local offset.
+    naive = datetime(2026, 8, 19, 16, 23)
+    assert _as_utc_naive(naive) == naive - naive.astimezone().utcoffset()
+    # An already-aware instant converts exactly, whatever the machine's zone.
+    assert _as_utc_naive(datetime(2026, 8, 19, 16, 23, tzinfo=timezone.utc)) == naive

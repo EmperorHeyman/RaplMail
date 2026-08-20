@@ -979,7 +979,7 @@
   /* Rounded "message header" card - mirrors the thread's per-message cards for a
      unified feel (was a flat full-width bar with a bottom border). */
   header { margin: 14px 16px 8px; padding: 15px 18px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: 16px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 6px; }
+    border-radius: var(--radius-lg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 6px; }
   .subject { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
   .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; align-items: flex-start; }
   .to { color: var(--faint); font-size: 12px; }
@@ -1031,7 +1031,7 @@
   /* Security pills: trust / auth / PGP / S/MIME + screener / mailing-list /
      trackers, all collapsed into one compact badge row. Click a badge to reveal
      its detail + actions below. */
-  .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 8px 22px; border-bottom: 1px solid var(--hairline); }
+  .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 18px 8px; }
   .sec-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
     padding: 3px 10px; border-radius: 999px; border: 1px solid; cursor: pointer; line-height: 1.4;
     transition: filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
@@ -1044,7 +1044,8 @@
   .sec-pill.open { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
   .sp-caret { font-size: 9px; opacity: 0.65; transition: transform var(--t-fast) var(--ease); }
   .sp-caret.up { transform: rotate(180deg); }
-  .sec-detail { display: flex; align-items: center; gap: 10px; padding: 8px 22px; font-size: 12px; border-bottom: 1px solid var(--hairline);
+  .sec-detail { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 8px 14px; font-size: 12px;
+    border: 1px solid var(--hairline); border-radius: var(--radius);
     animation: pop-in var(--t) var(--ease); }
   .sec-detail.ok { background: var(--done-soft); color: var(--done); }
   .sec-detail.bad { background: var(--danger-soft); color: var(--danger); }
@@ -1074,7 +1075,8 @@
   .rc-item:hover { background: var(--accent); color: #fff; }
   .rc-item :global(svg) { width: 15px; height: 15px; flex: none; }
   .rc-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
-  .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 16px 10px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
   .att-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-right: 4px; }
   .att { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 300px; overflow: hidden; }
   .att:hover { border-color: var(--accent); }
@@ -1117,7 +1119,7 @@
   .unfurl .uf-site { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
   .unfurl .uf-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .unfurl .uf-desc { font-size: 12px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .viewbar { display: flex; justify-content: flex-end; gap: 8px; padding: 5px 16px; background: var(--bg); border-bottom: 1px solid var(--border); }
+  .viewbar { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 6px; }
   .vtoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
   .vtoggle:hover { color: var(--text); border-color: var(--accent); }
   .vtoggle.on { color: var(--accent); border-color: var(--accent); background: var(--surface-2); }
@@ -1125,7 +1127,7 @@
      instead of a bare full-bleed div, so it reads as "the email" - matching the
      header card and the conversation cards. */
   .body-card { display: flex; flex-direction: column; margin: 0 16px 14px;
-    border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--surface);
+    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
   /* Height is set inline from the measured content height (see measureFrame) so
      the whole message scrolls in the reader rather than inside the frame. */

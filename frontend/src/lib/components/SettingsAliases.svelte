@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { app, notify, loadAccountsAndFolders } from "../store.svelte.js";
   import { messages as msgApi, rules as rulesApi } from "../api.js";
-  import { relativeTime } from "../time.js";
+  import { relativeTime } from "../time.svelte.js";
 
   let rows = $state([]);
   let loading = $state(true);

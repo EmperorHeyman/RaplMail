@@ -11,6 +11,32 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.5] - 2026-08-20
+
+### Fixed
+- **"just now" on an hour-old mail.** A row's timestamp was computed once, when the
+  row first rendered - which for an arriving mail is the exact moment it reads
+  "just now" - and never again, because it depended only on the message date and
+  that never changes. Nothing was ticking. Relative times now subscribe to a shared
+  30-second clock, so they age on their own. This also explains why neighbouring
+  rows disagreed: each was frozen at whatever it said when *it* last rendered.
+- **An unparseable date rendered as "just now".** Every comparison against `NaN`
+  being false, a bad date fell through the whole unit ladder and hit the trailing
+  fallback - presenting "no idea" as "moments ago". It now renders nothing.
+- **Stray lines in the reader.** The attachment bar, security strip and styling
+  toggle were full-bleed rows with full-width bottom rules, while the header, body
+  and meeting cards are inset 16px and rounded - so the rules ran out past the
+  cards, and the body card (which has no top margin) had its own top border sitting
+  flush against the styling toggle's rule, reading as one line with two verticals
+  hanging off it. Those rows are now inset cards like everything around them; the
+  only full-width rule left is the pinned action bar's, which is what it's for.
+  The header and body cards also pick up `--radius-lg` instead of a hardcoded 16px,
+  so they follow the roundness slider and match the panes.
+- **Meeting times could resolve to the wrong occurrence of a recurring series.**
+  Message dates are stored naive in **local** time (imapclient normalises and strips
+  the zone) while calendar events are stored naive in **UTC**; comparing them raw was
+  off by the local offset, two hours in CEST. Conversion is now explicit.
+
 ## [0.9.4] - 2026-08-19
 
 ### Added

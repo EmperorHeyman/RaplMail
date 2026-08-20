@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { app, loadAccountsAndFolders, notify, confirmDialog } from "../store.svelte.js";
   import { accounts as api } from "../api.js";
-  import { relativeTime } from "../time.js";
+  import { relativeTime } from "../time.svelte.js";
 
   // --- per-account health dashboard ----------------------------------------
   let health = $state({});   // keyed by account id

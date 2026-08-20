@@ -15,7 +15,7 @@
   import { app, aiEnabled } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
-  import { relativeTime } from "../time.js";
+  import { relativeTime } from "../time.svelte.js";
   import { OPERATORS, smartSplit, isOp, opParts, normalizeChips, buildQuery, parseQuery } from "../searchQuery.js";
 
   let { open = false, initial = "", smartAvailable = false,

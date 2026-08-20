@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { app, openMessageById, selectSmartInbox, selectUnifiedInbox, openCompose, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { messages as msgApi, calendar as calApi } from "../api.js";
-  import { listTime } from "../time.js";
+  import { listTime } from "../time.svelte.js";
   import { icons } from "../icons.js";
   import { currentLocale } from "../i18n.svelte.js";
 

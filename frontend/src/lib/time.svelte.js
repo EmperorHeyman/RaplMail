@@ -1,8 +1,35 @@
+// Timestamp formatting for list rows and metadata lines.
+//
+// This is a `.svelte.js` module for one reason: a relative timestamp has a hidden
+// dependency on the CLOCK, not just on its date. `fmtTime(m.date)` recomputes only
+// when `m.date` changes - and it never does - so a row that first rendered the
+// moment its mail arrived kept saying "just now" an hour later. Both formatters
+// read the shared tick below, which makes every call site (templates are reactive)
+// re-render on its own without a single change at the call site.
+//
+// 30 seconds is the coarsest interval that still flips "just now" -> "1 minute
+// ago" promptly; the cost is one integer write per half minute for the whole app.
+let tick = $state(0);
+if (typeof window !== "undefined") {
+  setInterval(() => { tick += 1; }, 30_000);
+}
+
+/** Subscribe the caller to the shared clock. Exported for anything that formats a
+ *  time itself (e.g. Intl) and needs the same self-updating behaviour. */
+export function clockTick() {
+  return tick;
+}
+
 // Full relative phrasing, e.g. "3 hours ago" / "in 2 days".
 export function relativeTime(iso) {
+  clockTick();
   if (!iso) return "";
   const d = new Date(iso);
-  let s = Math.round((new Date() - d) / 1000);
+  // An unparseable date used to fall all the way through the unit loop (every
+  // comparison against NaN being false) and return "just now" - a wrong timestamp
+  // presented as a confident one. Say nothing instead.
+  if (Number.isNaN(d.getTime())) return "";
+  let s = Math.round((Date.now() - d.getTime()) / 1000);
   const future = s < 0;
   s = Math.abs(s);
   if (s < 45) return future ? "in a moment" : "just now";
@@ -17,8 +44,10 @@ export function relativeTime(iso) {
 
 // Compact, friendly timestamps for list rows.
 export function listTime(iso) {
+  clockTick();
   if (!iso) return "";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   const now = new Date();
   const ms = now - d;
   const min = ms / 60000;

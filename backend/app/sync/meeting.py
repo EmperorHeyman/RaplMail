@@ -110,6 +110,18 @@ def _utc_iso(v: datetime | None) -> str | None:
     return (v if v.tzinfo else v.replace(tzinfo=timezone.utc)).isoformat()
 
 
+def _as_utc_naive(v: datetime) -> datetime:
+    """A message date as UTC-naive, so it can be compared with stored event times.
+
+    The two sides are both naive but in DIFFERENT zones: imapclient normalises mail
+    header dates to LOCAL time and strips the zone (its default), while calendar
+    events are normalised to UTC on the way in. Comparing them raw is off by the
+    local offset - two hours in CEST - which is enough to pick the wrong occurrence
+    of a recurring series.
+    """
+    return (v if v.tzinfo else v.astimezone()).astimezone(timezone.utc).replace(tzinfo=None)
+
+
 def _pick(cands: list[CalendarEvent], when: datetime) -> CalendarEvent | None:
     """The occurrence a mail sent at `when` is talking about: the first one that
     hasn't finished yet, else the most recent past one.
@@ -168,9 +180,7 @@ def resolve(session: Session, msg: Message, html: str = "") -> dict | None:
     kind = classify(msg.subject or "")
     link = owa_url(html)
     link_only = bool(link) or is_link_only(html)
-    when = msg.date or datetime.now(timezone.utc)
-    if when.tzinfo is not None:
-        when = when.astimezone(timezone.utc).replace(tzinfo=None)
+    when = _as_utc_naive(msg.date or datetime.now(timezone.utc))
 
     # 1. The mail brought its own iCalendar part.
     own = list(session.exec(

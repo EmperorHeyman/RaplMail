@@ -4,7 +4,7 @@
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { avatarColor } from "../avatar.js";
-  import { listTime, relativeTime } from "../time.js";
+  import { listTime, relativeTime } from "../time.svelte.js";
   let { message, focused, selected, checked = false, selecting = false, screener = false, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
   const done = $derived(message.is_done);
   const snoozedView = $derived(app.selectedKind === "snoozed");

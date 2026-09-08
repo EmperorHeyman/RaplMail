@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen, accountFor, isOutgoingView } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { avatarColor } from "../avatar.js";
@@ -8,9 +8,12 @@
   let { message, focused, selected, checked = false, selecting = false, screener = false, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
   const done = $derived(message.is_done);
   const snoozedView = $derived(app.selectedKind === "snoozed");
+  // In Sent/Drafts the sender is your own identity, so a "VIP sender" star would
+  // sit on every single row and mean nothing.
+  const outgoingView = $derived(isOutgoingView());
   let snoozeMenu = $state(false);
   // Avatar ring is tinted with the receiving account's color (Spark-style).
-  const acctColor = $derived(app.accounts.find((a) => a.id === message.account_id)?.color || null);
+  const acctColor = $derived(accountFor(message.account_id)?.color || null);
   const multiAcct = $derived(app.accounts.length > 1);
 
   // Sender avatar = cached domain favicon. Try the sender's own domain first,
@@ -35,6 +38,10 @@
     const key = avatarDomains.join("|");
     if (key !== _avKey) { _avKey = key; avIdx = 0; }
   });
+  // The favicon <img> is deliberately NOT loading="lazy": offscreen rows are
+  // already gated by content-visibility, so lazy-loading double-gated it - the
+  // fetch only started once the row was IN the viewport, and the fetch + decode
+  // then landed mid-scroll instead of while the row was still approaching.
   const avSrc = $derived(avatarDomains[avIdx] ? avatarUrlDomain(avatarDomains[avIdx]) : "");
   const hasLogo = $derived(!!avSrc && !done);
   function onAvatarError() {
@@ -155,7 +162,7 @@
       title={t("list.select")} onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
-        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" draggable="false" loading="lazy" decoding="async" onerror={onAvatarError} />
+        {:else if hasLogo}<img class="logo-img" src={avSrc} alt="" draggable="false" decoding="async" onerror={onAvatarError} />
         {:else}{initial}{/if}
       </span>
       <span class="box">{#if checked}{@html icons.done}{/if}</span>
@@ -178,7 +185,7 @@
       <span class="snippet">{message.snippet}</span>
     </span>
     <span class="marks">
-      {#if isVip(message.from_addr)}<span class="vip" title={t("list.vipSender")}>{@html icons.star}</span>{/if}
+      {#if !outgoingView && isVip(message.from_addr)}<span class="vip" title={t("list.vipSender")}>{@html icons.star}</span>{/if}
       {#if message.pinned}<span class="pin">{@html icons.pin}</span>{/if}
       {#if !message.is_seen && !done}<span class="unread-dot"></span>{/if}
       {#if message.is_flagged}<span class="star">{@html icons.flagged}</span>{/if}

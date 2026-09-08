@@ -322,8 +322,11 @@ async def trigger_sync(account_id: int, request: Request,
                        session: Session = Depends(get_session)) -> dict:
     if session.get(Account, account_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
-    request.app.state.sync.request_sync()
-    return {"queued": True}
+    # Sync THIS account now. Only waking the poll loop meant the press took
+    # effect at the end of the current cycle (every account, every folder, plus
+    # history paging) - so "Sync" appeared to do nothing for minutes.
+    request.app.state.sync.request_account_sync(account_id)
+    return {"queued": True, "account_id": account_id}
 
 
 def _backfill_status(session: Session) -> dict:

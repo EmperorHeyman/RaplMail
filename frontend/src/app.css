@@ -77,6 +77,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
+/* Translucent window ground (Settings → Appearance → Translucent window). The
+   main window is created transparent with a Mica/blur backdrop behind it (see
+   tauri.conf.json windowEffects); this lets that backdrop show through the
+   ground the panes sit on. Panes themselves stay fully opaque - only the gaps
+   between the cards go glassy - so text contrast and scroll performance are
+   untouched. The alpha is high on purpose: on a system where no backdrop effect
+   applied, the ground still reads near-solid instead of see-through. */
+:root.glass body { background: color-mix(in srgb, var(--app-bg) 70%, transparent); }
+
 ::selection { background: var(--accent-soft-2); }
 
 h1, h2, h3, h4 { letter-spacing: -0.01em; }

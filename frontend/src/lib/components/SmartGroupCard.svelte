@@ -3,7 +3,7 @@
   import { t } from "../i18n.svelte.js";
   let { label, icon, count = 0, unread = 0, newCount = 0, senders = [], more = 0,
         expanded = false, focused = false, mode = "all", tone = "",
-        onToggle, onNewBadge, onSender, onDoneAll } = $props();
+        onToggle, onNewBadge, onSender, onDoneAll, onPeek, onPeekOut } = $props();
 
   // One quiet line: "Netflix, GitHub, Medium +9"
   const sendersLine = $derived.by(() => {
@@ -14,8 +14,12 @@
   });
 </script>
 
+<!-- The list owns the peek panel; the card only reports its own box on hover.
+     An expanded card shows its mail already, so it doesn't peek. -->
 <div class="sg" class:focused class:open={expanded} class:hasnew={newCount > 0}
-     style={tone ? `--tone:${tone}` : ""}>
+     style={tone ? `--tone:${tone}` : ""}
+     onmouseenter={(e) => { if (!expanded) onPeek?.(e.currentTarget.getBoundingClientRect()); }}
+     onmouseleave={() => onPeekOut?.()}>
   <button class="sg-head" onclick={onToggle}>
     <span class="ic">{@html icon}</span>
     <span class="main">

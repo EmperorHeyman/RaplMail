@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS = {
   ],
   theme: {},                     // CSS custom-property overrides: { "--accent": "#..." }
   radius: 11,                    // corner roundness (px)
+  glassBg: true,                 // translucent window ground (Mica/blur shows through the pane gaps)
   uiScale: 1,                    // overall UI/font scale (0.85-1.3) via CSS zoom
   customCss: "",                 // user CSS injected app-wide
   sidebarWidth: 248,             // resizable layout (Customize mode)
@@ -202,6 +203,7 @@ export const app = $state({
   toast: null,
   confirm: null,                 // { title, message, confirmLabel, danger, resolve } - in-app confirm dialog
   syncTick: 0,                   // bumped on each sync:done so views can refresh live
+  syncPendingIds: [],            // accounts a manual sync is still waiting on
   dragMessageIds: [],            // message ids being dragged (drag-onto-folder to move)
   dragAccountId: null,           // account of the dragged messages (moves stay in-account)
   settings: loadSettings(),
@@ -314,6 +316,14 @@ export function applyTheme() {
     if (t[k]) root.style.setProperty(k, t[k]);
     else root.style.removeProperty(k);
   }
+  // Translucent window ground: the .glass class lets the OS backdrop (Mica on
+  // Win11, blur on Win10 - see tauri.conf.json windowEffects) show through the
+  // body background. Main window only - the compose/reminder/sandbox child
+  // windows are NOT created transparent, so a translucent body there would
+  // blend with the webview's default background instead of the backdrop.
+  const isChildWin = typeof location !== "undefined" &&
+    ["#compose", "#reminder", "#sandbox"].includes(location.hash);
+  root.classList.toggle("glass", app.settings.glassBg !== false && !isChildWin);
   // Corner roundness.
   const r = app.settings.radius ?? 11;
   root.style.setProperty("--radius", `${r}px`);
@@ -606,14 +616,18 @@ export async function checkForUpdates({ silent = false } = {}) {
 // fast triage produces several - keeping a stack means each one stays reversible
 // (via Ctrl+Z) instead of only the most recent surviving.
 const _undoStack = [];
-export function notify(message, kind = "info", undo = null) {
+// `action` = { label, run } for a one-off button on the toast (e.g. "Join Teams"
+// on a meeting reminder). Unlike undo it isn't stacked or bound to a shortcut,
+// and it holds the toast open longer - it exists to be clicked, not just read.
+export function notify(message, kind = "info", undo = null, action = null) {
   const id = Math.random();
   if (undo) {
     _undoStack.push(undo);
     if (_undoStack.length > 20) _undoStack.shift();
   }
-  app.toast = { message, kind, id, undo };
-  setTimeout(() => { if (app.toast && app.toast.id === id) app.toast = null; }, undo ? 6000 : 3200);
+  app.toast = { message, kind, id, undo, action };
+  const ttl = action ? 12000 : (undo ? 6000 : 3200);
+  setTimeout(() => { if (app.toast && app.toast.id === id) app.toast = null; }, ttl);
 }
 // In-app confirmation dialog (replaces the browser's ugly "tauri.localhost says"
 // window.confirm). Returns a Promise<boolean>. Render <ConfirmDialog /> once at
@@ -719,9 +733,24 @@ export async function syncAutostart() {
   } catch { /* plugin unavailable (dev/browser) - ignore */ }
 }
 
+// A sync cycle finishes one account at a time, so this runs once per account.
+// Re-assigning app.accounts / app.folders invalidates every reader of them -
+// which includes the account-colour lookup and multi-account check in EVERY
+// rendered message row, and the whole sidebar tree. Comparing first and writing
+// only on a real change turns those storms into no-ops; when folders genuinely
+// change (unread counts), merging by id keeps the row objects so only the
+// folders that actually moved re-render.
+let _acctSig = null;
+let _folderSig = null;
 export async function loadAccountsAndFolders() {
-  app.accounts = await accounts.list();
-  app.folders = await folders.list();
+  const [acctList, folderList] = await Promise.all([accounts.list(), folders.list()]);
+  const acctSig = JSON.stringify(acctList);
+  if (acctSig !== _acctSig) { _acctSig = acctSig; app.accounts = acctList; }
+  const folderSig = JSON.stringify(folderList);
+  if (folderSig !== _folderSig) {
+    _folderSig = folderSig;
+    app.folders = mergeById(app.folders, folderList);
+  }
   updateBadge();
   // Default selection on first load.
   if (app.selectedFolderId === null && app.selectedKind === "folder") {
@@ -971,12 +1000,33 @@ export async function muteSender(message) {
   catch (e) { notify("Couldn't mute", "error"); refreshMessages({ background: true }); }
 }
 
+let syncFailsafe = null;
+
+/** Clear the "Syncing…" state once every account we asked has reported back. */
+function settleSync(accountId) {
+  if (accountId != null) {
+    app.syncPendingIds = app.syncPendingIds.filter((id) => id !== accountId);
+  }
+  if (!app.syncPendingIds.length) {
+    app.syncing = false;
+    if (syncFailsafe) { clearTimeout(syncFailsafe); syncFailsafe = null; }
+  }
+}
+
 export async function syncAllAccounts() {
   // No accounts → no sync:done event will ever clear the flag; don't set it.
   if (!app.accounts.length) return;
+  // Track every account we asked, and clear the spinner only when they've ALL
+  // reported. Clearing it on the first sync:done to arrive (from any account,
+  // or from an unrelated queue flush) is what made a manual sync claim success
+  // while the mailbox the user was watching hadn't been fetched yet.
+  app.syncPendingIds = app.accounts.map((a) => a.id);
   app.syncing = true;
-  for (const a of app.accounts) { try { await accounts.sync(a.id); } catch {} }
-  notify("Syncing…");
+  if (syncFailsafe) clearTimeout(syncFailsafe);
+  // Failsafe: never leave the button stuck if an event goes missing.
+  syncFailsafe = setTimeout(() => { app.syncPendingIds = []; settleSync(null); }, 120000);
+  for (const a of app.accounts) { try { await accounts.sync(a.id); } catch { settleSync(a.id); } }
+  notify(t("nav.syncing"));
 }
 
 /** Snooze preset times relative to now. */
@@ -1050,6 +1100,17 @@ export async function snoozeMessage(message, untilISO, presence = false) {
     notify("Couldn't snooze", "error");
     refreshMessages({ background: true });
   }
+}
+
+// Views whose messages you WROTE. The "sender" of every row is your own
+// identity, so anything that ranks or badges a row by its sender is meaningless
+// here - and actively harmful: marking your own address a VIP floated an entire
+// sent folder above everything else, burying newest-first ordering.
+const OUTGOING_KINDS = new Set(["sent", "drafts", "scheduled"]);
+export function isOutgoingView() {
+  return OUTGOING_KINDS.has(app.selectedKind)
+    || (app.selectedKind === "folder" && (app.selectedFolderRole === "sent"
+                                          || app.selectedFolderRole === "drafts"));
 }
 
 export function isVip(addr) {
@@ -1234,6 +1295,11 @@ async function fireReminder(e, min) {
         location: e.location || "",
         minutes: min,
         label: _remindLabel(min),
+        // The video-call link, already dug out of the invite by the backend
+        // (app/sync/conferencing.py) - so the popup can offer one Join button
+        // instead of sending you into the invite to hunt for the URL.
+        joinUrl: e.join_url || "",
+        joinLabel: e.join_label || "",
         // Identities the popup echoes back with its snooze/mute action.
         key: _eventKey(e),
         nameKey: _nameKey(e),
@@ -1244,13 +1310,23 @@ async function fireReminder(e, min) {
       const url = `${location.pathname}${location.search}#reminder`;
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
       new WebviewWindow(`reminder-${e.id}-${min}`, {
-        url, title: "Reminder", width: 380, height: 300,
+        url, title: "Reminder", width: 380, height: seed.joinUrl ? 340 : 300,
         resizable: false, alwaysOnTop: true, focus: true, skipTaskbar: false,
       });
       return;
     } catch { /* fall through to a notification */ }
   }
-  sendNative(e.summary || "Event", `Starts ${body}`);
+  const join = e.join_url || "";
+  const label = e.join_label || "";
+  sendNative(e.summary || "Event",
+             `Starts ${body}${label ? " · " + label : ""}`);
+  // A desktop notification can't carry a button, and the reminder popup (which
+  // can) is either turned off or unavailable on this path - so put the Join
+  // within one click inside the app instead of nowhere at all.
+  if (join) {
+    notify(e.summary || "Event", "info", null,
+           { label: t("cal.remJoin", { app: label }), run: () => openExternal(join) });
+  }
 }
 
 // Open a file in the isolated WebAssembly sandbox window. The bytes are handed
@@ -1501,6 +1577,21 @@ export function openMessageById(id) {
   const m = app.messages.find((x) => x.id === id);
   if (m) setMessageSeen(m, true);
   else messages.setSeen(id, true).catch(() => {});
+}
+
+// Row-level account lookup. Every message row needs its account's colour; doing
+// app.accounts.find() per row is a scan per row per render. Cache a Map and
+// rebuild it only when the accounts array itself changes (still reactive, since
+// reading app.accounts is what registers the dependency).
+let _acctMapSrc = null;
+let _acctMap = new Map();
+export function accountFor(id) {
+  const list = app.accounts;
+  if (_acctMapSrc !== list) {
+    _acctMapSrc = list;
+    _acctMap = new Map((list || []).map((a) => [a.id, a]));
+  }
+  return _acctMap.get(id) || null;
 }
 
 // Merge a freshly-fetched list into an existing one WITHOUT swapping every row
@@ -1942,26 +2033,41 @@ export async function testNotification() {
   return ok ? { ok: true } : { ok: false, reason: "error" };
 }
 
+// A sync cycle emits one sync:done PER ACCOUNT. Acting on each of them ran the
+// whole refresh chain (accounts + folders + message list + smart-group counts +
+// a refetch of every expanded category card) once per account - six mailboxes
+// meant six storms of requests and six full list rebuilds, back to back, which
+// is what made the UI hitch every cycle. Coalesce the burst into one refresh.
+// The spinner bookkeeping and notifications stay per-event; only the data
+// reload is debounced.
+const VIEW_REFRESH_MS = 250;
+let _viewRefreshTimer = null;
+function scheduleViewRefresh() {
+  clearTimeout(_viewRefreshTimer);
+  _viewRefreshTimer = setTimeout(() => {
+    _viewRefreshTimer = null;
+    loadAccountsAndFolders();
+    refreshMessages({ background: true });   // background: don't blank the open list
+    app.syncTick = (app.syncTick || 0) + 1;  // views (Home, Calendar, open cards) refresh
+  }, VIEW_REFRESH_MS);
+}
+
 let disconnect = null;
 export function startEvents() {
   if (disconnect) return;
   // Events emitted while the socket was down (backend restart, network blip)
   // are gone - treat every reconnect as a missed sync:done and catch up.
   const onReconnect = () => {
-    loadAccountsAndFolders();
-    refreshMessages({ background: true });
+    scheduleViewRefresh();
     refreshQueue();
-    app.syncTick = (app.syncTick || 0) + 1;
+    // Any sync:done we were waiting on was emitted while the socket was down.
+    app.syncPendingIds = [];
+    settleSync(null);
   };
   disconnect = connectEvents((ev) => {
     if (ev.event === "sync:done") {
-      app.syncing = false;
-      loadAccountsAndFolders();
-      // Background refresh: don't blank the list the user is looking at.
-      refreshMessages({ background: true });
-      // Bump a tick so other views (Home/Dashboard, Calendar) can refresh live
-      // when new mail lands, instead of only updating on navigation.
-      app.syncTick = (app.syncTick || 0) + 1;
+      settleSync(ev.payload?.account_id ?? null);
+      scheduleViewRefresh();
       // `notify` = genuinely notify-worthy new inbox mail (unread, survived
       // rules, not notification-muted). Older payloads without it fall back to
       // `new` only when a preview exists, so we never fire an empty popup.
@@ -1971,7 +2077,11 @@ export function startEvents() {
         desktopNotify(ev.payload.preview, n);
       }
     } else if (ev.event === "sync:error") {
-      app.syncing = false;
+      settleSync(ev.payload?.account_id ?? null);
+    } else if (ev.event === "queue:flushed") {
+      // Queued moves/sends reached the server. Refresh the lists, but leave the
+      // sync state alone - this is not a completed mailbox sync.
+      scheduleViewRefresh();
     } else if (ev.event === "queue") {
       app.queuePending = ev.payload?.pending ?? 0;
       app.queueFailed = ev.payload?.failed ?? 0;

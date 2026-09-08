@@ -145,22 +145,38 @@ class ImapSmtpProvider:
         except Exception:
             return None
 
-    def fetch_headers(self, folder_path: str, min_uid: int = 1,
-                      max_uid: int | None = None, limit: int | None = None) -> list[HeaderInfo]:
+    def search_uids(self, folder_path: str, min_uid: int = 1,
+                    max_uid: int | None = None) -> list[int]:
+        """Every UID in a range, oldest -> newest. One SEARCH; the caller decides
+        how to window it. Kept separate from fetch_headers so a caller that must
+        page a whole range contiguously (catching up after the app was closed)
+        can see how much is actually there instead of silently taking a slice."""
         client = self._imap()
         client.select_folder(folder_path, readonly=True)
         hi = "*" if max_uid is None else str(max_uid)
         uids = client.search(["UID", f"{min_uid}:{hi}"])
-        # search with min_uid:* always returns at least the last message; filter
-        # to the real range so a backfill window can't spill past its bounds.
-        uids = [u for u in uids if u >= min_uid and (max_uid is None or u <= max_uid)]
+        # `min_uid:*` always returns at least the last message even when it's
+        # below min_uid, so filter to the real range.
+        return sorted(u for u in uids
+                      if u >= min_uid and (max_uid is None or u <= max_uid))
+
+    def fetch_headers(self, folder_path: str, min_uid: int = 1,
+                      max_uid: int | None = None, limit: int | None = None) -> list[HeaderInfo]:
+        uids = self.search_uids(folder_path, min_uid=min_uid, max_uid=max_uid)
         if limit:
             # Newest `limit` UIDs in the range - for backfill that's the window
             # just below the current cursor, so paging walks steadily older.
-            uids = sorted(uids)[-limit:]
+            uids = uids[-limit:]
+        return self.fetch_headers_for(folder_path, uids)
+
+    def fetch_headers_for(self, folder_path: str, uids: list[int]) -> list[HeaderInfo]:
+        """Headers for an explicit UID list (one FETCH)."""
         if not uids:
             return []
-        data = client.fetch(uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE"])
+        client = self._imap()
+        client.select_folder(folder_path, readonly=True)
+        data = client.fetch(uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE",
+                                   "INTERNALDATE"])
         out: list[HeaderInfo] = []
         for uid, info in data.items():
             env = info.get(b"ENVELOPE")
@@ -174,6 +190,14 @@ class ImapSmtpProvider:
             irt = getattr(env, "in_reply_to", None)
             irt = irt.decode("utf-8", "replace") if isinstance(irt, bytes) else (irt or "")
             when = env.date if isinstance(env.date, datetime) else None
+            if when is None:
+                # No Date header, or one imapclient couldn't parse (it returns
+                # None instead of raising). Fall back to the server's
+                # INTERNALDATE - otherwise the row is stored with date=NULL and
+                # sorts to the very bottom of every date-ordered list, i.e. the
+                # message is invisible in the UI. This is what hid sent copies.
+                idate = info.get(b"INTERNALDATE")
+                when = idate if isinstance(idate, datetime) else None
             flags = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
             out.append(HeaderInfo(
                 uid=uid, message_id=msg_id, subject=subject,
@@ -188,14 +212,24 @@ class ImapSmtpProvider:
     def fetch_flags(self, folder_path: str, uids: list[int]) -> dict[int, list[str]]:
         """Just the FLAGS for known UIDs - used to resync read/done state that
         changed on another device, without re-downloading whole messages."""
+        return {uid: flags for uid, (flags, _d) in
+                self.fetch_flags_dates(folder_path, uids).items()}
+
+    def fetch_flags_dates(self, folder_path: str,
+                          uids: list[int]) -> dict[int, tuple[list[str], datetime | None]]:
+        """FLAGS + INTERNALDATE for known UIDs, in one round trip. The date rides
+        along so the sync can heal rows stored with no date (an absent or
+        unparseable Date header) without a second fetch."""
         if not uids:
             return {}
         client = self._imap()
         client.select_folder(folder_path, readonly=True)
-        data = client.fetch(uids, ["FLAGS"])
-        out: dict[int, list[str]] = {}
+        data = client.fetch(uids, ["FLAGS", "INTERNALDATE"])
+        out: dict[int, tuple[list[str], datetime | None]] = {}
         for uid, info in data.items():
-            out[uid] = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
+            flags = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
+            idate = info.get(b"INTERNALDATE")
+            out[uid] = (flags, idate if isinstance(idate, datetime) else None)
         return out
 
     def fetch_raw(self, folder_path: str, uid: int) -> bytes:

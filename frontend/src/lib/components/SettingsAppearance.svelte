@@ -310,6 +310,19 @@
       <span class="val">{app.settings.radius}px</span>
     </label>
     <div class="field">
+      <b>Translucent window</b>
+      <span class="fhint">Let the Windows backdrop (Mica) shimmer through the dark ground behind the panes. Turn off if you prefer a solid background or notice slower rendering.</span>
+      <div class="seg">
+        {#each [
+          { v: true, t: "Translucent" },
+          { v: false, t: "Solid" },
+        ] as o}
+          <button class="segbtn" class:on={(app.settings.glassBg !== false) === o.v}
+            onclick={() => { saveSettings({ glassBg: o.v }); applyTheme(); }}>{o.t}</button>
+        {/each}
+      </div>
+    </div>
+    <div class="field">
       <b>Message density</b>
       <span class="fhint">How tightly rows are packed in the message list.</span>
       <div class="seg">

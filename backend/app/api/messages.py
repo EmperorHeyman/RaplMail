@@ -456,14 +456,19 @@ def smart_groups(role: FolderRole | None = None, folder_id: int | None = None,
                    for addr, nm, sc in sender_rows]
         # Newest messages first - what the card shows "at a glance" so it reflects
         # what just arrived, not the most prolific (and often oldest) senders.
+        # `id` matters beyond display: the list uses it to keep the card of the
+        # message you're reading pinned in place. `snippet`/`is_seen` feed the
+        # hover peek, which shows the newest mail without expanding the group.
         recent_rows = session.exec(
-            scoped(select(Message.from_addr, Message.from_name, Message.subject, Message.date))
-            .where(Message.category == cat).order_by(Message.date.desc()).limit(4)
+            scoped(select(Message.id, Message.from_addr, Message.from_name, Message.subject,
+                          Message.date, Message.snippet, Message.is_seen))
+            .where(Message.category == cat).order_by(Message.date.desc()).limit(5)
         ).all()
-        recent = [{"email": addr, "name": decode_mime_words(nm) or addr,
+        recent = [{"id": mid, "email": addr, "name": decode_mime_words(nm) or addr,
                    "subject": decode_mime_words(subj) or "(no subject)",
-                   "date": dt.isoformat() if dt else None}
-                  for addr, nm, subj, dt in recent_rows]
+                   "date": dt.isoformat() if dt else None,
+                   "snippet": snip or "", "is_seen": bool(seen)}
+                  for mid, addr, nm, subj, dt, snip, seen in recent_rows]
         out[cat] = {
             "count": cnt,
             "unread": int(unread_map.get(cat, 0)),
@@ -1578,6 +1583,9 @@ def process_action_queue() -> int:
             elif kind == "send":
                 from app.api.compose import _deliver_blocking
                 _deliver_blocking(payload)
+            elif kind == "append_sent":
+                from app.api.compose import _append_sent_blocking
+                _append_sent_blocking(payload)
         except Exception as exc:
             ok, err = False, str(exc)
         with Session(get_engine()) as session:

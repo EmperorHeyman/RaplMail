@@ -160,6 +160,9 @@ export const icons = {
   // Categories
   bell: line('<path d="M6 9a6 6 0 0 1 12 0c0 4.5 1.8 5.5 1.8 5.5H4.2S6 13.5 6 9z"/><path d="M10 18.5a2 2 0 0 0 4 0"/>'),
   chat: line('<path d="M5 5h14a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z"/>'),
+  // Join-a-video-call: camcorder body + lens flare. Used by the meeting card and
+  // the reminder popup's Join button.
+  video: line('<rect x="3" y="6.5" width="12" height="11" rx="2"/><path d="M15 10.5 21 7.5v9l-6-3z"/>'),
   tag: line('<path d="M3.5 11.5V5a1.5 1.5 0 0 1 1.5-1.5h6.5L20 12l-8 8z"/><circle cx="7.7" cy="7.7" r="1.3"/>'),
   calendar: line('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'),
 

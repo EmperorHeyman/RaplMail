@@ -1,8 +1,9 @@
 <script>
   import { onMount } from "svelte";
   import { app, notify, saveSettings } from "../store.svelte.js";
-  import { calendar } from "../api.js";
+  import { calendar, openExternal } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let cursor = $state(new Date());   // any day within the visible month/week
   let events = $state([]);
@@ -337,7 +338,15 @@
         {/if}
         <div class="modal-btns">
           <button class="btn danger" onclick={() => { const e = detailEv; detailEv = null; deleteEvent(e); }}>{@html icons.trash} Delete</button>
-          <button class="btn primary" onclick={() => (detailEv = null)}>Close</button>
+          {#if detailEv.join_url && !detailEv.cancelled}
+            <button class="btn primary" title={detailEv.join_url}
+                    onclick={() => openExternal(detailEv.join_url)}>
+              {@html icons.video} {t("reader.meetJoin", { app: detailEv.join_label || "" })}
+            </button>
+            <button class="btn" onclick={() => (detailEv = null)}>Close</button>
+          {:else}
+            <button class="btn primary" onclick={() => (detailEv = null)}>Close</button>
+          {/if}
         </div>
       </div>
     </div>

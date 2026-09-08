@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from app.api.deps import verify_token
 from app.core.db import get_engine, get_session
 from app.models import Account, CalendarEvent, Folder, Message
+from app.sync import conferencing
 
 router = APIRouter(prefix="/calendar", tags=["calendar"], dependencies=[Depends(verify_token)])
 
@@ -37,6 +38,12 @@ class EventOut(BaseModel):
     status: str
     cancelled: bool
     color: str = ""
+    # Video-call link dug out of the event's location/description, so the
+    # calendar and the reminder popup can offer a Join button instead of making
+    # you open the invite and hunt through the boilerplate for it.
+    join_url: str = ""
+    join_kind: str = ""
+    join_label: str = ""
 
     # Event times are stored normalized to UTC, but SQLite drops the tzinfo so
     # they come back naive. Emit them with an explicit UTC offset so the frontend's
@@ -161,7 +168,25 @@ def list_events(start: datetime | None = None, end: datetime | None = None,
         q = q.where((CalendarEvent.end >= start) | (CalendarEvent.start >= start))
     if end is not None:
         q = q.where(CalendarEvent.start <= end)
-    return list(session.exec(q.order_by(CalendarEvent.start)))
+    return [_event_out(e) for e in session.exec(q.order_by(CalendarEvent.start))]
+
+
+def _event_out(ev: CalendarEvent) -> EventOut:
+    """Serialize an event, resolving its join link on the way out.
+
+    Derived rather than stored: the detector improves (new Teams domains, new
+    providers) and a stored column would keep serving whatever the parser knew
+    on the day the invite arrived.
+    """
+    join = conferencing.detect(ev.location, ev.description) or {}
+    return EventOut(
+        id=ev.id, account_id=ev.account_id, message_id=ev.message_id, uid=ev.uid,
+        summary=ev.summary, location=ev.location, organizer=ev.organizer,
+        start=ev.start, end=ev.end, all_day=ev.all_day, status=ev.status,
+        cancelled=ev.cancelled, color=ev.color,
+        join_url=join.get("url", ""), join_kind=join.get("kind", ""),
+        join_label=join.get("label", ""),
+    )
 
 
 class ScanResult(BaseModel):

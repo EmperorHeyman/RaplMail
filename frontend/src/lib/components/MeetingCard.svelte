@@ -109,6 +109,12 @@
     </div>
 
     <div class="acts">
+      {#if meeting.join_url && !cancelled}
+        <button class="mact join" onclick={() => openExternal(meeting.join_url)}
+                title={meeting.join_url}>
+          {@html icons.video} {t("reader.meetJoin", { app: meeting.join_label })}
+        </button>
+      {/if}
       {#if meeting.event_id}
         <button class="mact" onclick={showInCalendar}>{@html icons.calendar} {t("reader.meetShowInCalendar")}</button>
       {/if}
@@ -169,6 +175,18 @@
     cursor: pointer; transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
   }
   .mact:hover { border-color: var(--accent); background: var(--surface-3); }
+  /* The join link is the one thing you actually want at 09:59, so it outranks
+     "show in calendar" visually instead of sitting in the same grey row. */
+  .mact.join {
+    color: #fff; font-weight: 600;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff), var(--accent));
+    border-color: color-mix(in srgb, var(--accent) 70%, #000 8%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--shadow-sm);
+  }
+  .mact.join:hover {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 94%, #fff), var(--accent-hover));
+    border-color: color-mix(in srgb, var(--accent) 70%, #000 8%);
+  }
   .mact :global(svg) { width: 14px; height: 14px; }
 
   @media (max-width: 720px) {

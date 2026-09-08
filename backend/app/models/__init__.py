@@ -240,7 +240,7 @@ class ActionQueue(SQLModel, table=True):
     """Offline-resilient mutation queue. The UI applies changes instantly; a
     background worker flushes these to IMAP/SMTP and retries until it succeeds."""
     id: int | None = Field(default=None, primary_key=True)
-    kind: str                    # "archive" | "delete" | "send"
+    kind: str                    # "archive" | "delete" | "move" | "send" | "append_sent"
     payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
     status: str = Field(default="pending", index=True)  # pending | failed
     attempts: int = 0

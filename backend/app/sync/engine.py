@@ -35,7 +35,33 @@ from app.sync.rules import MessageFields, first_matching_action
 log = logging.getLogger("raplmail.sync")
 
 SYNC_INTERVAL_SECONDS = 60   # fallback poll; IMAP IDLE pushes new mail sooner
-HEADERS_PER_FOLDER_LIMIT = 500  # cap on a single incremental pull
+HEADERS_PER_FOLDER_LIMIT = 500  # messages per FETCH round trip
+
+# --- IMAP IDLE tuning -------------------------------------------------------
+IDLE_POLL_SECONDS = 60        # how long one idle_check() waits for server chatter
+IDLE_REFRESH_SECONDS = 14 * 60  # re-issue IDLE well inside RFC 2177's 29 min cap
+IDLE_DEAD_WAIT_SECONDS = 1.0  # an empty idle_check() faster than this = dead peer
+IDLE_DEAD_EMPTY_LIMIT = 3     # that many in a row before we rebuild the connection
+IDLE_RECONNECT_BACKOFF = 15   # seconds before a dropped watcher reconnects
+
+# Untagged statuses a server sends just to say it's still there. Anything else
+# (EXISTS/RECENT/FETCH/EXPUNGE/BYE/...) means something actually happened.
+_IDLE_KEEPALIVE_TOKENS = (b"OK", b"NO", b"BAD", b"PREAUTH")
+
+
+def _idle_is_interesting(responses) -> bool:
+    """True unless every IDLE response is just a server keepalive.
+
+    Servers ping an idling client with untagged "OK Still here" lines; treating
+    those as new mail cost a full account sweep every few minutes for nothing.
+    Anything we don't recognise still counts as interesting - a needless sync is
+    cheap, missed mail is not.
+    """
+    for resp in responses:
+        first = resp[0] if isinstance(resp, (tuple, list)) and resp else resp
+        if not (isinstance(first, bytes) and first.upper() in _IDLE_KEEPALIVE_TOKENS):
+            return True
+    return False
 
 
 def _make_idle_probe():
@@ -111,6 +137,10 @@ class SyncManager:
     def __init__(self, hub: WebSocketHub):
         self._hub = hub
         self._executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="sync")
+        # History paging gets its own (small) pool: it holds a worker for its
+        # whole 20s budget, so sharing the sync pool let it starve a manual or
+        # IDLE-triggered sync of a thread.
+        self._backfill_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="backfill")
         self._task: asyncio.Task | None = None
         self._stopping = asyncio.Event()
         self._wake = asyncio.Event()
@@ -122,8 +152,14 @@ class SyncManager:
         self._presence_thread: threading.Thread | None = None
         # Per-account live health for the dashboard (in-memory; reset on restart).
         self._health: dict[int, dict] = {}
+        # Accounts with a sync in flight, so a manual "Sync" or an IDLE push can
+        # start one immediately without ever double-syncing the same mailbox.
+        self._inflight: set[int] = set()
+        self._tasks: set[asyncio.Task] = set()   # strong refs for fire-and-forget syncs
         # Morning-digest scheduler: the local date we last delivered a brief.
         self._last_digest_day: str | None = None
+        # folder id -> monotonic time of its last flag reconcile (see _resync_flags).
+        self._last_flag_sync: dict[int, float] = {}
 
     def _set_health(self, account_id: int, **fields) -> None:
         self._health.setdefault(account_id, {}).update(fields)
@@ -154,7 +190,10 @@ class SyncManager:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        for task in list(self._tasks):
+            task.cancel()
         self._executor.shutdown(wait=False, cancel_futures=True)
+        self._backfill_executor.shutdown(wait=False, cancel_futures=True)
 
     def request_sync(self) -> None:
         """Wake the loop to sync immediately (e.g. after adding an account)."""
@@ -165,14 +204,55 @@ class SyncManager:
         if self._loop_ref:
             self._loop_ref.call_soon_threadsafe(self._wake.set)
 
+    def request_account_sync(self, account_id: int) -> None:
+        """Sync ONE account right now, without waiting for the poll loop.
+
+        Waking the loop (``request_sync``) only takes effect at the *end* of the
+        current cycle - and a cycle includes every account, every folder, plus
+        the history backfill. Pressing "Sync" therefore did nothing visible for
+        minutes. This starts that account's sync as its own task immediately.
+        """
+        self._spawn_account_sync(account_id)
+
+    def request_account_sync_threadsafe(self, account_id: int) -> None:
+        """As above, callable from a worker thread (the IDLE watchers)."""
+        loop = self._loop_ref
+        if loop is None:
+            self.request_sync_threadsafe()
+            return
+        loop.call_soon_threadsafe(self._spawn_account_sync, account_id)
+
+    def _spawn_account_sync(self, account_id: int) -> None:
+        """Fire-and-forget sync of one account (must run on the event loop)."""
+        if self._stopping.is_set():
+            return
+        if account_id in self._inflight:
+            # Already syncing - make sure another pass follows it, so mail that
+            # landed after the in-flight sync read the folder isn't missed.
+            self._wake.set()
+            return
+        task = asyncio.ensure_future(self.sync_account(account_id))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
     def _ensure_idle(self, account_ids: list[int]) -> None:
-        """Start an IDLE watcher thread per account; reap watchers for gone accounts."""
+        """Start an IDLE watcher thread per account; reap watchers for gone accounts.
+
+        A watcher that exited (account disabled at the time, credentials not yet
+        unlocked, a giving-up error path) used to leave its dict entry behind
+        forever, so it was never restarted and that mailbox silently lost push -
+        it only ever refreshed on the 60s poll. Respawn anything not alive.
+        """
         for aid in account_ids:
-            if aid not in self._idle:
-                t = threading.Thread(target=self._idle_watch, args=(aid,), daemon=True,
-                                     name=f"idle-{aid}")
-                self._idle[aid] = {"thread": t}
-                t.start()
+            cur = self._idle.get(aid)
+            if cur is not None:
+                thread = cur.get("thread")
+                if cur.get("unsupported") or (thread is not None and thread.is_alive()):
+                    continue   # healthy, or the server has no IDLE - leave it alone
+            t = threading.Thread(target=self._idle_watch, args=(aid,), daemon=True,
+                                 name=f"idle-{aid}")
+            self._idle[aid] = {"thread": t}
+            t.start()
         for aid in list(self._idle):
             if aid not in account_ids:
                 self._idle.pop(aid, None)  # thread exits on next account check
@@ -190,25 +270,66 @@ class SyncManager:
                 provider = build_provider(account)
                 client = provider._imap()
                 if not client.has_capability("IDLE"):
+                    if account_id in self._idle:
+                        self._idle[account_id]["unsupported"] = True
                     return  # server doesn't support IDLE; rely on polling
                 client.select_folder("INBOX")
                 client.idle()
                 if account_id in self._idle:
                     self._idle[account_id]["connected"] = True
+                idle_since = time.monotonic()
+                stale = 0
                 while not self._idle_stop.is_set() and account_id in self._idle:
-                    responses = client.idle_check(timeout=60)
+                    t0 = time.monotonic()
+                    responses = client.idle_check(timeout=IDLE_POLL_SECONDS)
+                    waited = time.monotonic() - t0
                     if responses:
+                        stale = 0
+                        if _idle_is_interesting(responses):
+                            client.idle_done()
+                            # Sync THIS account now rather than only nudging the poll
+                            # loop - a wake is not acted on until the current cycle
+                            # (all accounts + backfill) finishes, which is what made
+                            # pushed mail show up minutes late or not at all.
+                            self.request_account_sync_threadsafe(account_id)
+                            client.idle()
+                            idle_since = time.monotonic()
+                        continue
+                    if waited < IDLE_DEAD_WAIT_SECONDS:
+                        # select() said the socket was readable but nothing
+                        # parseable came out of it. That is a half-closed peer,
+                        # and a half-closed socket stays readable forever:
+                        # imapclient swallows the EOF and hands back [], so this
+                        # loop used to spin a whole CPU core per dead connection,
+                        # silently, with idle_active still reported as "true".
+                        # Tear the connection down and rebuild it instead.
+                        stale += 1
+                        if stale >= IDLE_DEAD_EMPTY_LIMIT:
+                            raise ConnectionError(
+                                "IDLE connection went dead (server closed it)")
+                        continue
+                    stale = 0
+                    if time.monotonic() - idle_since >= IDLE_REFRESH_SECONDS:
+                        # RFC 2177 wants IDLE re-issued at least every 29 min.
+                        # Holding one open forever is what got us silently
+                        # dropped - and then spun - in the first place.
                         client.idle_done()
-                        self.request_sync_threadsafe()
                         client.idle()
+                        idle_since = time.monotonic()
                 try:
                     client.idle_done()
                 except Exception:
                     pass
-            except Exception:
                 if account_id in self._idle:
                     self._idle[account_id]["connected"] = False
-                self._idle_stop.wait(15)  # back off, then reconnect
+            except Exception as exc:
+                if account_id in self._idle:
+                    self._idle[account_id]["connected"] = False
+                # Logged, not swallowed: a watcher that reconnects in a loop is
+                # the symptom of a server dropping us, and it used to be
+                # completely invisible from the outside.
+                log.info("IDLE watcher for account %s reconnecting: %s", account_id, exc)
+                self._idle_stop.wait(IDLE_RECONNECT_BACKOFF)  # back off, then reconnect
             finally:
                 if provider:
                     try:
@@ -233,6 +354,10 @@ class SyncManager:
                 await self.sync_all()
             except Exception:
                 log.exception("sync_all failed")
+            try:
+                await self._backfill_tick()
+            except Exception:
+                log.exception("history backfill tick failed")
             try:
                 from app.providers.pool import pool
                 await asyncio.get_running_loop().run_in_executor(self._executor, pool.keepalive)
@@ -271,7 +396,11 @@ class SyncManager:
         counts = await loop.run_in_executor(self._executor, queue_counts)
         await self._hub.broadcast("queue", counts)
         if flushed:
-            await self._hub.broadcast("sync:done", {"new": 0})
+            # Its own event, NOT sync:done: the UI clears the "Syncing..." state
+            # on sync:done, so broadcasting it here (before sync_all had even
+            # started) is what made a manual sync report success instantly while
+            # nothing had been fetched yet.
+            await self._hub.broadcast("queue:flushed", {"count": flushed})
 
     def _digest_settings(self) -> tuple[bool, int, str]:
         from app.models import Setting
@@ -350,6 +479,53 @@ class SyncManager:
                 if embeddings.index_pending(session, limit=self.EMBED_BATCH) == 0:
                     break   # caught up (or backing off after a failure)
 
+    async def _backfill_tick(self) -> None:
+        """Page older history for every account that still has unpaged folders.
+
+        Runs as its own step, after the forward sync has already announced new
+        mail, so a long backfill delays history only - never arrival of new mail.
+        No-op unless the user turned full-history backfill on.
+        """
+        if not get_secret_store().is_unlocked:
+            return
+        from app.api.settings import _get_blob
+        with Session(get_engine()) as session:
+            if not _get_blob(session).get("backfillHistory"):
+                return
+            account_ids = list(session.exec(
+                select(Account.id).where(Account.enabled == True)))  # noqa: E712
+            pending = set(session.exec(
+                select(Folder.account_id).where(Folder.backfill_done == False)))  # noqa: E712
+        # Skip accounts with a live sync in flight: history paging is never
+        # urgent, and letting the two write the same folder rows from separate
+        # connections only creates avoidable contention.
+        todo = [aid for aid in account_ids if aid in pending and aid not in self._inflight]
+        if not todo:
+            return
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(*(
+            loop.run_in_executor(self._backfill_executor, self._backfill_account_blocking, aid)
+            for aid in todo), return_exceptions=True)
+
+    def _backfill_account_blocking(self, account_id: int) -> None:
+        """One account's history paging, on its own connection. Best-effort."""
+        from app.models import MutedThread
+        try:
+            with Session(get_engine()) as session:
+                account = session.get(Account, account_id)
+                if account is None or not account.enabled:
+                    return
+                muted = {r.thread_key: {p for p in (r.participants or "").split(",") if p}
+                         for r in session.exec(select(MutedThread))}
+                provider = build_provider(account)
+                try:
+                    self._backfill_account(session, account, provider, muted)
+                finally:
+                    provider.close()
+                session.commit()
+        except Exception:
+            log.exception("history backfill failed for account %s", account_id)
+
     async def sync_all(self) -> None:
         store = get_secret_store()
         if not store.is_unlocked:
@@ -362,6 +538,9 @@ class SyncManager:
         self._ensure_idle(account_ids)  # keep near-instant IDLE watchers in sync
 
     async def sync_account(self, account_id: int) -> None:
+        if account_id in self._inflight:
+            return   # already syncing this mailbox; don't double-fetch it
+        self._inflight.add(account_id)
         loop = asyncio.get_running_loop()
         now = datetime.now(timezone.utc).isoformat()
         self._set_health(account_id, last_attempt=now, status="syncing")
@@ -374,6 +553,8 @@ class SyncManager:
                              last_error_at=datetime.now(timezone.utc).isoformat())
             await self._hub.broadcast("sync:error", {"account_id": account_id})
             return
+        finally:
+            self._inflight.discard(account_id)
         log.info("sync ok: account=%s new=%s in %.1fs", account_id, counts.get("new", 0), time.monotonic() - t0)
         self._set_health(account_id, status="ok", last_sync=datetime.now(timezone.utc).isoformat(),
                          last_new=counts.get("new", 0), last_error=None)
@@ -421,6 +602,12 @@ class SyncManager:
                 for folder in folders:
                     try:
                         new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks)
+                        # Commit per folder, not once at the end: a failure late in
+                        # the sweep used to cost every earlier folder's new mail
+                        # (nothing was durable until the final commit), and a
+                        # flush error left the session unusable for the rest of
+                        # the sweep. Now each folder lands on its own.
+                        session.commit()
                     except IntegrityError:
                         # FK failure mid-sync - typically the account (or folder)
                         # was deleted while this sync was in flight. Roll back so
@@ -443,6 +630,9 @@ class SyncManager:
                         else:
                             # One odd folder shouldn't abort the whole account.
                             log.exception("folder sync failed: account %s folder %s", account_id, folder.path)
+                        # Drop whatever this folder left half-applied, so the
+                        # remaining folders start from a clean session.
+                        session.rollback()
                 # Device-to-device sync piggybacks on this account's live
                 # connection when it's the chosen carrier (best-effort; tick()
                 # swallows its own errors so it can't break the mail sync).
@@ -450,13 +640,11 @@ class SyncManager:
                 devicesync.tick(session, account, provider)
                 if webhook_url and hooks:
                     self._post_new_mail_webhook(webhook_url, hooks)
-                # Full-history backfill: page older mail into the cache while the
-                # connection is warm, if the user turned it on. Reuses this
-                # provider; best-effort so it can't break the forward sync.
-                try:
-                    self._backfill_account(session, account, provider, muted)
-                except Exception:
-                    log.exception("history backfill failed for account %s", account_id)
+                # NB: the full-history backfill used to run here, inside the
+                # forward sync. It has a 20s-per-account budget, and sync:done is
+                # only broadcast once this returns - so newly arrived mail sat in
+                # the DB, unannounced, for up to that long every cycle. It now
+                # runs as its own step after every account's forward sync.
             finally:
                 provider.close()
             session.commit()
@@ -509,13 +697,22 @@ class SyncManager:
             # invisible - never give it a Folder row (which would list it in the UI).
             if info.name == SYNC_FOLDER_DEFAULT or (info.path or "").endswith(SYNC_FOLDER_DEFAULT):
                 continue
+            role = FolderRole(info.role) if info.role in FolderRole._value2member_map_ else FolderRole.other
             folder = existing.get(info.path)
             if folder is None:
-                folder = Folder(account_id=account.id, name=info.name, path=info.path,
-                                role=FolderRole(info.role) if info.role in FolderRole._value2member_map_ else FolderRole.other)
+                folder = Folder(account_id=account.id, name=info.name, path=info.path, role=role)
                 session.add(folder)
             else:
                 folder.name = info.name
+                # Adopt a role the server now advertises. A folder first seen
+                # before the server exposed SPECIAL-USE was stored as "other"
+                # forever, and a Sent folder stuck on "other" means sent mail has
+                # nowhere to be filed and the Sent view is empty. Never downgrade
+                # a known role back to "other" - some servers report SPECIAL-USE
+                # inconsistently between LISTs.
+                if role != FolderRole.other and folder.role != role:
+                    log.info("folder %s role %s -> %s", info.path, folder.role, role)
+                    folder.role = role
         session.flush()
 
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
@@ -526,8 +723,30 @@ class SyncManager:
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
         ).one()
+        first_sync = max_uid is None
         min_uid = (max_uid or 0) + 1
-        headers = provider.fetch_headers(folder.path, min_uid=min_uid, limit=HEADERS_PER_FOLDER_LIMIT)
+        # Everything above the cursor, so we can see how far behind we are. Taking
+        # a blind newest-N slice here lost mail permanently: with >N new messages
+        # the cursor jumped to the top of the slice, and the UIDs below it were
+        # then invisible to the forward sync (which only looks above the cursor)
+        # AND to the history backfill (which only pages below the OLDEST cached
+        # UID) - a hole in the middle that nothing ever filled.
+        uids = provider.search_uids(folder.path, min_uid=min_uid)
+        if first_sync:
+            # Nothing cached yet: take the newest window and let the history
+            # backfill page downwards from there, as it's designed to.
+            uids = uids[-HEADERS_PER_FOLDER_LIMIT:]
+        elif len(uids) > self.CATCHUP_LIMIT:
+            # Absurdly far behind. Page the OLDEST ones first so the cursor
+            # advances contiguously and the rest is picked up next cycle - never
+            # skipped. Logged, because a bounded catch-up must not look complete.
+            log.warning("folder %s is %s messages behind; syncing the oldest %s this cycle",
+                        folder.path, len(uids), self.CATCHUP_LIMIT)
+            uids = uids[:self.CATCHUP_LIMIT]
+        headers = []
+        for i in range(0, len(uids), HEADERS_PER_FOLDER_LIMIT):
+            headers.extend(provider.fetch_headers_for(
+                folder.path, uids[i:i + HEADERS_PER_FOLDER_LIMIT]))
         new_count = 0
         for h in headers:
             if h.uid < min_uid:
@@ -582,6 +801,11 @@ class SyncManager:
         return new_count
 
     # --- full-history backfill ----------------------------------------------
+    # Ceiling on one folder's catch-up in a single cycle (in messages). Reached
+    # only after the app has been closed for a long time on a busy mailbox; the
+    # remainder is picked up by the following cycles, contiguously.
+    CATCHUP_LIMIT = 5000
+
     # Wall-clock budget for paging older mail per account per sync cycle. Paging
     # runs back-to-back windows (each HEADERS_PER_FOLDER_LIMIT messages) for this
     # long, then yields so the forward sync stays responsive. Higher = history
@@ -716,10 +940,29 @@ class SyncManager:
     # How many recent messages per folder to re-check FLAGS on each sync, so
     # read/done state changed on another device propagates here too.
     FLAG_RESYNC_WINDOW = 400
+    # Roles whose flags are reconciled on every single sync. Everything else is
+    # reconciled at most this often - see _resync_flags.
+    FLAG_RESYNC_ALWAYS = (FolderRole.inbox, FolderRole.sent)
+    FLAG_RESYNC_OTHER_SECONDS = 300
 
     def _resync_flags(self, session: Session, account: Account, folder: Folder, provider) -> None:
         """Pull FLAGS for recent existing messages and reconcile seen/done state
-        that may have changed on another device (e.g. the RaplMailDone keyword)."""
+        that may have changed on another device (e.g. the RaplMailDone keyword).
+
+        This is the most expensive thing a sync does: a SELECT + a FETCH of up to
+        FLAG_RESYNC_WINDOW messages, per folder, per cycle. Across every folder of
+        every account that ran into thousands of FLAG fetches a cycle and is what
+        made a full cycle take minutes - which in turn delayed new mail, since a
+        sync request is only picked up between cycles. The inbox and Sent (the
+        two the user actually watches) still reconcile every time; the rest do so
+        on a timer, so read state elsewhere still converges, just not every 60s.
+        """
+        now = time.monotonic()
+        if folder.role not in self.FLAG_RESYNC_ALWAYS:
+            last = self._last_flag_sync.get(folder.id, 0.0)
+            if now - last < self.FLAG_RESYNC_OTHER_SECONDS:
+                return
+        self._last_flag_sync[folder.id] = now
         # Flag reconcile touches only flag columns - loading the cached bodies
         # for 400 rows per folder per cycle was the sync loop's biggest churn.
         from sqlalchemy.orm import defer
@@ -731,13 +974,20 @@ class SyncManager:
         if not rows:
             return
         try:
-            flagmap = provider.fetch_flags(folder.path, [r.uid for r in rows if r.uid])
+            flagmap = provider.fetch_flags_dates(folder.path, [r.uid for r in rows if r.uid])
         except Exception:
             return
         for m in rows:
-            flags = flagmap.get(m.uid)
-            if flags is None:
+            entry = flagmap.get(m.uid)
+            if entry is None:
                 continue
+            flags, idate = entry
+            # Heal a row that was stored with no date (absent or unparseable Date
+            # header). Such a row sorts below everything in the date-ordered list,
+            # i.e. it's invisible - INTERNALDATE puts it back where it belongs.
+            if m.date is None and idate is not None:
+                m.date = idate.replace(tzinfo=None) if idate.tzinfo else idate
+                session.add(m)
             # \Seen is a standard flag every server keeps, and we push local
             # changes too - so the server copy is authoritative both ways and
             # read state converges across devices.

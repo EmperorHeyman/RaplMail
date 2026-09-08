@@ -141,6 +141,7 @@ export default {
     "list.showNewTip": "Show just the new mail in this group",
     "list.doneAll": "Done all",
     "list.doneAllTip": "Mark this whole group done",
+    "list.peekEmpty": "Nothing left in this group",
   },
   cs: {
     // Opakující se krátká slova akcí.
@@ -280,5 +281,6 @@ export default {
     "list.showNewTip": "Zobrazit jen novou poštu v této skupině",
     "list.doneAll": "Vyřídit vše",
     "list.doneAllTip": "Označit celou skupinu jako hotovou",
+    "list.peekEmpty": "V této skupině nic nezbývá",
   },
 };

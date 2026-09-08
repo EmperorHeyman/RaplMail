@@ -9,6 +9,9 @@
     <div class="toast" class:error={app.toast.kind === "error"} transition:fly={{ y: 20, duration: 180 }}>
       <span>{app.toast.message}</span>
       {#if app.toast.undo}<button class="undo" onclick={runUndo}>{t("cmd.undo")}</button>{/if}
+      {#if app.toast.action}
+        <button class="act" onclick={app.toast.action.run}>{app.toast.action.label}</button>
+      {/if}
     </div>
   {/key}
 {/if}
@@ -24,4 +27,6 @@
   .toast.error { background: color-mix(in srgb, var(--danger) 16%, var(--surface-3)); border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: color-mix(in srgb, var(--danger) 45%, var(--text)); }
   .undo { color: var(--accent); font-weight: 700; padding: 2px 8px; border-radius: 999px; transition: background var(--t-fast) var(--ease); }
   .undo:hover { background: var(--accent-soft-2); }
+  .act { color: #fff; background: var(--accent); font-weight: 700; padding: 4px 12px; border-radius: 999px; }
+  .act:hover { filter: brightness(1.08); }
 </style>

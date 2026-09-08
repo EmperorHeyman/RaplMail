@@ -1,5 +1,5 @@
 <script>
-  import { app } from "../store.svelte.js";
+  import { app, accountFor } from "../store.svelte.js";
   import { listTime, relativeTime } from "../time.svelte.js";
   import { icons } from "../icons.js";
   import { avatarUrl } from "../api.js";
@@ -9,7 +9,7 @@
   const msgCount = $derived(msgs.length);
   const anyUnread = $derived(msgs.some((m) => !m.is_seen && !m.is_done));
   const initial = $derived(latest ? ((latest.from_name || latest.from_addr || "?").trim()[0]?.toUpperCase() || "?") : "?");
-  const acctColor = $derived(latest ? (app.accounts.find((a) => a.id === latest.account_id)?.color || null) : null);
+  const acctColor = $derived(latest ? (accountFor(latest.account_id)?.color || null) : null);
   const multiAcct = $derived(app.accounts.length > 1);
   let imgFailed = $state(false);
   const avSrc = $derived(latest && app.settings.senderAvatars !== false ? avatarUrl(latest.from_addr) : "");

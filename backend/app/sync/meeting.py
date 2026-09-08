@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from sqlmodel import Session, select
 
 from app.models import CalendarEvent, Message
+from app.sync import conferencing
 
 # Reply/forward noise, stripped before (and while) looking for a meeting prefix
 # so "FW: Canceled: Standup" still reads as a cancellation of "Standup".
@@ -153,7 +154,13 @@ def _match_calendar(session: Session, subject: str, when: datetime) -> tuple[Cal
 
 
 def _card(kind: str, source: str, ev: CalendarEvent | None, occurrences: int,
-          link: str, link_only: bool) -> dict:
+          link: str, link_only: bool, html: str = "") -> dict:
+    # The join link, dug out of wherever the invite hid it. LOCATION first (when
+    # a server puts it there it's authoritative), then the ICS DESCRIPTION, then
+    # the mail body itself - which is the only source for a link-only invite
+    # that never carried an ics part.
+    join = conferencing.detect(ev.location if ev else "",
+                               ev.description if ev else "", html) or {}
     return {
         "kind": kind,
         "source": source,
@@ -167,6 +174,11 @@ def _card(kind: str, source: str, ev: CalendarEvent | None, occurrences: int,
         "occurrences": occurrences,
         "owa_url": link,
         "link_only": link_only,
+        # "" when there's nothing to join (a room-only meeting) - the UI hides
+        # the button rather than offering a dead one.
+        "join_url": join.get("url", ""),
+        "join_kind": join.get("kind", ""),
+        "join_label": join.get("label", ""),
     }
 
 
@@ -191,7 +203,7 @@ def resolve(session: Session, msg: Message, html: str = "") -> dict | None:
     if ev is not None:
         if not kind:
             kind = "cancel" if ev.cancelled else ("reply" if ev.method == "REPLY" else "invite")
-        return _card(kind, "mail", ev, len(own), link, link_only)
+        return _card(kind, "mail", ev, len(own), link, link_only, html)
 
     if not (link_only or kind):
         return None
@@ -199,10 +211,10 @@ def resolve(session: Session, msg: Message, html: str = "") -> dict | None:
     # 2. The same meeting, matched in the local calendar.
     ev, n = _match_calendar(session, msg.subject or "", when)
     if ev is not None:
-        return _card(kind or "invite", "calendar", ev, n, link, link_only)
+        return _card(kind or "invite", "calendar", ev, n, link, link_only, html)
 
     # 3. Known to be meeting mail, but nothing anywhere says when. Saying so - and
     #    offering the link - still beats a wall of unexplained URL text.
     if link_only:
-        return _card(kind or "invite", "none", None, 0, link, True)
+        return _card(kind or "invite", "none", None, 0, link, True, html)
     return None

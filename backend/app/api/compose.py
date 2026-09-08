@@ -105,7 +105,9 @@ async def send(body: SendIn, request: Request, session: Session = Depends(get_se
         request.app.state.sync.request_sync()
         return {"queued": True}
     log.info("send: delivered in %.1fs", time.monotonic() - t0)
-    request.app.state.sync.request_sync()
+    # Sync this account now so the Sent copy appears straight away instead of
+    # after the next full poll cycle.
+    request.app.state.sync.request_account_sync(body.account_id)
     return {"sent": True}
 
 
@@ -337,11 +339,68 @@ def _deliver_blocking(body_dict: dict) -> None:
         provider = build_provider(account)
     try:
         raw, saved_to_sent = _transport_send(provider, message, is_m365, secret_key, body.account_id)
-        if sent_path and not saved_to_sent:
-            try:
-                provider.append_to_folder(sent_path, raw, seen=True)
-            except Exception:
-                pass
+        if not saved_to_sent:
+            _save_sent_copy(body.account_id, sent_path, raw, provider)
+    finally:
+        provider.close()
+
+
+def _save_sent_copy(account_id: int, sent_path: str | None, raw: bytes, provider) -> None:
+    """File the sent message into the account's Sent folder.
+
+    The mail is already delivered at this point, so a failure here must never
+    fail the send - but it must not be swallowed either: silently dropping the
+    IMAP APPEND is exactly how a sent message ends up nowhere in Sent, with no
+    error anywhere. Log it, and queue a retry so the copy still lands later.
+    """
+    from app.core.db import get_engine
+
+    if not sent_path:
+        log.warning("no Sent folder known for account %s - the sent copy was not "
+                    "filed. It will be filed after the next folder sync.", account_id)
+    else:
+        try:
+            provider.append_to_folder(sent_path, raw, seen=True)
+            return
+        except Exception as exc:
+            log.warning("could not append the sent copy to %r (account %s): %s - queued for retry",
+                        sent_path, account_id, exc)
+    # Retry out-of-band: the folder may not be discovered yet (fresh account), or
+    # the APPEND may have hit a transient error or a server size limit.
+    try:
+        with Session(get_engine()) as session:
+            session.add(ActionQueue(kind="append_sent", payload={
+                "account_id": account_id,
+                "folder_path": sent_path or "",
+                "raw_b64": base64.b64encode(raw).decode("ascii"),
+            }))
+            session.commit()
+    except Exception:
+        log.exception("could not queue the sent copy for account %s", account_id)
+
+
+def _append_sent_blocking(payload: dict) -> None:
+    """Queue worker: file a previously-unsaved sent copy into the Sent folder."""
+    from app.core.db import get_engine
+    from app.sync.engine import build_provider
+
+    account_id = payload.get("account_id")
+    raw = base64.b64decode(payload.get("raw_b64") or "")
+    if not account_id or not raw:
+        return
+    with Session(get_engine()) as session:
+        account = session.get(Account, account_id)
+        if account is None:
+            return   # account gone - nothing to file
+        path = payload.get("folder_path") or session.exec(
+            select(Folder.path).where(Folder.account_id == account_id,
+                                      Folder.role == FolderRole.sent)
+        ).first()
+        if not path:
+            raise RuntimeError(f"account {account_id} has no Sent folder yet")
+        provider = build_provider(account)
+    try:
+        provider.append_to_folder(path, raw, seen=True)
     finally:
         provider.close()
 

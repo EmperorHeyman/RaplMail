@@ -671,6 +671,7 @@
   {:else if detail}
     {#key app.selectedMessageId}
     <div class="msgfade" in:fade={{ duration: 120 }}>
+    <div class="reader-scroll">
     <header oncontextmenu={openReaderCtx} style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
       <div class="subject">{detail.subject || t("reader.noSubject")}</div>
       <div class="meta">
@@ -912,6 +913,7 @@
         style="height:{frameH}px"
         sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcdoc={srcdoc}></iframe>
     </div>
+    </div>
     {#if actionsBottom}{@render actionsBar()}{/if}
     </div>
     {/key}
@@ -960,14 +962,20 @@
 {/snippet}
 
 <style>
-  /* The reader is the scroll container: the header + badge strip scroll away with
-     the message body (they used to be pinned while only the iframe scrolled, which
-     ate half the pane on tall headers). The body iframe sizes itself to content. */
-  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow-y: auto; background: var(--bg);
+  /* The reader is a clipped card; the SCROLLING happens one level down in
+     .reader-scroll. If the reader itself scrolled, its own scrollbar was drawn in
+     its (rectangular) border box - poking past the rounded corners and running
+     alongside the bottom action bar. As a descendant, the scrollbar is clipped by
+     the card's radius and stops above the footer. */
+  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg);
     border: 1px solid var(--border); border-radius: var(--radius-lg); }
   /* Wraps the single message so it cross-fades in when you switch mails (keyed on
      the selected id) instead of hard-popping. */
-  .msgfade { display: flex; flex-direction: column; min-width: 0; }
+  .msgfade { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
+  /* The header + badge strip scroll away with the message body (they used to be
+     pinned while only the iframe scrolled, which ate half the pane on tall
+     headers). The body iframe sizes itself to content. */
+  .reader-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
   .placeholder { flex: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); animation: rise-in var(--t-slow) var(--ease); }
   .placeholder .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 22px;
     background: var(--accent-soft); color: var(--accent); font-size: 32px;
@@ -998,9 +1006,10 @@
   .menu button { text-align: left; padding: 8px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
   .menu button:hover { background: var(--accent); color: #fff; }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-  /* Bottom mode: a sticky, right-aligned action bar pinned to the foot of the reader. */
-  /* Solid background - backdrop blur on a sticky bar repaints every scroll frame. */
-  .actions.bottom { margin-top: 0; position: sticky; bottom: 0; z-index: 5; justify-content: flex-end;
+  /* Bottom mode: a real footer OUTSIDE the scroll area (rendered after
+     .reader-scroll), right-aligned - so the scrollbar ends above it instead of
+     running past it. */
+  .actions.bottom { margin-top: 0; flex: none; justify-content: flex-end;
     padding: 10px 18px; background: var(--bg);
     border-top: 1px solid var(--hairline); }
   .btn.ai { color: var(--accent); }

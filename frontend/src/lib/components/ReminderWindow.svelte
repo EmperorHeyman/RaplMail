@@ -5,6 +5,7 @@
   // itself. Purely presentational - runs no app services.
   import { onMount } from "svelte";
   import { icons } from "./../icons.js";
+  import { openExternal } from "./../api.js";
   import { t } from "./../i18n.svelte.js";
 
   const SNOOZE = [5, 10, 15];
@@ -39,9 +40,18 @@
     catch { window.close(); }
   }
 
-  // This window carries no Tauri capabilities beyond closing itself, so it can't
-  // touch the reminder scheduler directly. Queue the action in localStorage; the
-  // main window drains it (store: _drainReminderActions, every 3s).
+  // Join goes straight out to the browser: reminder-* windows are covered by the
+  // "default" capability (which has opener), and a meeting you're late for must
+  // not wait on the main window's 3s action drain.
+  async function join() {
+    if (!ev?.joinUrl) return;
+    await openExternal(ev.joinUrl);
+    closeWin();   // you're in the meeting now; the popup has done its job
+  }
+
+  // Snooze/mute are different: the scheduler lives in the main window, so this
+  // window can't touch it. Queue the action in localStorage; the main window
+  // drains it (store: _drainReminderActions, every 3s).
   function post(action, minutes) {
     try {
       const q = JSON.parse(localStorage.getItem("raplmail.reminder.actions") || "[]");
@@ -67,10 +77,16 @@
     {/each}
   </div>
   <div class="acts">
+    {#if ev?.joinUrl}
+      <button class="join" onclick={join} title={ev.joinUrl}>
+        {@html icons.video} {t("cal.remJoin", { app: ev.joinLabel || "" })}
+      </button>
+    {/if}
     {#if ev?.hasLater}
       <button class="ghost" onclick={() => post("mute")}>{t("cal.remMute")}</button>
     {/if}
-    <button class="dismiss" onclick={closeWin}>{t("cal.remDismiss")}</button>
+    <button class="dismiss" class:secondary={!!ev?.joinUrl}
+            onclick={closeWin}>{t("cal.remDismiss")}</button>
   </div>
 </div>
 
@@ -99,4 +115,15 @@
   .ghost:hover { color: var(--text); background: var(--hover, rgba(127,127,127,0.12)); }
   .dismiss { padding: 8px 22px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; }
   .dismiss:hover { filter: brightness(1.06); }
+  /* With a meeting to join, Join is the primary action and Dismiss steps down -
+     two accent-filled pills side by side would make you read to pick one. */
+  .dismiss.secondary { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+  .dismiss.secondary:hover { filter: none; color: var(--text); border-color: var(--accent); }
+  .join {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 8px 18px; border-radius: 999px; background: var(--accent);
+    color: #fff; font-weight: 700; font-size: 13px; max-width: 100%;
+  }
+  .join:hover { filter: brightness(1.06); }
+  .join :global(svg) { width: 15px; height: 15px; flex: none; }
 </style>

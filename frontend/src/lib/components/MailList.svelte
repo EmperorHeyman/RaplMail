@@ -2,12 +2,13 @@
   import { untrack } from "svelte";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
   import SmartGroupCard from "./SmartGroupCard.svelte";
+  import CategoryPeek from "./CategoryPeek.svelte";
   import SearchBar from "./SearchBar.svelte";
   import SearchPalette from "./SearchPalette.svelte";
   import { icons } from "../icons.js";
@@ -27,11 +28,59 @@
   // pointer-events off on the rows while wheeling and back on ~140ms after it
   // stops, so hover still works normally when you're not scrolling.
   let scrolling = $state(false);
-  let _scrollIdle;
+  let _scrollIdle = null;
+  let _lastScroll = 0;
+  // Scroll events fire every frame - don't allocate a fresh idle timer per event
+  // (clearTimeout+setTimeout at 60+Hz). Stamp the last event time and let ONE
+  // self-rescheduling timer decide when the gesture actually ended.
+  function _scrollIdleCheck() {
+    const rest = 140 - (performance.now() - _lastScroll);
+    if (rest > 0) _scrollIdle = setTimeout(_scrollIdleCheck, rest);
+    else { _scrollIdle = null; scrolling = false; }
+  }
   function onRowsScroll() {
+    _lastScroll = performance.now();
     if (!scrolling) scrolling = true;
-    clearTimeout(_scrollIdle);
-    _scrollIdle = setTimeout(() => { scrolling = false; }, 140);
+    if (!_scrollIdle) _scrollIdle = setTimeout(_scrollIdleCheck, 140);
+    closePeek(true);   // a peek anchored to a row that has scrolled away is wrong
+  }
+
+  // --- category hover peek -------------------------------------------------
+  // Hovering a group card shows what just arrived in it. Opens on a short delay
+  // (so sweeping the cursor across the list doesn't flash panels) and closes on
+  // a shorter one, which is what lets the cursor cross the gap INTO the panel to
+  // click a message.
+  const PEEK_OPEN_MS = 320;
+  const PEEK_CLOSE_MS = 140;
+  let peek = $state(null);        // { item, rect }
+  let _peekOpen, _peekClose;
+  function schedulePeek(item, rect) {
+    clearTimeout(_peekClose);
+    if (scrolling) return;
+    if (peek?.item?.key === item.key) { peek = { item, rect }; return; }  // re-anchor, no re-delay
+    clearTimeout(_peekOpen);
+    _peekOpen = setTimeout(() => { peek = { item, rect }; }, peek ? 0 : PEEK_OPEN_MS);
+  }
+  function schedulePeekClose() {
+    clearTimeout(_peekOpen);
+    clearTimeout(_peekClose);
+    _peekClose = setTimeout(() => { peek = null; }, PEEK_CLOSE_MS);
+  }
+  function holdPeek() { clearTimeout(_peekClose); }
+  function closePeek(now = false) {
+    clearTimeout(_peekOpen);
+    if (now) { clearTimeout(_peekClose); peek = null; }
+    else schedulePeekClose();
+  }
+  // Clicking a mail in the peek opens it, and expands its group so the list
+  // shows where you landed instead of leaving the reader orphaned.
+  function openFromPeek(cat, m) {
+    closePeek(true);
+    if (!m?.id) return;
+    openCategory(cat, "all");
+    app.threadKey = null;
+    app.selectedMessageId = m.id;
+    markSticky(cat);
   }
 
   // Group the flat message list into items: plain messages, conversation threads,
@@ -131,7 +180,10 @@
     let io;
     io = new IntersectionObserver(
       (entries) => { if (entries.some((e) => e.isIntersecting)) mainShown += MAIN_CHUNK; },
-      { root: rowsEl || null, rootMargin: "500px 0px" }
+      // Generous lookahead: the 30-row append (component mounts + layout) is the
+      // one unavoidable hitch while scrolling - trigger it well before the
+      // sentinel is anywhere near the viewport so it never lands mid-view.
+      { root: rowsEl || null, rootMargin: "900px 0px" }
     );
     io.observe(node);
     return { destroy() { io?.disconnect(); } };
@@ -325,8 +377,14 @@
     if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
     // Never hoist rows living inside an expanded group out of their card.
+    // VIP ranking is skipped in Sent/Drafts: every row there was written by you,
+    // so the sender is your own identity - having one of your own addresses in
+    // the VIP list hoisted that whole sent folder above newer mail from every
+    // other account. Explicit pins still hold, since those are per-message.
+    const outgoing = isOutgoingView();
     const isP = (it) => it.kind === "msg" && !it.inGroup && it.msg.pinned;
-    const isV = (it) => it.kind === "msg" && !it.inGroup && !it.msg.pinned && isVip(it.msg.from_addr);
+    const isV = (it) => !outgoing && it.kind === "msg" && !it.inGroup
+      && !it.msg.pinned && isVip(it.msg.from_addr);
     const pinned = built.filter(isP);
     const vip = built.filter(isV);
     if (!pinned.length && !vip.length) return built;
@@ -584,6 +642,7 @@
     groupMode = {};
     catShown = {};
     mainShown = 30;
+    closePeek(true);
   });
 
   // Row-by-row entrance cascade (like the home screen). Replays on every view
@@ -713,6 +772,8 @@
     const kb = kbAll();
     const combo = keyCombo(e);
     if (!combo) return;
+    if (e.key === "Escape" && peek) { closePeek(true); return; }
+    if (peek) closePeek(true);   // keyboard navigation means the cursor isn't driving
     if (combo === kb.search) {
       // Respect the user's preferred search surface: the full modal, or the
       // inline bar in the list header.
@@ -828,6 +889,21 @@
   onsearch={(q) => applySearch(q)}
   onsemantic={(q) => runSemanticSearch(q)}
   onopen={(m) => open(m, -1)} />
+
+{#if peek}
+  <CategoryPeek
+    rect={peek.rect}
+    label={CAT_META[peek.item.category]?.label || peek.item.category}
+    icon={CAT_META[peek.item.category]?.icon || icons.folder}
+    tone={CAT_META[peek.item.category]?.tone || ""}
+    recent={peek.item.recent}
+    count={peek.item.count}
+    newCount={peek.item.new}
+    onenter={holdPeek}
+    onleave={() => schedulePeekClose()}
+    onopen={(m) => openFromPeek(peek.item.category, m)}
+  />
+{/if}
 
 {#if ctx}
   <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
@@ -988,6 +1064,8 @@
               onNewBadge={() => { focusIndex = i; openCategory(item.category, "new"); }}
               onSender={(email) => searchAddress(email)}
               onDoneAll={() => { focusIndex = i; doneCategory(item); }}
+              onPeek={(rect) => schedulePeek(item, rect)}
+              onPeekOut={() => schedulePeekClose()}
             />
           {:else}
             <GroupRow
@@ -1084,7 +1162,11 @@
   .slider input:checked + .track .knob { transform: translateX(16px); }
   .slider .lbl { font-size: 12px; color: var(--muted); min-width: 64px; }
 
-  .rows { flex: 1; overflow-y: auto; min-height: 0; }
+  /* layout+paint containment: content-visibility realizes/unrealizes rows while
+     scrolling, and each realization is a layout change - containment keeps those
+     invalidations inside the scroller instead of rippling out to the app grid.
+     No clipping change: as a scroller, .rows already clips its children. */
+  .rows { flex: 1; overflow-y: auto; min-height: 0; contain: layout paint; }
   .rows:focus { outline: none; }
   /* Kill hover work while scrolling - see onRowsScroll. Rows can't fire :hover
      with pointer-events off, so no button springs / background transitions play

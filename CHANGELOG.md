@@ -11,6 +11,168 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.9] - 2026-09-08
+
+### Added
+- **Join button on meetings.** A Teams/Zoom/Meet/Webex invitation buries its
+  join URL in a wall of boilerplate - dial-in numbers, conference IDs, tenant
+  legal footers - and the moment a reminder pops is exactly when there's no time
+  to hunt for it. The link is now pulled out up front and offered as one Join
+  button on the meeting card in the reader, in the calendar's event detail, and
+  on the reminder popup itself (where it's the primary action, so Dismiss steps
+  down to an outline). Recognised: Teams (every domain Microsoft ships it on,
+  including the new `teams.cloud.microsoft`), Zoom, Google Meet, Webex, GoTo,
+  Skype, Whereby, Jitsi, BlueJeans and Slack huddles. Detection is by known
+  provider only - a generic "any URL with 'join' in it" rule would happily
+  offer an unsubscribe link as the way into your meeting. If reminders are set
+  to a desktop notification instead of the popup window, the Join arrives as an
+  in-app toast action, since a notification can't carry a button.
+- **Translucent window.** The window ground behind the pane cards now lets the
+  Windows backdrop shimmer through - Mica on Windows 11, classic blur on
+  Windows 10. The panes themselves stay fully opaque, so nothing gets harder to
+  read; only the gaps between the cards go glassy. Toggle it under Settings ->
+  Appearance -> Translucent window ("Solid" restores the old flat ground).
+
+### Fixed
+- **The backend burned a CPU core per dropped IDLE connection.** Each account
+  holds an IMAP IDLE connection so new mail arrives by push. When a server
+  quietly closed its end, the loop spun at 100% of a core - for the rest of the
+  session, silently, with the health dashboard still reporting the connection as
+  live. A half-closed socket reads as permanently *readable*, and the IMAP
+  library swallows the resulting EOF and returns "no responses" rather than
+  raising, so the loop simply asked again, instantly, forever. Measured on a
+  six-account setup: two dead watchers, 190% of a core at complete idle. Dead
+  connections are now detected (an empty poll that returns faster than it could
+  possibly have waited) and rebuilt after a back-off, and the reconnect is
+  logged instead of being invisible. The connection is also re-established every
+  14 minutes as RFC 2177 asks, which is what stops servers dropping us in the
+  first place.
+- **The reader's scrollbar escaped its card.** The reader pane itself was the
+  scroll container, and an element's own scrollbar is drawn in its rectangular
+  border box - so the bar poked past the card's rounded corners and ran
+  alongside the bottom Reply/Forward action bar. Scrolling now happens one level
+  down inside the card: the scrollbar is clipped by the rounding and stops above
+  the action bar, in both single-message and conversation view. Side effect of
+  the restructure: switching mails now always starts at the top instead of
+  inheriting the previous message's scroll position.
+
+### Changed
+- **A server keepalive no longer triggers a full mailbox sweep.** Servers ping an
+  idling client with an untagged "OK Still here"; that counted as activity, so
+  every ping cost a complete account sync. Only actual mailbox changes
+  (EXISTS/RECENT/FETCH/EXPUNGE) do now. Anything unrecognised still syncs - a
+  needless sync is cheap, missed mail is not.
+- **Smoother list scrolling.** Several small per-scroll costs removed: the
+  scroll handler no longer allocates a fresh idle timer on every scroll event
+  (they fire every frame), sender favicons are no longer double-lazy (they only
+  started fetching once the row was already in the viewport, landing the fetch
+  and decode mid-scroll), the windowed 30-row append now triggers ~900px ahead
+  so its mount hitch never lands in view, and the list scroller got layout/paint
+  containment so row realization doesn't ripple relayouts out to the app grid.
+
+## [0.9.8] - 2026-08-24
+
+### Added
+- **Translucent window.** The main window is created transparent with a Mica
+  (Windows 11) / blur backdrop behind it, and the ground the panes sit on is now
+  slightly see-through, so the desktop tint shimmers through the gaps between the
+  cards. The panes themselves stay fully opaque, so text contrast and scroll
+  performance are unaffected. Settings -> Appearance -> Translucent window
+  switches back to a solid ground. The compose, reminder and sandbox windows are
+  excluded: they aren't created transparent, so a translucent ground there would
+  blend with the webview's own background rather than the OS backdrop.
+
+### Fixed
+- **The reader's scrollbar escaped its card.** The reader pane was itself the
+  scroll container, so its scrollbar was painted in its rectangular border box -
+  poking past the card's rounded corners and running down alongside the bottom
+  action bar. Scrolling moved one level in, so the scrollbar is clipped by the
+  card's radius, and the bottom action bar is now a real footer outside the
+  scroll area instead of a sticky overlay, so the track ends above it.
+
+## [0.9.7] - 2026-08-24
+
+### Fixed
+- **Sent looked like it was missing your newest mail.** The list hoists mail from
+  VIP senders above everything else - but in Sent and Drafts the "sender" of
+  every row is your own identity, so having one of your own addresses in the VIP
+  list floated that account's entire sent folder to the top, above newer mail
+  from every other account. Today's mail was there, just below a dozen older
+  rows, which reads exactly like it never synced. VIP ranking is now skipped in
+  outgoing views (explicit per-message pins still hold), and the "VIP sender"
+  star no longer sits on every row there, where it said nothing.
+
+## [0.9.6] - 2026-08-24
+
+### Added
+- **Hover a Smart Inbox group to see what just landed in it.** Resting the cursor
+  on a category card opens a peek panel beside it: the newest mail in full
+  (sender, subject, snippet, time) and the next three as one line each. Clicking
+  any of them opens that mail and expands its group, so you can decide whether a
+  group is worth opening without expanding it and losing your place. The panel
+  opens on a short delay so sweeping across the list doesn't flash panels, closes
+  with a shorter one so the cursor can cross into it, and never appears
+  mid-scroll or while you're using the keyboard.
+
+### Fixed
+- **Mail could go missing when the app had been closed for a while.** The forward
+  sync pulled the newest window above its cursor and then set the cursor to the
+  top of that window - so with more than a window's worth of new mail, everything
+  below it became unreachable: the forward sync only ever looks *above* the
+  cursor, and the history backfill only pages *below* the oldest cached message.
+  Nothing filled the hole in the middle, ever. Catch-up now pages the whole range
+  contiguously, and when even the per-cycle ceiling is exceeded it takes the
+  **oldest** first so the cursor can never step over unread mail - and says so in
+  the log rather than looking complete.
+- **"Sync" didn't sync.** The button only raised a flag that the background loop
+  reads *between* cycles - and a cycle is every folder of every account. Pressing
+  it did nothing observable for a minute or more. It now syncs that account
+  immediately.
+- **"Synced" could be a lie.** The flush of queued moves/sends broadcast the same
+  event as a finished mailbox sync, *before* any mailbox had been contacted, and
+  the UI cleared its progress state on the first such event from any account. A
+  manual sync reported success having fetched nothing. The queue flush has its own
+  event now, and the UI waits for every account it asked.
+- **Push could stop for a mailbox and never come back.** An IMAP IDLE watcher that
+  exited left its bookkeeping entry behind, which made the supervisor believe it
+  was still running - so that account silently lost push for the rest of the
+  session and only refreshed on the fallback poll. Dead watchers are now
+  respawned, and an IDLE push syncs its own account directly instead of waiting
+  out the current cycle.
+- **Sent mail that was nowhere to be found.** Two causes, both fixed. A message
+  whose `Date` header is missing or unparseable was stored with no date at all,
+  and the list sorts by date - so it landed below every other message, off the end
+  of the page. Arrival time (`INTERNALDATE`) is now the fallback, and existing
+  dateless rows are healed as they're re-checked. Separately, the IMAP `APPEND`
+  that files the Sent copy was wrapped in a bare `except: pass` - if it failed,
+  the mail went out and the copy vanished with nothing logged anywhere. It's now
+  logged and retried through the action queue.
+- **A Sent folder could stay unrecognised forever.** A folder first seen before its
+  server advertised SPECIAL-USE was recorded as an ordinary folder and never
+  re-examined - and an unrecognised Sent folder means sent mail has nowhere to be
+  filed and the Sent view is empty. Roles are now adopted when the server starts
+  reporting them (and never downgraded, since some servers report inconsistently).
+- **One bad folder cost an account its whole sync.** Nothing was committed until
+  every folder had been swept, so a failure near the end discarded the new mail
+  from all the folders before it, and a mid-sweep error could leave the session
+  unusable for the rest of it. Each folder now commits on its own.
+
+### Changed
+- **Faster cycles, so the fallback poll actually keeps up.** Re-checking flags is
+  the most expensive thing a sync does - a select plus a fetch of up to 400
+  messages, per folder, per cycle, which across a real mailbox came to roughly ten
+  thousand message fetches a minute. The inbox and Sent still reconcile every
+  cycle; everything else does so on a timer. History paging also moved off the
+  new-mail path onto its own worker, so a long backfill can no longer hold up
+  announcing mail that has already arrived.
+- **The UI no longer refreshes once per account per sync.** A cycle finishes one
+  account at a time, and each completion re-ran the whole chain - accounts,
+  folders, the message list, group counts, and a refetch of every open category
+  card. Six mailboxes meant six of those, back to back, every cycle. They're
+  coalesced into one. Account and folder lists are also only re-published when
+  they've actually changed, which stops every rendered row from re-deriving its
+  account colour on each sync.
+
 ## [0.9.5] - 2026-08-20
 
 ### Fixed

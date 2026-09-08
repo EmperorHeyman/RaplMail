@@ -398,7 +398,10 @@
 {/snippet}
 
 <style>
-  .thread { display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+  /* Fill the reader card (which clips, but no longer scrolls) so the internal
+     .scroll below is the actual scroller - its scrollbar stays inside the rounded
+     card and ends above the bottom action bar. */
+  .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
   .placeholder { flex: 1; display: grid; place-items: center; color: var(--muted); }
   header { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
   .subject { font-size: 19px; font-weight: 700; }

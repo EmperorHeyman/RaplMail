@@ -295,7 +295,9 @@
     padding: var(--pane-gap);
     height: 100%;
     position: relative;
-    background: var(--app-bg);
+    /* No background of its own: the body paints the ground (--app-bg, or its
+       translucent glass variant), and an opaque layer here would block the
+       window's Mica/blur backdrop from showing through the pane gaps. */
   }
   .app.customizing { user-select: none; }
   /* While dragging a divider, stop the message iframe (and other panes) from

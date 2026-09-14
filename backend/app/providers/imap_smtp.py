@@ -236,7 +236,7 @@ class ImapSmtpProvider:
         client = self._imap()
         client.select_folder(folder_path, readonly=True)
         data = client.fetch([uid], ["RFC822"])
-        return data.get(uid, {}).get(b"RFC822", b"")
+        return _raw_from_fetch(data.get(uid, {}))
 
     # --- writes -------------------------------------------------------------
     def set_flags(self, folder_path: str, uid: int, flags: list[str], add: bool = True) -> None:
@@ -322,6 +322,32 @@ class ImapSmtpProvider:
         if draft:
             flags.append(b"\\Draft")
         self._imap().append(folder_path, raw, flags=flags)
+
+
+# RFC 3501 defines RFC822 as equivalent to BODY[], and a server is free to
+# answer an RFC822 fetch by naming the item either way (Exchange and Zimbra do).
+# imapclient keys the result dict by whatever atom the server echoed, so reading
+# only b"RFC822" silently yielded b"" on those servers - the message then looked
+# empty and, worse, got cached that way. Accept every spelling.
+_RAW_KEYS = (b"RFC822", b"BODY[]", b"BODY[NULL]")
+# Response items that are never the message itself, so the last-resort scan
+# below can't mistake one for the body.
+_NOT_RAW = {b"SEQ", b"UID", b"FLAGS", b"INTERNALDATE", b"RFC822.SIZE",
+            b"ENVELOPE", b"BODY", b"BODYSTRUCTURE", b"MODSEQ"}
+
+
+def _raw_from_fetch(info: dict) -> bytes:
+    """The raw message bytes out of one imapclient FETCH result."""
+    for key in _RAW_KEYS:
+        val = info.get(key)
+        if isinstance(val, bytes) and val:
+            return val
+    # Some server spelled it differently again: take the one large bytes value
+    # that isn't a known metadata item.
+    for key, val in info.items():
+        if key not in _NOT_RAW and isinstance(val, bytes) and len(val) > 2:
+            return val
+    return b""
 
 
 def _bodystructure_has_attachment(bs) -> bool:

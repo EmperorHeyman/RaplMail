@@ -46,8 +46,15 @@ export default {
     "reader.muteConversation": "Mute this conversation",
     "reader.exportEml": "Export .eml (safe)",
 
+    // "this answers something you sent" badge.
+    "reader.replyToYou": "Reply to you",
+    "reader.replyToYouTitle": "This answers a message you sent",
+
     // Recipients line.
     "reader.toLabel": "to",
+    "reader.ccLabel": "cc",
+    "reader.bccLabel": "bcc to",
+    "reader.undisclosed": "undisclosed recipients",
     "reader.showLess": "show less",
     "reader.moreN": "+{n} more",
 
@@ -210,8 +217,15 @@ export default {
     "reader.muteConversation": "Ztlumit tuto konverzaci",
     "reader.exportEml": "Exportovat .eml (bezpečně)",
 
+    // Odznak "odpověď na váš e-mail".
+    "reader.replyToYou": "Odpověď vám",
+    "reader.replyToYouTitle": "Toto je odpověď na zprávu, kterou jste odeslali",
+
     // Řádek příjemců.
     "reader.toLabel": "komu",
+    "reader.ccLabel": "kopie",
+    "reader.bccLabel": "skrytá kopie",
+    "reader.undisclosed": "skrytí příjemci",
     "reader.showLess": "zobrazit méně",
     "reader.moreN": "+{n} dalších",
 

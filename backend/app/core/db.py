@@ -79,6 +79,9 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "ai_verdict": "ALTER TABLE message ADD COLUMN ai_verdict TEXT DEFAULT ''",
         "ai_reason": "ALTER TABLE message ADD COLUMN ai_reason TEXT DEFAULT ''",
         "in_reply_to": "ALTER TABLE message ADD COLUMN in_reply_to TEXT DEFAULT ''",
+        "delivered_to": "ALTER TABLE message ADD COLUMN delivered_to TEXT DEFAULT '[]'",
+        "repaired": "ALTER TABLE message ADD COLUMN repaired BOOLEAN DEFAULT 0",
+        "is_reply_to_me": "ALTER TABLE message ADD COLUMN is_reply_to_me BOOLEAN DEFAULT 0",
     },
     "messagestate": {
         "snooze_presence": "ALTER TABLE messagestate ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",
@@ -131,6 +134,24 @@ _INDEXES = [
 ]
 
 
+# One-time data repairs for damage an older build wrote into the DB. Each must be
+# idempotent and cheap - they run on every start.
+_REPAIRS = [
+    # A body fetch that came back with nothing used to be cached as the message:
+    # body_fetched=1 with both body columns empty, which no later open ever
+    # retried, so the mail stayed permanently blank. (The fetch itself now raises
+    # instead of returning an empty body - see api/messages._fetch_body.) Clear
+    # the flag so those messages fetch again on next open. Scoped to rows that
+    # also recorded no attachments, so a genuinely body-less mail - a scan or a
+    # photo sent with no text - isn't re-fetched forever. The raw column values
+    # are compared, never the decrypted ones: with the at-rest cache encrypted
+    # and the vault locked, a perfectly good body reads back as "".
+    "UPDATE message SET body_fetched = 0 "
+    "WHERE body_fetched = 1 AND COALESCE(body_html, '') = '' AND COALESCE(body_text, '') = '' "
+    "AND COALESCE(attachments, '[]') IN ('', '[]')",
+]
+
+
 def init_db() -> None:
     """Create all tables, run column migrations, indexes, and the FTS index. Idempotent."""
     engine = get_engine()
@@ -140,6 +161,8 @@ def init_db() -> None:
         for stmt in _FTS_SETUP:
             conn.execute(text(stmt))
         for stmt in _INDEXES:
+            conn.execute(text(stmt))
+        for stmt in _REPAIRS:
             conn.execute(text(stmt))
         conn.commit()
 

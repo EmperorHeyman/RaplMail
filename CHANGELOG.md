@@ -11,6 +11,59 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.10] - 2026-09-14
+
+### Added
+- **"Reply" badge.** Mail that answers something you sent now carries a badge
+  next to the sender in the list and under the subject in the reader, so an
+  answer you were waiting for is visible while scanning instead of being one
+  more unread row. Recognised the same two ways as the inbox guard below.
+
+### Fixed
+- **Some messages loaded as a permanently blank page.** Three defects compounded.
+  The raw fetch read the message out of the server's reply under one name only
+  (`RFC822`), but RFC 3501 makes that equivalent to `BODY[]` and lets a server
+  answer with either - on the ones that answer `BODY[]` (Exchange and Zimbra
+  among them) every message came back as zero bytes. Those zero bytes were then
+  cached *as the message*, with nothing ever retrying, so the mail stayed blank
+  forever rather than just that once. The fetch now recognises every spelling,
+  refuses to hand back a body it never received (you get the "couldn't load"
+  notice and the next open tries again), and messages already blanked by the old
+  build are repaired at startup.
+- **Opening some mail re-downloaded the whole message, every time.** A pass that
+  repairs older cached mail ran unguarded, and two of its triggers are conditions
+  a re-fetch can never clear: a `multipart/mixed` message whose only non-text
+  part is an inline logo (the sync-time guess calls that an attachment, the full
+  parse correctly doesn't), and a `cid:` reference with no matching part. Those
+  messages fetched in full on every single open - slow on a big mail, and on a
+  slow link slow enough to time out and fail. The pass is now one-shot per
+  message, and the attachment flag is corrected from the parse, so a mail with
+  only an embedded logo stops claiming a paperclip.
+- **A reply you were waiting for could land in Newsletters.** The smart-inbox
+  categories are matched on broad word lists, which is right for cold bulk mail
+  and wrong for a human answer: a reply from an `info@`/`support@`/`team@`
+  address, or one whose subject carried a word like "objednavka", "confirm",
+  "potvrzeni" or "akce", or whose quoted tail still contained the original's
+  "unsubscribe" footer, was filed under Newsletters/Updates/Promotions and
+  disappeared from the inbox. Mail that continues a conversation you are part of
+  is now always Primary, recognised two ways: its In-Reply-To resolves to a
+  message you sent, or it carries a reply prefix ("Re:", "Odp:", "AW:", ...) and
+  comes from an address you have written to. A stranger's "Re:" - the oldest
+  trick in the bulk-mail book - is not enough on its own. Accept/decline replies
+  still go to Invitation responses, an explicit per-sender category still wins,
+  and cold bulk mail is unaffected. Existing mail is re-filed by the recategorize
+  pass that runs on startup.
+- **The recipient line could be empty, and never showed Cc.** The reader printed
+  "to" with nothing after it for any message the IMAP envelope gave no To
+  header - typically a bulk send addressed entirely by Bcc. Cc was dropped
+  altogether, so a mail you were only copied on listed strangers and not you.
+  Cc is now shown next to To (sharing one preview budget, with the same "+n
+  more" expander), a Bcc'd copy shows the address it was actually delivered to
+  from its Delivered-To trace, and a message that genuinely names nobody says
+  "undisclosed recipients" instead of trailing off. Recipient lists the envelope
+  couldn't supply are also repaired from the raw headers on first open, once per
+  message.
+
 ## [0.9.9] - 2026-09-08
 
 ### Added

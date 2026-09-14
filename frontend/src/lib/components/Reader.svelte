@@ -205,7 +205,19 @@
   // Inbox mail from an unknown sender → an inline "accept the sender?" prompt,
   // now folded into the same badge strip as the security pills.
   const screenerActive = $derived(!!detail && (app.selectedKind === "screener" || detail.first_time_sender));
-  const shownTo = $derived(detail ? (showAllTo ? detail.to_addrs : (detail.to_addrs || []).slice(0, 3)) : []);
+  // Recipient line. Cc used to be dropped entirely, so a mail that only had you
+  // in Cc showed a list of strangers - or, when it was Bcc'd (bulk sends, and
+  // anything with no To header), a bare "to" with nothing after it. To and Cc
+  // now share one preview budget, and a message that names nobody says so.
+  const RCPT_PREVIEW = 3;
+  const toAddrs = $derived((detail?.to_addrs || []).filter(Boolean));
+  const ccAddrs = $derived((detail?.cc_addrs || []).filter(Boolean));
+  const deliveredTo = $derived((detail?.delivered_to || []).filter(Boolean));
+  const shownTo = $derived(showAllTo ? toAddrs : toAddrs.slice(0, RCPT_PREVIEW));
+  const shownCc = $derived(
+    showAllTo ? ccAddrs : ccAddrs.slice(0, Math.max(0, RCPT_PREVIEW - toAddrs.length))
+  );
+  const hiddenRcpt = $derived(toAddrs.length + ccAddrs.length - shownTo.length - shownCc.length);
   const processed = $derived(
     detail ? sanitizeTrackers(detail.html || "", app.settings.blockTrackers && !loadImages)
            : { html: "", blocked: 0, urls: [] }
@@ -674,6 +686,11 @@
     <div class="reader-scroll">
     <header oncontextmenu={openReaderCtx} style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
       <div class="subject">{detail.subject || t("reader.noSubject")}</div>
+      {#if detail.is_reply_to_me}
+        <div class="replied" title={t("reader.replyToYouTitle")}>
+          {@html icons.reply} {t("reader.replyToYou")}
+        </div>
+      {/if}
       <div class="meta">
         <span class="addr-wrap">
           <button class="addr from" onclick={(e) => toggleMenu(e, detail.from_addr)}>
@@ -695,23 +712,33 @@
         <span class="date">{fmtDate(detail.date)}</span>
       </div>
       <div class="to">
-        {t("reader.toLabel")}
-        {#each shownTo as addr, i}
-          <span class="addr-wrap">
-            <button class="addr small" onclick={(e) => toggleMenu(e, addr)}>{addr}</button>
-            {#if menuAddr === addr}
-              <div class="menu" onclick={(e) => e.stopPropagation()}>
-                <button onclick={() => copyAddress(addr)}>{@html icons.copy} {t("reader.copyAddress")}</button>
-                <button onclick={() => showFrom(addr)}>{@html icons.inbox} {t("reader.showMailFromTo")}</button>
-                <button onclick={() => mailTo(addr)}>{@html icons.compose} {t("reader.newEmailTo")}</button>
-              </div>
-            {/if}
-          </span>{i < shownTo.length - 1 ? ", " : ""}
-        {/each}
-        {#if detail.to_addrs.length > 3}
-          <button class="more-to" onclick={() => (showAllTo = !showAllTo)}>
-            {showAllTo ? t("reader.showLess") : t("reader.moreN", { n: detail.to_addrs.length - 3 })}
-          </button>
+        {#if toAddrs.length || ccAddrs.length}
+          {#if shownTo.length}
+            {t("reader.toLabel")}
+            {#each shownTo as addr, i}
+              {@render addrChip(addr)}{i < shownTo.length - 1 ? ", " : ""}
+            {/each}
+          {/if}
+          {#if shownCc.length}
+            <span class="rcpt-label" class:lead={!shownTo.length}>{t("reader.ccLabel")}</span>
+            {#each shownCc as addr, i}
+              {@render addrChip(addr)}{i < shownCc.length - 1 ? ", " : ""}
+            {/each}
+          {/if}
+          {#if hiddenRcpt > 0 || showAllTo}
+            <button class="more-to" onclick={() => (showAllTo = !showAllTo)}>
+              {showAllTo ? t("reader.showLess") : t("reader.moreN", { n: hiddenRcpt })}
+            </button>
+          {/if}
+        {:else if deliveredTo.length}
+          <!-- No To/Cc at all: this copy was Bcc'd. Show the address it was
+               actually delivered to, from the Delivered-To trace. -->
+          {t("reader.bccLabel")}
+          {#each deliveredTo as addr, i}
+            {@render addrChip(addr)}{i < deliveredTo.length - 1 ? ", " : ""}
+          {/each}
+        {:else}
+          {t("reader.toLabel")} <span class="undisclosed">{t("reader.undisclosed")}</span>
         {/if}
       </div>
       {#if !actionsBottom}{@render actionsBar()}{/if}
@@ -930,6 +957,19 @@
   </div>
 {/if}
 
+{#snippet addrChip(addr)}
+  <span class="addr-wrap">
+    <button class="addr small" onclick={(e) => toggleMenu(e, addr)}>{addr}</button>
+    {#if menuAddr === addr}
+      <div class="menu" onclick={(e) => e.stopPropagation()}>
+        <button onclick={() => copyAddress(addr)}>{@html icons.copy} {t("reader.copyAddress")}</button>
+        <button onclick={() => showFrom(addr)}>{@html icons.inbox} {t("reader.showMailFromTo")}</button>
+        <button onclick={() => mailTo(addr)}>{@html icons.compose} {t("reader.newEmailTo")}</button>
+      </div>
+    {/if}
+  </span>
+{/snippet}
+
 {#snippet actionsBar()}
   <div class="actions" class:bottom={actionsBottom}>
     {#each readerBtns as b}
@@ -991,6 +1031,15 @@
   .subject { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
   .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; align-items: flex-start; }
   .to { color: var(--faint); font-size: 12px; }
+  .replied {
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 8px;
+    border-radius: 999px; color: var(--accent); background: var(--accent-soft);
+  }
+  .replied :global(svg) { width: 11px; height: 11px; }
+  .rcpt-label { margin-left: 6px; }
+  .rcpt-label.lead { margin-left: 0; }
+  .undisclosed { font-style: italic; opacity: .8; }
   .more-to { color: var(--accent); font-size: 12px; font-weight: 600; padding: 1px 5px; border-radius: 5px; }
   .more-to:hover { background: var(--surface-2); }
   .addr-wrap { position: relative; display: inline-block; }

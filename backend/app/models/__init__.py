@@ -122,6 +122,17 @@ class Message(SQLModel, table=True):
     from_name: str = ""
     to_addrs: list = Field(default_factory=list, sa_column=Column(JSON))
     cc_addrs: list = Field(default_factory=list, sa_column=Column(JSON))
+    # Address this copy was actually delivered to (Delivered-To / X-Original-To).
+    # Only read from the raw headers, and only for mail that has no To/Cc of its
+    # own - i.e. a Bcc'd send. See api/messages._heal_recipients.
+    delivered_to: list = Field(default_factory=list, sa_column=Column(JSON))
+    # Set once the post-fetch repair pass has run for this message (recipients,
+    # attachment list, inline images, auth). It gates that pass so it stays
+    # one-shot: each of its triggers is a condition the re-fetch cannot always
+    # clear (a mail that lists nobody, a multipart/mixed whose only part is an
+    # inline logo, an unresolvable cid: ref), and without the flag those opened
+    # a full re-download of the whole message on every single open.
+    repaired: bool = False
     subject: str = ""
     snippet: str = ""
     date: datetime | None = Field(default=None, index=True)
@@ -129,6 +140,12 @@ class Message(SQLModel, table=True):
     is_seen: bool = Field(default=False, index=True)
     is_flagged: bool = False
     is_answered: bool = False
+    # This message answers something YOU sent - set at sync by the conversation
+    # guard (sync/categorize.Conversation.is_reply_to_me). It both keeps the mail
+    # in Primary and drives the "Reply" badge in the list and reader, so an answer
+    # you were waiting for is visible at a glance instead of being one more
+    # unread row.
+    is_reply_to_me: bool = Field(default=False, index=True)
     is_done: bool = Field(default=False, index=True)   # Spark "done" (local)
     category: str = Field(default="primary", index=True)  # primary|newsletters|social|updates|promotions
     snooze_until: datetime | None = None

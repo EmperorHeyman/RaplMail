@@ -575,6 +575,16 @@ class SyncManager:
             ))
             from app.models import MutedThread, SenderCategory
             overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
+            # Conversation guard for categorization: my own addresses + everyone
+            # I've written to, so a reply I'm waiting for can't be filed under
+            # newsletters/updates just because the sender is info@ or the subject
+            # carries a bulk-sounding word. Two queries, once per pass.
+            from app.sync.categorize import build_conversation
+            try:
+                convo = build_conversation(session)
+            except Exception:
+                log.exception("conversation context failed for account %s", account_id)
+                convo = None
             # thread_key -> set of muted-conversation sender addresses (empty set
             # = legacy subject-only mute). Used to scope auto-archive on arrival.
             muted = {
@@ -601,7 +611,7 @@ class SyncManager:
                 folders = list(session.exec(select(Folder).where(Folder.account_id == account_id)))
                 for folder in folders:
                     try:
-                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks)
+                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks, convo)
                         # Commit per folder, not once at the end: a failure late in
                         # the sweep used to cost every earlier folder's new mail
                         # (nothing was durable until the final commit), and a
@@ -718,7 +728,8 @@ class SyncManager:
     def _sync_folder(self, session: Session, account: Account, folder: Folder,
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
                      previews: list[dict] | None = None, muted: dict | None = None,
-                     screen: dict | None = None, hooks: list[dict] | None = None) -> int:
+                     screen: dict | None = None, hooks: list[dict] | None = None,
+                     convo=None) -> int:
         self._check_uidvalidity(session, folder, provider)
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
@@ -751,7 +762,7 @@ class SyncManager:
         for h in headers:
             if h.uid < min_uid:
                 continue
-            msg = self._upsert_message(session, account, folder, h, overrides or {})
+            msg = self._upsert_message(session, account, folder, h, overrides or {}, convo)
             if msg is None:
                 continue
             new_count += 1
@@ -1024,7 +1035,8 @@ class SyncManager:
         state.is_done = done
 
     def _upsert_message(self, session: Session, account: Account, folder: Folder,
-                        h: HeaderInfo, overrides: dict[str, str] | None = None) -> Message | None:
+                        h: HeaderInfo, overrides: dict[str, str] | None = None,
+                        convo=None) -> Message | None:
         existing = session.exec(
             select(Message.id).where(Message.folder_id == folder.id, Message.uid == h.uid)
         ).first()
@@ -1035,20 +1047,27 @@ class SyncManager:
         from app.sync.threading import thread_key
         subject = decode_mime_words(h.subject)
         from_name = decode_mime_words(h.from_name)
-        category = (overrides or {}).get((h.from_addr or "").lower()) \
-            or categorize(h.from_addr, from_name, subject, h.snippet)
         # Prefer real reply-chain threading: a message with In-Reply-To inherits
         # its parent's thread_id (so a Sent reply joins the original's thread even
         # when the recipient set differs). Fall back to subject+participant keying.
-        thread_id = ""
+        # The same lookup also says who wrote the parent, which is the strong
+        # signal for the conversation guard - so it runs before categorizing.
+        thread_id, parent_from = "", ""
         irt = getattr(h, "in_reply_to", "") or ""
         if irt:
-            parent_tid = session.exec(
-                select(Message.thread_id).where(Message.account_id == account.id,
-                                                Message.message_id == irt)
+            parent = session.exec(
+                select(Message.thread_id, Message.from_addr)
+                .where(Message.account_id == account.id, Message.message_id == irt)
             ).first()
-            if parent_tid:
-                thread_id = parent_tid
+            if parent:
+                thread_id, parent_from = parent[0] or "", parent[1] or ""
+        # An answer inside a conversation I'm part of is mail I'm waiting for -
+        # it must never land in newsletters/updates/promotions.
+        is_reply_to_me = bool(convo) and convo.is_reply_to_me(
+            from_addr=h.from_addr, subject=subject, parent_from=parent_from)
+        category = ((overrides or {}).get((h.from_addr or "").lower())
+                    or categorize(h.from_addr, from_name, subject, h.snippet,
+                                  conversation=is_reply_to_me))
         if not thread_id:
             thread_id = thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
                                    participants=[h.from_addr, *(h.to_addrs or [])])
@@ -1060,6 +1079,7 @@ class SyncManager:
             thread_id=thread_id,
             is_seen="\\Seen" in h.flags, is_flagged="\\Flagged" in h.flags,
             is_answered="\\Answered" in h.flags, has_attachments=h.has_attachments,
+            is_reply_to_me=is_reply_to_me,
             is_done=_DONE_KW in h.flags,   # cross-device "done" mirrored as an IMAP keyword
             size=h.size,
             category=category,

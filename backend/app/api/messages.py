@@ -50,6 +50,7 @@ class MessageOut(BaseModel):
     brand_domain: str = ""
     auth_status: str = ""
     pinned: bool = False
+    is_reply_to_me: bool = False   # answers a message you sent - drives the "Reply" badge
     suspicious: bool = False       # flagged by the anti-phishing heuristic screen
     ai_verdict: str = ""           # cached AI screening verdict: ""|safe|suspicious|dangerous
 
@@ -58,6 +59,11 @@ class MessageDetail(MessageOut):
     html: str
     text: str
     cc_addrs: list[str]
+    # Address this copy was actually delivered to, from Delivered-To /
+    # X-Original-To. Only meaningful for a message with no To/Cc of its own
+    # (a Bcc'd bulk send) - it's what lets the reader say who it reached
+    # instead of showing an empty recipient line.
+    delivered_to: list[str] = []
     unsubscribe: str = ""
     attachments: list[dict] = []
     auth: dict = {}
@@ -79,7 +85,8 @@ def _to_out(m: Message) -> MessageOut:
         snippet=m.snippet, date=m.date, is_seen=m.is_seen, is_flagged=m.is_flagged,
         is_done=m.is_done, has_attachments=m.has_attachments, category=m.category,
         thread_id=m.thread_id, brand_domain=m.brand_domain or "", auth_status=m.auth_status or "",
-        pinned=bool(m.pinned), suspicious=bool(m.suspicious), ai_verdict=m.ai_verdict or "",
+        pinned=bool(m.pinned), is_reply_to_me=bool(m.is_reply_to_me),
+        suspicious=bool(m.suspicious), ai_verdict=m.ai_verdict or "",
     )
 
 
@@ -565,6 +572,20 @@ _RECEIPT_IMG_RE = re.compile(
     r'<img\b[^>]*\bsrc=["\']https?://[^"\']*/track/o/[^"\']+["\'][^>]*>', re.IGNORECASE)
 
 
+def _heal_recipients(msg: Message, recipients: dict) -> None:
+    """Fill in recipient lists the IMAP ENVELOPE didn't give us.
+
+    Only ever fills an *empty* list: the envelope is authoritative when it has
+    something, and a Delivered-To trace must never overwrite a real To header.
+    """
+    if recipients.get("to") and not (msg.to_addrs or []):
+        msg.to_addrs = list(recipients["to"])
+    if recipients.get("cc") and not (msg.cc_addrs or []):
+        msg.cc_addrs = list(recipients["cc"])
+    if recipients.get("delivered_to") and not (msg.to_addrs or []) and not (msg.cc_addrs or []):
+        msg.delivered_to = list(recipients["delivered_to"])
+
+
 @router.get("/{message_id}", response_model=MessageDetail)
 async def get_message(message_id: int, session: Session = Depends(get_session)) -> MessageDetail:
     msg = session.get(Message, message_id)
@@ -581,11 +602,32 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         # re-embed so logos and pasted screenshots render without a full resync.
         stale_inline = bool(html) and ("cid:" in html.lower()
                                        or (msg.has_attachments and _has_blank_inline_img(html)))
-        if (msg.has_attachments and not msg.attachments) or not msg.auth_status or stale_inline:
+        # A row with no recipients at all was either delivered via Bcc or synced
+        # from an ENVELOPE we couldn't read - the raw headers can tell us more.
+        no_recipients = not (msg.to_addrs or []) and not (msg.cc_addrs or [])
+        # One re-fetch repairs all of these at once, and `repaired` makes sure it
+        # happens once. Each trigger is a condition the re-fetch may be unable to
+        # clear - a mail that genuinely lists nobody, a multipart/mixed whose only
+        # non-text part is an inline logo (has_attachments true, attachment list
+        # empty), an unresolvable cid: reference - and while they were checked
+        # unguarded, opening such a message re-downloaded the entire message, every
+        # time. That is what made opening mail slow and, on big messages, fail.
+        if not msg.repaired and ((msg.has_attachments and not msg.attachments)
+                                 or not msg.auth_status or stale_inline or no_recipients):
             account = session.get(Account, msg.account_id)
             folder = session.get(Folder, msg.folder_id)
             try:
-                _h, _t, _u, _e, atts, a, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+                _h, _t, _u, _e, atts, a, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+                _heal_recipients(msg, recipients)
+                # The full parse is ground truth about attachments; the sync-time
+                # flag is a guess off BODYSTRUCTURE that reads "mixed" as "has an
+                # attachment", so a mail carrying only an inline logo claimed a
+                # paperclip it didn't have. Correct it now that we know.
+                if atts is not None:
+                    msg.has_attachments = bool(atts)
+                # Only now, after a fetch that actually returned: a transient
+                # failure must leave the repair pending, not consume it.
+                msg.repaired = True
                 if stale_inline and _h:
                     from app.core.atrest import encrypt_field
                     # Re-cache the freshly cid-embedded body (never strip cid: refs -
@@ -596,6 +638,8 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
                 # inline images as phantom attachments (now filtered out).
                 if atts:
                     msg.attachments = atts
+                elif atts is not None:
+                    msg.attachments = []
                 msg.auth_status = a.get("status", "none")
                 auth = a
                 session.add(msg)
@@ -615,7 +659,8 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         account = session.get(Account, msg.account_id)
         folder = session.get(Folder, msg.folder_id)
         try:
-            html, text_body, unsub, events, atts, auth, att_text = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+            html, text_body, unsub, events, atts, auth, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+            _heal_recipients(msg, recipients)
         except Exception as exc:
             # Don't let one malformed/huge message break the whole open - return a
             # readable placeholder instead of failing the fetch.
@@ -630,8 +675,13 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
         from app.core.atrest import encrypt_field
         msg.body_html, msg.body_text = encrypt_field(html), encrypt_field(text_body)
         msg.body_fetched, msg.unsubscribe = True, unsub
-        msg.attachments = atts
+        msg.attachments = atts or []
+        if atts is not None:
+            msg.has_attachments = bool(atts)   # ground truth, vs the BODYSTRUCTURE guess
         msg.auth_status = auth.get("status", "none")
+        # This fetch already applied every repair the backfill pass does, so it
+        # never needs to run for this message.
+        msg.repaired = True
         if events:
             from app.api.calendar import upsert_events
             try: upsert_events(session, msg.account_id, msg.id, events)
@@ -749,7 +799,9 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
 
     base = _to_out(msg)
     return MessageDetail(**base.model_dump(), html=html, text=text_body,
-                         cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe,
+                         cc_addrs=list(msg.cc_addrs or []),
+                         delivered_to=list(msg.delivered_to or []),
+                         unsubscribe=msg.unsubscribe,
                          attachments=list(msg.attachments or []), auth=auth, warnings=warnings,
                          pgp=pgp_info, smime=smime_info, first_time_sender=first_time,
                          ai_reason=msg.ai_reason or "", meeting=meeting)
@@ -905,8 +957,46 @@ def _brand_domain(html: str, sender_addr: str) -> str:
     return counts.most_common(1)[0][0] if counts else ""
 
 
-def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, str, list, list, dict, str]:
-    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth, attachment_text)."""
+class BodyUnavailable(RuntimeError):
+    """The server gave us no bytes for this message (moved, deleted, or the UID
+    is stale). Distinct from "the message has an empty body", which is cacheable."""
+
+
+def _mime_recipients(parsed) -> dict:
+    """To/Cc (and the delivery trace) straight from the raw MIME headers.
+
+    The recipient lists normally come from the IMAP ENVELOPE at sync time, but
+    that can arrive empty - a bulk mail addressed only via Bcc has no To header
+    at all, and some servers hand back an ENVELOPE whose address list we can't
+    read. The reader then showed a bare "to" with nothing after it. Since we
+    already have the full message parsed here, take the headers directly, and
+    fall back to Delivered-To / X-Original-To / Envelope-To, which is where a
+    Bcc'd copy records the address it was actually delivered to.
+    """
+    def addrs(pairs) -> list[str]:
+        out = []
+        for entry in (pairs or []):
+            addr = (entry[1] if isinstance(entry, (tuple, list)) and len(entry) > 1 else entry) or ""
+            addr = str(addr).strip()
+            if addr and addr not in out:
+                out.append(addr)
+        return out
+
+    to = addrs(getattr(parsed, "to", None))
+    cc = addrs(getattr(parsed, "cc", None))
+    delivered = addrs(getattr(parsed, "delivered_to", None))
+    if not delivered:
+        from email.utils import getaddresses
+        raw_vals = []
+        for k, v in (parsed.headers or {}).items():
+            if k.lower() in ("x-original-to", "envelope-to", "x-envelope-to"):
+                raw_vals.append(v if isinstance(v, str) else str(v))
+        delivered = [a for _n, a in getaddresses(raw_vals) if a]
+    return {"to": to, "cc": cc, "delivered_to": delivered}
+
+
+def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, str, list, list, dict, str, dict]:
+    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth, attachment_text, recipients)."""
     import mailparser
 
     from app.providers.pool import pool
@@ -915,7 +1005,12 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
 
     raw = pool.fetch_raw(account, folder.path, uid)
     if not raw:
-        return "", "", "", [], [], {"status": "none"}, ""
+        # The server had nothing for this UID - it was moved or deleted elsewhere,
+        # or the mailbox reassigned UIDs. Raise instead of returning an empty body:
+        # the caller used to cache that "" as the message, blanking it permanently
+        # with no retry. A raise shows the "couldn't load" placeholder and leaves
+        # the next open free to try again.
+        raise BodyUnavailable(f"server returned no message for uid {uid} in {folder.path}")
     parsed = mailparser.parse_from_bytes(raw)
     html = "\n".join(parsed.text_html) if parsed.text_html else ""
     text_body = "\n".join(parsed.text_plain) if parsed.text_plain else ""
@@ -937,7 +1032,10 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
     try:
         atts = _attachment_meta(parsed)
     except Exception:
-        atts = []
+        # None, not [] - the caller corrects `has_attachments` from this list, and
+        # "the extractor blew up" must not be read as "this mail has no files".
+        log.exception("attachment list failed for uid %s in %s", uid, folder.path)
+        atts = None
     # Pull searchable text out of supported attachments (docs, code, text) so a
     # full-text search can match words that only appear inside a file.
     att_text = _extract_attachment_text(parsed)
@@ -946,7 +1044,11 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
         auth = check_auth(raw, from_addr)
     except Exception:
         auth = {"status": "none"}
-    return html, text_body, unsub, events, atts, auth, att_text
+    try:
+        recipients = _mime_recipients(parsed)
+    except Exception:
+        recipients = {}
+    return html, text_body, unsub, events, atts, auth, att_text, recipients
 
 
 def _embed_inline_images(html: str, parsed) -> str:
@@ -1727,7 +1829,7 @@ class SenderCategoryIn(BaseModel):
 @router.post("/sender-category")
 def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_session)) -> dict:
     """Reclassify a sender ('this is a newsletter'): remember it and re-file existing mail."""
-    from app.sync.categorize import categorize
+    from app.sync.categorize import build_conversation, categorize
     email = body.email.strip().lower()
     if not email:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "email required")
@@ -1736,9 +1838,18 @@ def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_s
     if body.category == "auto" or not body.category:
         if existing:
             session.delete(existing)
-        # Re-file existing mail from this sender back to the heuristic category.
+        # Re-file existing mail from this sender back to the heuristic category -
+        # with the conversation guard, so replies from someone you write to don't
+        # get thrown back out of the inbox by clearing their override.
+        try:
+            convo = build_conversation(session)
+        except Exception:
+            convo = None
         for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
-            m.category = categorize(m.from_addr, m.from_name, m.subject, m.snippet); n += 1
+            conversation = bool(convo) and convo.is_reply_to_me(
+                from_addr=m.from_addr, subject=m.subject)
+            m.category = categorize(m.from_addr, m.from_name, m.subject, m.snippet,
+                                    conversation=conversation); n += 1
     else:
         if existing:
             existing.category = body.category
@@ -1753,17 +1864,40 @@ def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_s
 @router.post("/recategorize")
 def recategorize(session: Session = Depends(get_session)) -> dict:
     """Recompute categories for all messages, honoring sender overrides. Column-only."""
-    from app.sync.categorize import categorize
+    from app.sync.categorize import build_conversation, categorize
     overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
+    # Same conversation guard the sync applies to fresh mail, so running this
+    # once pulls already-misfiled replies back into the inbox.
+    try:
+        convo = build_conversation(session)
+    except Exception:
+        log.exception("conversation context failed; recategorizing without it")
+        convo = None
+    # Who wrote the parent of each reply, keyed by the parent's Message-ID -
+    # one pass over the (indexed) message_id/from_addr columns instead of a
+    # lookup per row.
+    parent_from: dict[str, str] = {}
+    if convo:
+        for mid_hdr, fa in session.exec(select(Message.message_id, Message.from_addr)):
+            if mid_hdr and (fa or "").strip().lower() in convo.mine:
+                parent_from[mid_hdr] = fa
     rows = session.exec(
         select(Message.id, Message.from_addr, Message.from_name, Message.subject,
-               Message.snippet, Message.category)
+               Message.snippet, Message.category, Message.in_reply_to,
+               Message.is_reply_to_me)
     ).all()
     n = 0
-    for mid, fa, fn, subj, snip, cat in rows:
-        new = overrides.get((fa or "").lower()) or categorize(fa or "", fn or "", subj or "", snip or "")
-        if new != cat:
-            session.exec(text("UPDATE message SET category = :c WHERE id = :i").bindparams(c=new, i=mid))
+    for mid, fa, fn, subj, snip, cat, irt, was_reply in rows:
+        conversation = bool(convo) and convo.is_reply_to_me(
+            from_addr=fa or "", subject=subj or "", parent_from=parent_from.get(irt or "", ""))
+        new = overrides.get((fa or "").lower()) or categorize(
+            fa or "", fn or "", subj or "", snip or "", conversation=conversation)
+        # The same pass backfills the reply marker, so the badge appears on mail
+        # that was already synced before it existed.
+        if new != cat or conversation != bool(was_reply):
+            session.exec(
+                text("UPDATE message SET category = :c, is_reply_to_me = :r WHERE id = :i")
+                .bindparams(c=new, r=1 if conversation else 0, i=mid))
             n += 1
     session.commit()
     return {"updated": n}

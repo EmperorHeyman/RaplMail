@@ -179,6 +179,12 @@
     <span class="body">
       <span class="line1">
         <span class="from">{message.from_name || message.from_addr}</span>
+        {#if !outgoingView && message.is_reply_to_me}
+          <!-- An answer to mail YOU sent. Sits next to the sender, where the eye
+               already is when scanning the list, rather than among the small
+               marks on the right - the whole point is that you don't miss it. -->
+          <span class="replied" title={t("list.replyToYouTitle")}>{@html icons.reply} {t("list.replyToYou")}</span>
+        {/if}
         <span class="time">{fmtTime(message.date)}</span>
       </span>
       <span class="subject">{message.subject || t("list.noSubject")}</span>
@@ -258,6 +264,13 @@
   .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
   .line1 { display: flex; justify-content: space-between; gap: 8px; }
   .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .replied {
+    flex: none; margin-right: auto; display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
+    padding: 2px 6px; border-radius: 999px;
+    color: var(--accent); background: var(--accent-soft);
+  }
+  .replied :global(svg) { width: 10px; height: 10px; }
   .time { flex: none; color: var(--faint); font-size: 12px; }
   .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
   .snippet { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

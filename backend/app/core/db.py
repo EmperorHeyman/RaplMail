@@ -82,6 +82,7 @@ _MIGRATIONS: dict[str, dict[str, str]] = {
         "delivered_to": "ALTER TABLE message ADD COLUMN delivered_to TEXT DEFAULT '[]'",
         "repaired": "ALTER TABLE message ADD COLUMN repaired BOOLEAN DEFAULT 0",
         "is_reply_to_me": "ALTER TABLE message ADD COLUMN is_reply_to_me BOOLEAN DEFAULT 0",
+        "is_automated": "ALTER TABLE message ADD COLUMN is_automated BOOLEAN DEFAULT 0",
     },
     "messagestate": {
         "snooze_presence": "ALTER TABLE messagestate ADD COLUMN snooze_presence BOOLEAN DEFAULT 0",

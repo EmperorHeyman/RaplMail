@@ -83,19 +83,53 @@ def test_reply_prefixes():
 
 def test_signal_parent_written_by_me():
     c = Conversation(mine={"me@example.com"}, corresponded=set())
-    assert c.is_reply_to_me(from_addr="x@y.cz", subject="anything",
-                            parent_from="Me@Example.com")   # case-insensitive
-    assert not c.is_reply_to_me(from_addr="x@y.cz", subject="anything",
-                                parent_from="someone@else.cz")
+    assert c.is_conversation(from_addr="x@y.cz", subject="anything",
+                             parent_from="Me@Example.com")   # case-insensitive
+    assert not c.is_conversation(from_addr="x@y.cz", subject="anything",
+                                 parent_from="someone@else.cz")
 
 
 def test_signal_re_from_someone_i_wrote_to():
     c = Conversation(mine={"me@example.com"}, corresponded={"jan@brain.cz"})
-    assert c.is_reply_to_me(from_addr="Jan@Brain.cz", subject="Re: ahoj")
+    assert c.is_conversation(from_addr="Jan@Brain.cz", subject="Re: ahoj")
     # A stranger's "Re:" (the classic spam trick) is not a conversation.
-    assert not c.is_reply_to_me(from_addr="spam@ads.cz", subject="Re: ahoj")
+    assert not c.is_conversation(from_addr="spam@ads.cz", subject="Re: ahoj")
     # Neither is a fresh newsletter from someone you once emailed.
-    assert not c.is_reply_to_me(from_addr="jan@brain.cz", subject="Novinky")
+    assert not c.is_conversation(from_addr="jan@brain.cz", subject="Novinky")
+
+
+# --- what the "Reply" badge is allowed to claim -----------------------------
+
+def test_badge_needs_the_message_to_actually_answer_mine():
+    c = Conversation(mine={"me@example.com"}, corresponded={"jan@brain.cz"})
+    assert c.answers_my_message(parent_from="Me@Example.com")
+    # A "Re:" from a familiar address is enough to keep mail in the inbox, but
+    # NOT enough to call it a reply - that is the ticket-system false positive.
+    assert c.is_conversation(from_addr="jan@brain.cz", subject="Re: ahoj")
+    assert not c.answers_my_message(parent_from="")
+
+
+def test_a_ticket_system_is_never_a_reply_however_it_threads():
+    """You replied to a ticket once; its notifications thread onto your message
+    and carry "Re: [#123]" forever. Neither may pass for a personal reply."""
+    c = Conversation(mine={"me@example.com"}, corresponded={"support@desk.cz"})
+    # Threads directly onto your own message, but announces itself as a machine.
+    assert not c.answers_my_message(parent_from="me@example.com", automated=True)
+    assert not c.is_conversation(from_addr="support@desk.cz", subject="Re: [#123] update",
+                                 parent_from="me@example.com", automated=True)
+    # And the weak signal alone certainly doesn't badge it.
+    assert not c.answers_my_message(parent_from="")
+    # A person at that same address, writing by hand, still counts.
+    assert c.answers_my_message(parent_from="me@example.com", automated=False)
+
+
+def test_a_real_person_at_a_role_address_is_not_written_off_as_a_robot():
+    """The other direction: guessing from the address used to call info@ a bot.
+    Only the sender's own headers decide."""
+    c = Conversation(mine={"me@example.com"}, corresponded={"info@brain.cz"})
+    assert c.answers_my_message(parent_from="me@example.com", automated=False)
+    assert c.is_conversation(from_addr="info@brain.cz", subject="Re: Objednávka 42",
+                             automated=False)
 
 
 def test_build_conversation_reads_accounts_aliases_contacts_and_sent(client):

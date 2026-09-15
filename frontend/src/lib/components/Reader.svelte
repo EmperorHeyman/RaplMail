@@ -732,11 +732,19 @@
           {/if}
         {:else if deliveredTo.length}
           <!-- No To/Cc at all: this copy was Bcc'd. Show the address it was
-               actually delivered to, from the Delivered-To trace. -->
+               actually delivered to, from the Delivered-To trace - that can be an
+               alias or a list address, so it beats the account address below. -->
           {t("reader.bccLabel")}
           {#each deliveredTo as addr, i}
             {@render addrChip(addr)}{i < deliveredTo.length - 1 ? ", " : ""}
           {/each}
+        {:else if myAddr}
+          <!-- The sender listed nobody and left no trace either. "Undisclosed
+               recipients" is true and useless - the thing worth knowing is WHICH
+               of your mailboxes this landed in, and the folder it is stored in
+               answers that. -->
+          {t("reader.bccLabel")} {@render addrChip(myAddr)}
+          <span class="undisclosed">{t("reader.recipientsHidden")}</span>
         {:else}
           {t("reader.toLabel")} <span class="undisclosed">{t("reader.undisclosed")}</span>
         {/if}
@@ -1039,7 +1047,7 @@
   .replied :global(svg) { width: 11px; height: 11px; }
   .rcpt-label { margin-left: 6px; }
   .rcpt-label.lead { margin-left: 0; }
-  .undisclosed { font-style: italic; opacity: .8; }
+  .undisclosed { font-style: italic; opacity: .7; margin-left: 4px; }
   .more-to { color: var(--accent); font-size: 12px; font-weight: 600; padding: 1px 5px; border-radius: 5px; }
   .more-to:hover { background: var(--surface-2); }
   .addr-wrap { position: relative; display: inline-block; }

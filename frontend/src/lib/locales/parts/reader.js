@@ -55,6 +55,7 @@ export default {
     "reader.ccLabel": "cc",
     "reader.bccLabel": "bcc to",
     "reader.undisclosed": "undisclosed recipients",
+    "reader.recipientsHidden": "(sender hid the recipient list)",
     "reader.showLess": "show less",
     "reader.moreN": "+{n} more",
 
@@ -226,6 +227,7 @@ export default {
     "reader.ccLabel": "kopie",
     "reader.bccLabel": "skrytá kopie",
     "reader.undisclosed": "skrytí příjemci",
+    "reader.recipientsHidden": "(odesílatel skryl seznam příjemců)",
     "reader.showLess": "zobrazit méně",
     "reader.moreN": "+{n} dalších",
 

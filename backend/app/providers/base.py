@@ -37,6 +37,10 @@ class HeaderInfo:
     has_attachments: bool = False
     snippet: str = ""
     in_reply_to: str = ""   # RFC 5322 In-Reply-To (parent Message-ID), for threading
+    # Machine-generated mail: a mailing list, an autoresponder, or a ticketing /
+    # notification system, as declared by the sender's own headers rather than
+    # guessed from its address. See imap_smtp._is_automated.
+    is_automated: bool = False
 
 
 # Custom IMAP keyword used to mirror the local "done" state to the server, so

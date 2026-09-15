@@ -1846,8 +1846,9 @@ def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_s
         except Exception:
             convo = None
         for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
-            conversation = bool(convo) and convo.is_reply_to_me(
-                from_addr=m.from_addr, subject=m.subject)
+            conversation = bool(convo) and convo.is_conversation(
+                from_addr=m.from_addr, subject=m.subject,
+                automated=bool(m.is_automated) or bool((m.unsubscribe or "").strip()))
             m.category = categorize(m.from_addr, m.from_name, m.subject, m.snippet,
                                     conversation=conversation); n += 1
     else:
@@ -1884,20 +1885,29 @@ def recategorize(session: Session = Depends(get_session)) -> dict:
     rows = session.exec(
         select(Message.id, Message.from_addr, Message.from_name, Message.subject,
                Message.snippet, Message.category, Message.in_reply_to,
-               Message.is_reply_to_me)
+               Message.is_reply_to_me, Message.is_automated, Message.unsubscribe)
     ).all()
     n = 0
-    for mid, fa, fn, subj, snip, cat, irt, was_reply in rows:
-        conversation = bool(convo) and convo.is_reply_to_me(
-            from_addr=fa or "", subject=subj or "", parent_from=parent_from.get(irt or "", ""))
+    for mid, fa, fn, subj, snip, cat, irt, was_reply, automated, unsub in rows:
+        # Mail synced before the sender's list/auto headers were read has
+        # is_automated=False by default, which would let an old ticket blast pass
+        # for a personal reply. A stored List-Unsubscribe (kept whenever a body
+        # was fetched) says the same thing, so use it as the stand-in until the
+        # row is re-synced.
+        is_auto = bool(automated) or bool((unsub or "").strip())
+        parent = parent_from.get(irt or "", "")
+        conversation = bool(convo) and convo.is_conversation(
+            from_addr=fa or "", subject=subj or "", parent_from=parent, automated=is_auto)
+        replied = bool(convo) and convo.answers_my_message(parent_from=parent, automated=is_auto)
         new = overrides.get((fa or "").lower()) or categorize(
             fa or "", fn or "", subj or "", snip or "", conversation=conversation)
         # The same pass backfills the reply marker, so the badge appears on mail
-        # that was already synced before it existed.
-        if new != cat or conversation != bool(was_reply):
+        # that was already synced before it existed - and clears from mail that
+        # never earned it.
+        if new != cat or replied != bool(was_reply):
             session.exec(
                 text("UPDATE message SET category = :c, is_reply_to_me = :r WHERE id = :i")
-                .bindparams(c=new, r=1 if conversation else 0, i=mid))
+                .bindparams(c=new, r=1 if replied else 0, i=mid))
             n += 1
     session.commit()
     return {"updated": n}

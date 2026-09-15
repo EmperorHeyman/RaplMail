@@ -176,7 +176,7 @@ class ImapSmtpProvider:
         client = self._imap()
         client.select_folder(folder_path, readonly=True)
         data = client.fetch(uids, ["ENVELOPE", "FLAGS", "RFC822.SIZE", "BODYSTRUCTURE",
-                                   "INTERNALDATE"])
+                                   "INTERNALDATE", _AUTO_HEADERS])
         out: list[HeaderInfo] = []
         for uid, info in data.items():
             env = info.get(b"ENVELOPE")
@@ -200,6 +200,7 @@ class ImapSmtpProvider:
                 when = idate if isinstance(idate, datetime) else None
             flags = [f.decode() if isinstance(f, bytes) else str(f) for f in info.get(b"FLAGS", ())]
             out.append(HeaderInfo(
+                is_automated=_is_automated(_header_block(info)),
                 uid=uid, message_id=msg_id, subject=subject,
                 from_addr=from_addr, from_name=from_name,
                 to_addrs=to_addrs, cc_addrs=cc_addrs, date=when, flags=flags,
@@ -348,6 +349,51 @@ def _raw_from_fetch(info: dict) -> bytes:
         if key not in _NOT_RAW and isinstance(val, bytes) and len(val) > 2:
             return val
     return b""
+
+
+# Headers that say "a machine sent this", asked for in the same FETCH as the
+# envelope so it costs no extra round trip. PEEK so reading them can't set \Seen.
+_AUTO_HEADERS = ("BODY.PEEK[HEADER.FIELDS (LIST-ID LIST-UNSUBSCRIBE LIST-POST "
+                 "AUTO-SUBMITTED PRECEDENCE X-AUTO-RESPONSE-SUPPRESS)]")
+
+# RFC 3834 reserves "no" for genuine person-to-person mail; anything else
+# ("auto-generated", "auto-replied", …) is a machine. Precedence is not in any
+# RFC but is what most bulk senders and ticket systems actually set.
+_AUTO_PRECEDENCE = ("bulk", "list", "junk", "auto_reply", "auto-reply")
+
+
+def _header_block(info: dict) -> str:
+    """The HEADER.FIELDS block out of one FETCH result, whatever the server
+    called it - the echoed item name varies in spacing and in dropping PEEK."""
+    for key, val in info.items():
+        if key.startswith(b"BODY[HEADER") and isinstance(val, bytes):
+            return val.decode("utf-8", "replace")
+    return ""
+
+
+def _is_automated(block: str) -> bool:
+    """Did a machine send this? Read from the sender's own headers rather than
+    guessed from its address.
+
+    Guessing by address was wrong in both directions: a real person answering
+    from info@ or support@ got written off as a robot, while a ticketing system
+    that once threaded onto your reply kept being called a reply. A list, an
+    autoresponder and a ticket system all announce themselves here.
+    """
+    if not block:
+        return False
+    for raw in block.splitlines():
+        name, _, value = raw.partition(":")
+        name, value = name.strip().lower(), value.strip().lower()
+        if name in ("list-id", "list-unsubscribe", "list-post"):
+            return True
+        if name == "auto-submitted" and value and not value.startswith("no"):
+            return True
+        if name == "precedence" and value in _AUTO_PRECEDENCE:
+            return True
+        if name == "x-auto-response-suppress" and value:
+            return True
+    return False
 
 
 def _bodystructure_has_attachment(bs) -> bool:

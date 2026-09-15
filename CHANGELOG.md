@@ -11,6 +11,29 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.11] - 2026-09-14
+
+### Changed
+- **"Reply" now means someone answered you, not "this looks like a reply".** The
+  badge was reading a "Re:" subject from any address you had written to as a
+  reply, so once you answered a ticket, every notification that system sent you
+  claimed to be a reply. It now requires the message's own In-Reply-To to resolve
+  to something you actually sent. Machine-generated mail never qualifies at all,
+  however it threads - and whether mail is machine-generated is now read from the
+  sender's own headers (`List-Id`, `List-Unsubscribe`, `Auto-Submitted`,
+  `Precedence`), fetched alongside the envelope at no extra round trip, instead
+  of being guessed from the address. Guessing was wrong both ways: it wrote off
+  real people writing from `info@` or `support@`, and still let ticket blasts
+  pass for personal replies. The inbox guard keeps the wider rule - a "Re:" from
+  someone you correspond with still stays in Primary - because a mail wrongly
+  left in the inbox costs nothing and a missed reply is the bug being fixed.
+- **The recipient line names the mailbox that received it.** A message whose
+  sender listed nobody said "to undisclosed recipients", which is true and
+  useless - what you want to know is which of your addresses it arrived at. It
+  now shows that address (with a note that the sender hid the recipient list),
+  falling back to it only when the message carries no `Delivered-To` trace of its
+  own, since that can name an alias or list address and is the better answer.
+
 ## [0.9.10] - 2026-09-14
 
 ### Added

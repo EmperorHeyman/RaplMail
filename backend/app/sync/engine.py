@@ -1061,13 +1061,19 @@ class SyncManager:
             ).first()
             if parent:
                 thread_id, parent_from = parent[0] or "", parent[1] or ""
-        # An answer inside a conversation I'm part of is mail I'm waiting for -
-        # it must never land in newsletters/updates/promotions.
-        is_reply_to_me = bool(convo) and convo.is_reply_to_me(
-            from_addr=h.from_addr, subject=subject, parent_from=parent_from)
+        automated = bool(getattr(h, "is_automated", False))
+        # Two different claims, deliberately kept apart. `conversation` keeps mail
+        # I'm part of out of newsletters/updates; `is_reply_to_me` is the narrower
+        # one the "Reply" badge makes, and needs the message to actually answer
+        # something I sent.
+        conversation = bool(convo) and convo.is_conversation(
+            from_addr=h.from_addr, subject=subject, parent_from=parent_from,
+            automated=automated)
+        is_reply_to_me = bool(convo) and convo.answers_my_message(
+            parent_from=parent_from, automated=automated)
         category = ((overrides or {}).get((h.from_addr or "").lower())
                     or categorize(h.from_addr, from_name, subject, h.snippet,
-                                  conversation=is_reply_to_me))
+                                  conversation=conversation))
         if not thread_id:
             thread_id = thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
                                    participants=[h.from_addr, *(h.to_addrs or [])])
@@ -1079,7 +1085,7 @@ class SyncManager:
             thread_id=thread_id,
             is_seen="\\Seen" in h.flags, is_flagged="\\Flagged" in h.flags,
             is_answered="\\Answered" in h.flags, has_attachments=h.has_attachments,
-            is_reply_to_me=is_reply_to_me,
+            is_reply_to_me=is_reply_to_me, is_automated=automated,
             is_done=_DONE_KW in h.flags,   # cross-device "done" mirrored as an IMAP keyword
             size=h.size,
             category=category,

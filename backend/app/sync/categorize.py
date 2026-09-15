@@ -90,17 +90,34 @@ class Conversation:
     mine: set[str] = field(default_factory=set)
     corresponded: set[str] = field(default_factory=set)
 
-    def is_reply_to_me(self, from_addr: str = "", subject: str = "",
-                       parent_from: str = "") -> bool:
-        """Is this message an answer inside a conversation I'm part of?
+    def answers_my_message(self, parent_from: str = "", automated: bool = False) -> bool:
+        """Is this a person answering a message I actually sent?
 
-        Two signals, either is enough:
-          - its In-Reply-To resolved to a message *I* sent (`parent_from`), which
-            is as certain as it gets, or
-          - it carries a reply prefix AND comes from someone I have written to,
-            which catches the case where the parent isn't cached locally (Sent
-            not synced yet, or a client that dropped In-Reply-To).
+        Deliberately the narrow question, because it is the one the "Reply" badge
+        claims. It needs the message's own In-Reply-To to resolve to something I
+        sent - a "Re:" subject from a familiar address is not evidence, or every
+        notification from a ticket system you once replied to would call itself a
+        reply. Machine-generated mail never qualifies, however it threads.
         """
+        if automated:
+            return False
+        return bool(parent_from) and parent_from.strip().lower() in self.mine
+
+    def is_conversation(self, from_addr: str = "", subject: str = "",
+                        parent_from: str = "", automated: bool = False) -> bool:
+        """Is this message part of a conversation I'm in - i.e. must it stay in
+        the inbox rather than be filed under newsletters/updates/promotions?
+
+        Wider than `answers_my_message`, because the cost of being wrong differs:
+        a missed reply is the bug we are fixing, an extra mail left in Primary is
+        not. So a reply prefix from someone I have written to also counts, which
+        catches a reply whose parent isn't cached (Sent not synced yet, or a
+        client that dropped In-Reply-To). Machine mail is excluded either way:
+        a list, an autoresponder or a ticket system is not a conversation, and
+        the ordinary heuristics file it where the user expects it.
+        """
+        if automated:
+            return False
         if parent_from and parent_from.strip().lower() in self.mine:
             return True
         sender = (from_addr or "").strip().lower()

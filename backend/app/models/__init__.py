@@ -146,6 +146,12 @@ class Message(SQLModel, table=True):
     # you were waiting for is visible at a glance instead of being one more
     # unread row.
     is_reply_to_me: bool = Field(default=False, index=True)
+    # A machine sent this: a list, an autoresponder, a ticketing or notification
+    # system. Read from the sender's own headers at sync (List-Id, Auto-Submitted,
+    # Precedence - see providers/imap_smtp._is_automated), never guessed from the
+    # address, because guessing wrote off real people at info@/support@ and still
+    # let ticket blasts pass for personal replies.
+    is_automated: bool = False
     is_done: bool = Field(default=False, index=True)   # Spark "done" (local)
     category: str = Field(default="primary", index=True)  # primary|newsletters|social|updates|promotions
     snooze_until: datetime | None = None

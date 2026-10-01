@@ -143,7 +143,18 @@ def _apply_rules_payload(session: Session, payload: dict) -> bool:
         return False
     if rules_ts <= (_blob(session).get("syncRulesTs") or ""):
         return False   # ours is newer or the same - keep it
+    from app.models import Rule, RuleAction
+    had_groups = any(r.action == RuleAction.set_group for r in session.exec(select(Rule)))
     _replace_rules(session, incoming)
+    # "Put in group" rules file mail rather than act on it, so a changed set has
+    # to re-file what's already here too - not just mail that arrives later.
+    if had_groups or any(isinstance(r, dict) and r.get("action") == RuleAction.set_group.value
+                         for r in incoming):
+        from app.sync.categorize import refile
+        try:
+            refile(session)
+        except Exception:
+            log.exception("re-filing after adopting peer rules failed")
     _save(session, {"syncRulesTs": rules_ts, "syncRulesPushedTs": rules_ts})
     return True
 

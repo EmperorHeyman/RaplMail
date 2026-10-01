@@ -1,6 +1,8 @@
 <script>
-  import { app, saveSettings, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray, setLanguage } from "../store.svelte.js";
-  import { backendBase } from "../api.js";
+  import { onMount } from "svelte";
+  import { app, saveSettings, notify, selectUnifiedInbox, refreshMessages, smartActive, enableNotifications, notificationsAvailable, testNotification, exportConfig, importConfig, exportFullBackup, importFullBackup, checkForUpdates, setAutostart, setCloseToTray, setLanguage, createCustomGroup, updateCustomGroup, deleteCustomGroup, GROUP_TONES } from "../store.svelte.js";
+  import { backendBase, rules as rulesApi } from "../api.js";
+  import { smartGroupList, GROUP_ICONS } from "../groups.js";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import { icons } from "../icons.js";
   import { playSound, SOUND_OPTIONS } from "../sound.js";
@@ -49,15 +51,40 @@
     try { await navigator.clipboard.writeText(t); notify("Copied"); } catch { notify("Couldn't copy", "error"); }
   }
 
-  const SMART_CATS = [
-    { id: "updates", label: "Notifications", icon: icons.bell },
-    { id: "newsletters", label: "Newsletters", icon: icons.newspaper },
-    { id: "social", label: "Social", icon: icons.chat },
-    { id: "promotions", label: "Promotions", icon: icons.tag },
-    { id: "invitations", label: "Invitations", icon: icons.calendar },
-    { id: "invitation_responses", label: "Invitation responses", icon: icons.done },
-  ];
-  const META = Object.fromEntries(SMART_CATS.map((c) => [c.id, c]));
+  // Built-in categories + custom groups (lib/groups.js).
+  const SMART_CATS = $derived(smartGroupList());
+  const META = $derived(Object.fromEntries(SMART_CATS.map((c) => [c.id, c])));
+
+  // --- custom groups ("HR system") -----------------------------------------
+  let newGroupName = $state("");
+  let lookOpen = $state(null);      // id of the group whose colour/icon picker is open
+  let ruleCounts = $state({});      // group id -> how many rules fill it
+  onMount(async () => {
+    try {
+      const counts = {};
+      for (const r of await rulesApi.list()) {
+        if (r.action === "set_group" && r.action_arg) counts[r.action_arg] = (counts[r.action_arg] || 0) + 1;
+      }
+      ruleCounts = counts;
+    } catch {}
+  });
+  function addGroup() {
+    const name = newGroupName.trim();
+    if (!name) return;
+    createCustomGroup(name);
+    newGroupName = "";
+  }
+  function renameGroup(g, name) {
+    const n = name.trim();
+    if (n && n !== g.label) updateCustomGroup(g.id, { name: n });
+  }
+  // Jump to Settings -> Rules with a "Put in group" rule for this group ready
+  // to fill in (the Rules tab picks the draft up when it opens).
+  function addRuleFor(id) {
+    app.ruleDraft = { name: "", match_field: "from_domain", match_op: "ends_with", match_value: "",
+                      action: "set_group", action_arg: id, enabled: true, order: 0 };
+    app.settingsTab = "rules";
+  }
   function toggleGroup(id, on) {
     saveSettings({ smartGroups: { ...app.settings.smartGroups, [id]: on } });
     if (smartActive()) refreshMessages();
@@ -316,9 +343,46 @@
     {#if app.settings.smartInbox}
       <p class="hint" style="margin-top:10px">Group these (unchecked = left inline so you won't miss them):</p>
       <div class="smartcats">
-        {#each SMART_CATS as c}
+        {#each SMART_CATS as c (c.id)}
           <label class="grp"><input type="checkbox" checked={!!app.settings.smartGroups[c.id]} onchange={(e) => toggleGroup(c.id, e.currentTarget.checked)} /> <span>{@html c.icon} {c.label}</span></label>
         {/each}
+      </div>
+
+      <p class="hint" style="margin:16px 0 8px"><b>{t("groups.yourGroups")}</b> - {t("groups.settingsHint")}</p>
+      <div class="cglist">
+        {#each SMART_CATS.filter((c) => c.custom) as g (g.id)}
+          <div class="cgrow">
+            <button class="cgicon" style="--tone:{g.tone}" title={t("groups.changeLook")} aria-label={t("groups.changeLook")}
+              onclick={() => (lookOpen = lookOpen === g.id ? null : g.id)}>{@html g.icon}</button>
+            <input class="cgname" value={g.label} aria-label={t("groups.name")}
+              onchange={(e) => renameGroup(g, e.currentTarget.value)}
+              onkeydown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} />
+            <span class="cgrules" class:none={!ruleCounts[g.id]}>{ruleCounts[g.id] ? t("groups.ruleCount", { n: ruleCounts[g.id] }) : t("groups.noRules")}</span>
+            <button class="btn" onclick={() => addRuleFor(g.id)}>{@html icons.bolt} {t("groups.addRule")}</button>
+            <button class="btn ghost danger" title={t("groups.delete")} aria-label={t("groups.delete")} onclick={() => deleteCustomGroup(g.id)}>{@html icons.trash}</button>
+          </div>
+          {#if lookOpen === g.id}
+            <div class="cglook">
+              <div class="tones">
+                {#each GROUP_TONES as c}
+                  <button class="tone" class:on={g.tone === c} style="--tone:{c}" aria-label={c}
+                    onclick={() => updateCustomGroup(g.id, { tone: c })}></button>
+                {/each}
+              </div>
+              <div class="icopts">
+                {#each GROUP_ICONS as ic}
+                  <button class="icopt" class:on={g.icon === icons[ic]} style="--tone:{g.tone}" aria-label={ic}
+                    onclick={() => updateCustomGroup(g.id, { icon: ic })}>{@html icons[ic]}</button>
+                {/each}
+              </div>
+            </div>
+          {/if}
+        {/each}
+        <div class="cgnew">
+          <input bind:value={newGroupName} placeholder={t("groups.namePlaceholder")}
+            onkeydown={(e) => { if (e.key === "Enter") addGroup(); }} />
+          <button class="btn" onclick={addGroup} disabled={!newGroupName.trim()}>＋ {t("groups.create")}</button>
+        </div>
       </div>
 
       <label class="inline" style="margin-top:14px">Senders shown per group
@@ -603,6 +667,24 @@
   .orderlist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
   .orderrow { padding: 8px 12px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); font-size: 13px; cursor: grab; }
   .orderrow:hover { border-color: var(--accent); }
+  .cglist { display: flex; flex-direction: column; gap: 6px; }
+  .cgrow { display: flex; align-items: center; gap: 8px; }
+  .cgicon { flex: 0 0 auto; width: 30px; height: 30px; display: grid; place-items: center; border-radius: var(--radius-sm);
+    color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent); font-size: 15px; }
+  .cgicon:hover { background: color-mix(in srgb, var(--tone) 25%, transparent); }
+  .cgname { flex: 1; min-width: 0; }
+  .cgrules { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .cgrules.none { color: var(--faint); }
+  .cglook { display: flex; flex-direction: column; gap: 8px; margin: 0 0 6px 38px; padding: 10px;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm); }
+  .tones, .icopts { display: flex; flex-wrap: wrap; gap: 6px; }
+  .tone { width: 20px; height: 20px; border-radius: 50%; background: var(--tone); border: 2px solid transparent; }
+  .tone.on { border-color: var(--text); }
+  .icopt { width: 28px; height: 28px; display: grid; place-items: center; border-radius: var(--radius-sm); color: var(--muted); font-size: 15px; }
+  .icopt:hover { background: var(--hover); color: var(--text); }
+  .icopt.on { color: var(--tone); background: color-mix(in srgb, var(--tone) 15%, transparent); }
+  .cgnew { display: flex; gap: 8px; margin-top: 2px; }
+  .cgnew input { flex: 1; }
   .preview-box { border: 1px dashed var(--border); border-radius: var(--radius); margin-top: 6px; pointer-events: none; }
   .bccrow { display: flex; gap: 8px; margin-bottom: 8px; }
   .bccrow input:first-child { flex: 0 0 220px; }

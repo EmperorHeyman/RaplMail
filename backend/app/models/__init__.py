@@ -61,6 +61,9 @@ class RuleAction(str, enum.Enum):
     webhook = "webhook"         # action_arg = URL; POST a JSON payload on match
     run_script = "run_script"   # action_arg = local command; run it with mail context in env
     save_attachments = "save_attachments"  # action_arg = local folder; save incoming attachments there
+    # action_arg = a Smart Inbox group: a built-in category or a custom group id.
+    # Sorts the mail into that group at categorize time; never stops other rules.
+    set_group = "set_group"
 
 
 class Account(SQLModel, table=True):
@@ -153,7 +156,7 @@ class Message(SQLModel, table=True):
     # let ticket blasts pass for personal replies.
     is_automated: bool = False
     is_done: bool = Field(default=False, index=True)   # Spark "done" (local)
-    category: str = Field(default="primary", index=True)  # primary|newsletters|social|updates|promotions
+    category: str = Field(default="primary", index=True)  # primary|newsletters|social|updates|promotions|…, or a custom group id
     snooze_until: datetime | None = None
 
     has_attachments: bool = False

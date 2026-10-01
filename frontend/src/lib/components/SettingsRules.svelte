@@ -1,8 +1,9 @@
 <script>
   import { onMount } from "svelte";
-  import { app, notify } from "../store.svelte.js";
+  import { app, notify, refreshMessages, categoryLabel, groupArgFor } from "../store.svelte.js";
   import { rules as api } from "../api.js";
   import { t } from "../i18n.svelte.js";
+  import GroupPicker from "./GroupPicker.svelte";
 
   let list = $state([]);
   let preview = $state(null);
@@ -17,7 +18,7 @@
 
   const FIELDS = ["from_domain", "from", "to", "subject", "body", "category"];
   const OPS = ["contains", "equals", "ends_with", "regex"];
-  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script", "save_attachments"];
+  const ACTIONS = ["move", "set_group", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script", "save_attachments"];
 
   async function load() { list = await api.list(); }
   onMount(load);
@@ -26,7 +27,13 @@
     try { preview = await api.preview(draft); } catch (e) { notify(e.message, "error"); }
   }
   const DESTRUCTIVE = new Set(["delete", "archive", "block"]);
+  let lastAction = draft.action;
+  function onActionChange() {
+    draft.action_arg = groupArgFor(lastAction, draft.action, draft.action_arg);
+    lastAction = draft.action;
+  }
   async function create() {
+    if (draft.action === "set_group" && !draft.action_arg) { notify(t("groups.pickFirst"), "error"); return; }
     // Catch an invalid regex before it silently never-matches (or errors per-message).
     if (draft.match_op === "regex") {
       try { new RegExp(draft.match_value); }
@@ -49,12 +56,18 @@
       let applied = 0;
       try { applied = (await api.apply(draft)).applied || 0; } catch {}
       notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
-      draft = newDraft(); preview = null; await load();
+      if (applied) refreshMessages({ background: true });
+      draft = newDraft(); lastAction = draft.action; preview = null; await load();
     }
     catch (e) { notify(e.message, "error"); }
   }
-  async function remove(r) { await api.remove(r.id); await load(); }
-  async function toggle(r) { await api.update(r.id, { ...r, enabled: !r.enabled }); await load(); }
+  // A group rule's mail is re-filed server-side on toggle/delete, so refresh.
+  async function remove(r) { await api.remove(r.id); await load(); if (r.action === "set_group") refreshMessages({ background: true }); }
+  async function toggle(r) { await api.update(r.id, { ...r, enabled: !r.enabled }); await load(); if (r.action === "set_group") refreshMessages({ background: true }); }
+  function argLabel(r) {
+    if (r.action === "set_group") return r.action_arg ? ` (${categoryLabel(r.action_arg)})` : "";
+    return ["move", "webhook", "run_script"].includes(r.action) && r.action_arg ? ` (${r.action_arg})` : "";
+  }
 
   const needsArg = $derived(["move", "webhook", "run_script", "save_attachments"].includes(draft.action));
   const argPlaceholder = $derived(
@@ -75,7 +88,7 @@
           <button class="toggle" class:on={r.enabled} onclick={() => toggle(r)} title="Enable/disable" aria-label={r.enabled ? "Enabled" : "Disabled"}><span class="dot"></span></button>
           <div class="desc">
             <b>{r.name || "Rule"}</b>
-            <span>If {t("rules.field." + r.match_field)} {t("rules.op." + r.match_op)} “{r.match_value}” → {t("rules.action." + r.action)}{["move", "webhook", "run_script"].includes(r.action) && r.action_arg ? ` (${r.action_arg})` : ""}</span>
+            <span>If {t("rules.field." + r.match_field)} {t("rules.op." + r.match_op)} “{r.match_value}” → {t("rules.action." + r.action)}{argLabel(r)}</span>
           </div>
           <button class="btn ghost danger" onclick={() => remove(r)}>Delete</button>
         </div>
@@ -94,9 +107,11 @@
     </div>
     <div class="cond">
       <span>then</span>
-      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
-      {#if needsArg}<input bind:value={draft.action_arg} placeholder="folder, e.g. Archive" />{/if}
+      <select bind:value={draft.action} onchange={onActionChange}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
+      {#if draft.action === "set_group"}<GroupPicker bind:value={draft.action_arg} />
+      {:else if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
     </div>
+    {#if draft.action === "set_group"}<p class="note">{t("groups.ruleNote")}</p>{/if}
 
     <div class="actions">
       <button class="btn" onclick={runPreview}>Preview matches</button>
@@ -136,4 +151,5 @@
   .preview { margin-top: 14px; padding: 12px 14px; background: var(--surface-2); border-radius: var(--radius-sm); font-size: 13px; }
   .preview ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
   .muted { color: var(--muted); }
+  .note { margin: -4px 0 12px 45px; font-size: 12px; color: var(--muted); }
 </style>

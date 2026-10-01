@@ -1,9 +1,10 @@
 <script>
   // Right-click context menu for an attachment: Open, Open in sandbox, Save to
   // Downloads, Save as… Positioned at the cursor and clamped to the viewport.
-  import { onMount, onDestroy } from "svelte";
+  import { onMount } from "svelte";
   import { t } from "../i18n.svelte.js";
   import { icons } from "../icons.js";
+  import { dismiss } from "../dismiss.js";
 
   let { x = 0, y = 0, sandboxOn = true, risky = false, onaction, onclose } = $props();
 
@@ -23,32 +24,13 @@
   // Run the action BEFORE closing: onclose nulls the parent's menu state, which
   // the action handler reads to know which attachment was picked.
   function pick(kind) { onaction?.(kind); onclose?.(); }
-  function onKey(e) { if (e.key === "Escape") onclose?.(); }
 
-  onMount(() => {
-    reposition();
-    // Close on any outside interaction. Defer so the opening right-click doesn't
-    // immediately close it.
-    const close = () => onclose?.();
-    setTimeout(() => {
-      window.addEventListener("pointerdown", close);
-      window.addEventListener("blur", close);
-      window.addEventListener("resize", close);
-      document.addEventListener("scroll", close, true);
-    }, 0);
-    return () => {
-      window.removeEventListener("pointerdown", close);
-      window.removeEventListener("blur", close);
-      window.removeEventListener("resize", close);
-      document.removeEventListener("scroll", close, true);
-    };
-  });
+  onMount(reposition);
 </script>
 
-<svelte:window on:keydown={onKey} />
-
+<!-- use:dismiss closes it on any outside interaction (see lib/dismiss.js). -->
 <div bind:this={el} class="menu" style="left:{pos.left}px; top:{pos.top}px"
-     onpointerdown={(e) => e.stopPropagation()} oncontextmenu={(e) => e.preventDefault()} role="menu" tabindex="-1">
+     use:dismiss={() => onclose?.()} oncontextmenu={(e) => e.preventDefault()} role="menu" tabindex="-1">
   <button class="mi" role="menuitem" onclick={() => pick("open")}>{@html icons.attachment || ""} {t("attMenu.open")}</button>
   {#if sandboxOn}
     <button class="mi" role="menuitem" onclick={() => pick("sandbox")} class:accent={risky}>

@@ -3,6 +3,7 @@
   import { app, loadAccountsAndFolders, notify, confirmDialog } from "../store.svelte.js";
   import { accounts as api } from "../api.js";
   import { relativeTime } from "../time.svelte.js";
+  import { t } from "../i18n.svelte.js";
 
   // --- per-account health dashboard ----------------------------------------
   let health = $state({});   // keyed by account id
@@ -223,7 +224,7 @@
   <div class="accounts">
     {#each app.accounts as a, i}
       {@const h = health[a.id]}
-      {@const st = stMeta(h?.status)}
+      {@const st = h?.needs_signin ? { dot: "#f0a53a", text: t("reauth.statusExpired") } : stMeta(h?.status)}
       <div class="acct-card">
         {#if app.accounts.length > 1}
           <div class="reorder">
@@ -251,6 +252,10 @@
         <button class="btn ghost" onclick={() => openIdentities(a)} title="Send-as identities">
           Identities{a.aliases?.length ? ` (${a.aliases.length})` : ""}
         </button>
+        {#if a.provider === "m365" || a.provider === "gmail"}
+          <button class="btn" class:primary={h?.needs_signin} onclick={() => (app.reauthAccountId = a.id)}
+            title={t("reauth.settingsTip")}>{t("reauth.signIn")}</button>
+        {/if}
         {#if a.provider === "imap"}
           <button class="btn ghost" onclick={() => reconnect(a)} title="Re-enter / fix the password for this account">Reconnect</button>
           <button class="btn ghost" onclick={() => openServer(a)} title="Edit IMAP/SMTP server settings">Server</button>

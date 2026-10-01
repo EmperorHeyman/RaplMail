@@ -3,6 +3,7 @@
   import { untrack } from "svelte";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment, subscriptions } from "../api.js";
   import { icons } from "../icons.js";
+  import { dismiss, forwardFramePointer } from "../dismiss.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, plainBody } from "../email.js";
   import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
@@ -21,7 +22,7 @@
   let error = $state("");
   let menuAddr = $state(null); // address whose quick-menu is open
   let loadImages = $state(false); // user override to show blocked images
-  let ctxMenu = $state(null);  // reader right-click menu { x, y }
+  let ctxMenu = $state(null);  // reader right-click menu { x, y, sel, link }
 
   $effect(() => {
     const id = app.selectedMessageId;
@@ -291,20 +292,22 @@
     } catch {}
     // Right-click inside the sandboxed email → our reader menu. The event's
     // coords are relative to the iframe, so offset by the frame's position.
+    // It replaces the native menu, so it has to carry what that menu offered:
+    // the selected text and the link under the cursor, read now (a click on the
+    // menu can clear the selection before the action runs).
     doc.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       const rect = frame?.getBoundingClientRect();
-      ctxMenu = { x: (rect?.left || 0) + e.clientX, y: (rect?.top || 0) + e.clientY };
+      const a = e.target?.closest?.("a[href]");
+      ctxMenu = { x: (rect?.left || 0) + e.clientX, y: (rect?.top || 0) + e.clientY,
+                  sel: doc.getSelection?.()?.toString() || "",
+                  link: a ? (a.getAttribute("href") || "").trim() : "" };
     }, true);
+    forwardFramePointer(doc);   // clicking into the email closes open menus
     doc.addEventListener("click", (e) => {
       const a = e.target?.closest?.("a[href]");
       if (!a) return;
-      const href = (a.getAttribute("href") || "").trim();
-      if (/^https?:\/\//i.test(href)) { e.preventDefault(); openExternal(href); }
-      else if (href.toLowerCase().startsWith("mailto:")) {
-        e.preventDefault();
-        openCompose({ to: href.slice(7).split("?")[0], subject: "", html: "", account_id: detail?.account_id });
-      }
+      if (openLink((a.getAttribute("href") || "").trim())) e.preventDefault();
     }, true);
     // The email iframe grabs focus on load, so app keyboard shortcuts (Ctrl+K
     // command palette, Ctrl+N compose) "die" while reading - the keydowns land in
@@ -619,7 +622,28 @@
   function openReaderCtx(e) {
     if (!detail) return;
     e.preventDefault();
-    ctxMenu = { x: e.clientX, y: e.clientY };
+    const a = e.target?.closest?.("a[href]");
+    ctxMenu = { x: e.clientX, y: e.clientY, sel: window.getSelection()?.toString() || "",
+                link: a ? (a.getAttribute("href") || "").trim() : "" };
+  }
+  // http(s) opens in the OS browser, mailto: in Compose. False for anything else.
+  function openLink(href) {
+    if (/^https?:\/\//i.test(href)) { openExternal(href); return true; }
+    if (href.toLowerCase().startsWith("mailto:")) {
+      openCompose({ to: href.slice(7).split("?")[0], subject: "", html: "", account_id: detail?.account_id });
+      return true;
+    }
+    return false;
+  }
+  async function copyText(text) {
+    try { await navigator.clipboard.writeText(text); notify(t("reader.copied")); }
+    catch { notify(t("reader.couldntCopy"), "error"); }
+  }
+  function selectAllInEmail() {
+    const d = frame?.contentDocument;
+    if (!d?.body) return;
+    frame.contentWindow?.focus();
+    d.getSelection()?.selectAllChildren(d.body);
   }
   async function copySubject() {
     try { await navigator.clipboard.writeText(detail?.subject || ""); notify(t("reader.subjectCopied")); }
@@ -627,7 +651,16 @@
   }
   const readerCtxActions = $derived.by(() => {
     if (!detail) return [];
+    const sel = ctxMenu?.sel || "", link = ctxMenu?.link || "";
+    const linkOk = /^(https?:|mailto:)/i.test(link);
     return [
+      ...(sel.trim() ? [{ label: t("reader.copy"), icon: icons.copy, run: () => copyText(sel) }] : []),
+      ...(linkOk ? [
+        { label: t("reader.openLink"), icon: icons.link, run: () => openLink(link) },
+        { label: t("reader.copyLink"), icon: icons.link, run: () => copyText(link.toLowerCase().startsWith("mailto:") ? link.slice(7).split("?")[0] : link) },
+      ] : []),
+      ...(frame ? [{ label: t("reader.selectAll"), icon: icons.copy, run: selectAllInEmail }] : []),
+      { sep: true },
       { label: t("reader.reply"), icon: icons.reply, run: reply },
       ...(replyAllCc().length ? [{ label: t("reader.replyAll"), icon: icons.replyAll, run: replyAll }] : []),
       { label: t("reader.forward"), icon: icons.forward, run: forward },
@@ -664,8 +697,7 @@
   }
 </script>
 
-<svelte:window onclick={() => { menuAddr = null; snoozeMenu = false; ctxMenu = null; }}
-  onkeydown={(e) => { if (e.key === "Escape") ctxMenu = null; }} />
+<svelte:window onclick={() => { menuAddr = null; snoozeMenu = false; }} />
 
 <section class="reader">
   {#if threadMode}
@@ -956,7 +988,7 @@
 </section>
 
 {#if ctxMenu}
-  <div class="reader-ctx" style="left:{ctxMenu.x}px; top:{ctxMenu.y}px"
+  <div class="reader-ctx" style="left:{ctxMenu.x}px; top:{ctxMenu.y}px" use:dismiss={() => (ctxMenu = null)}
     onclick={(e) => e.stopPropagation()} oncontextmenu={(e) => e.preventDefault()}>
     {#each readerCtxActions as a}
       {#if a.sep}<div class="rc-sep"></div>

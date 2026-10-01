@@ -12,6 +12,8 @@ import devicesync from "./parts/devicesync.js";
 import security from "./parts/security.js";
 import sandbox from "./parts/sandbox.js";
 import calendar from "./parts/calendar.js";
+import groups from "./parts/groups.js";
+import reauth from "./parts/reauth.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -212,5 +214,5 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
-  ...calendar.cs,
+  ...calendar.cs, ...groups.cs, ...reauth.cs,
 };

@@ -2,6 +2,7 @@
   import { app, openCompose, notify, refreshMessages, refreshQueue, setMessageSeen, threadPrefetch, sandboxAttachment } from "../store.svelte.js";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, revealPath, openExternal, fetchAttachmentForCompose } from "../api.js";
   import { icons } from "../icons.js";
+  import { forwardFramePointer } from "../dismiss.js";
   import { sanitizeTrackers, escapeHtml, emailDoc, plainBody } from "../email.js";
   import { senderHue, avatarColor, initialOf as initialFor } from "../avatar.js";
   import { fileExt, fileKind } from "../attachments.js";
@@ -237,6 +238,7 @@
       let doc;
       try { doc = node.contentDocument; } catch { doc = null; }
       if (!doc) return;
+      forwardFramePointer(doc);   // clicking into a message closes open menus
       doc.addEventListener("click", (e) => {
         const a = e.target?.closest?.("a[href]");
         if (!a) return;

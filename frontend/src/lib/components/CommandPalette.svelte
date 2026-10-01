@@ -96,6 +96,9 @@
     for (const c of ["primary", "newsletters", "social", "updates", "promotions"]) {
       cmds.push({ icon: icons.tag, label: t("cmd.category", { name: t("cmd.cat." + c) }), run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(c); } });
     }
+    for (const g of app.settings.customGroups || []) {
+      cmds.push({ icon: icons.tag, label: t("cmd.category", { name: g.name }), run: () => { app.view = "mail"; if (app.selectedKind !== "unified") selectUnifiedInbox(); setCategory(g.id); } });
+    }
     for (const f of app.folders) {
       const acct = app.accounts.find((a) => a.id === f.account_id);
       cmds.push({ icon: folderIcon(f.role), label: `${f.name}`, hint: acct?.email, run: goMail(() => selectFolder(f)) });

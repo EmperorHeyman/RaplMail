@@ -140,6 +140,7 @@ const DEFAULT_SETTINGS = {
   smartNewDays: 3,              // "new" = unread AND received within this many days
   smartOrderMode: "recency",    // "recency" | "custom"
   smartOrder: [],               // category ids, top→bottom, when custom
+  customGroups: [],             // user-made Smart Inbox groups: [{ id, name, tone, icon }], filled by rules
   density: "comfortable",       // message-list row density: comfortable | compact | cozy
   emailMaxWidth: 820,           // reading-width cap for email bodies (px; 0 = full width)
   searchStyle: "inline",        // the search shortcut opens: "inline" bar | "modal" search window
@@ -183,6 +184,8 @@ export const app = $state({
   calendarFocus: null,           // ISO date the calendar should jump to ("Show in calendar")
   ruleDraft: null,               // prefill for the Rules editor (from "Create rule")
   ruleModal: null,               // { message } - open the quick "New rule" modal
+  signinNeeded: [],              // OAuth account ids whose token died (revoked / 2FA) - sign in again
+  reauthAccountId: null,         // account the "Sign in again" dialog is open for
   introTour: false,              // re-show the onboarding intro (debug / "show me around again")
   lab: null,                     // { id, subject, from } - message sent to the Security Lab
   composing: null,
@@ -827,7 +830,80 @@ export function smartActive() {
     (app.selectedKind === "folder" && app.selectedFolderRole === "inbox" && app.settings.smartInbox);
 }
 export function groupedCategories() {
-  return Object.entries(app.settings.smartGroups || {}).filter(([, v]) => v).map(([k]) => k);
+  const custom = new Set((app.settings.customGroups || []).map((g) => g.id));
+  // A custom group that was deleted can linger in smartGroups (another device's
+  // settings, an old export) - don't hide mail under a card nobody can see.
+  return Object.entries(app.settings.smartGroups || {})
+    .filter(([k, v]) => v && (!k.startsWith("grp_") || custom.has(k))).map(([k]) => k);
+}
+
+// Custom Smart Inbox groups ("HR system", "Invoices"…). A group is just a
+// category id the backend stores on the message; "Put in group" rules (and
+// "Move to <group>" on a sender) fill it, and the Smart Inbox collapses it into
+// a card like Newsletters or Social.
+export const BUILTIN_GROUPS = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
+const _BUILTIN_LABEL = {
+  primary: "list.catPrimary", updates: "list.catNotifications", newsletters: "list.catNewsletters",
+  social: "list.catSocial", promotions: "list.catPromotions", invitations: "list.catInvitations",
+  invitation_responses: "list.catInvitationResponses",
+};
+export const GROUP_TONES = ["#ef4444", "#ec4899", "#8b5cf6", "#6366f1", "#06b6d4",
+                            "#10b981", "#84cc16", "#eab308", "#f97316", "#64748b"];
+export function customGroup(id) {
+  return (app.settings.customGroups || []).find((g) => g.id === id) || null;
+}
+export function categoryLabel(id) {
+  if (_BUILTIN_LABEL[id]) return t(_BUILTIN_LABEL[id]);
+  return customGroup(id)?.name || id;
+}
+export function createCustomGroup(name, { tone, icon } = {}) {
+  const groups = app.settings.customGroups || [];
+  const used = new Set(groups.map((g) => g.tone));
+  const id = "grp_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const group = { id, name: (name || "").trim() || t("groups.untitled"),
+                  tone: tone || GROUP_TONES.find((c) => !used.has(c)) || GROUP_TONES[groups.length % GROUP_TONES.length],
+                  icon: icon || "folder" };
+  const patch = { customGroups: [...groups, group], smartGroups: { ...app.settings.smartGroups, [id]: true } };
+  if (app.settings.smartOrderMode === "custom") patch.smartOrder = [...(app.settings.smartOrder || []), id];
+  saveSettings(patch);
+  return id;
+}
+// Group (true) or show inline (false) one Smart Inbox category / custom group.
+export function setGroupEnabled(id, on) {
+  saveSettings({ smartGroups: { ...app.settings.smartGroups, [id]: on } });
+  if (smartActive()) refreshMessages({ background: true });
+}
+// The quick rule dialog, set up to fill a group - no source mail needed.
+export function openGroupRuleModal(id) {
+  app.ruleModal = {
+    message: null,
+    draft: { name: "", match_field: "from", match_op: "contains", match_value: "",
+             action: "set_group", action_arg: id, enabled: true, order: 0 },
+  };
+}
+export function updateCustomGroup(id, patch) {
+  saveSettings({ customGroups: (app.settings.customGroups || []).map((g) => (g.id === id ? { ...g, ...patch } : g)) });
+}
+export async function deleteCustomGroup(id) {
+  const g = customGroup(id);
+  if (!g) return;
+  const ok = await confirmDialog({
+    title: t("groups.deleteTitle", { name: g.name }),
+    message: t("groups.deleteMessage"),
+    confirmLabel: t("groups.delete"), danger: true,
+  });
+  if (!ok) return;
+  const smartGroups = { ...app.settings.smartGroups };
+  delete smartGroups[id];
+  saveSettings({
+    customGroups: (app.settings.customGroups || []).filter((x) => x.id !== id),
+    smartGroups, smartOrder: (app.settings.smartOrder || []).filter((x) => x !== id),
+  });
+  try {
+    const r = await messages.releaseGroup(id);
+    notify(r?.rules ? t("groups.deletedWithRules", { name: g.name, n: r.rules }) : t("groups.deleted", { name: g.name }));
+  } catch { notify(t("groups.deleteFailed"), "error"); }
+  refreshMessages({ background: true });
 }
 
 export function setCategory(cat) {
@@ -947,8 +1023,19 @@ export function ruleOpForField(field) {
   return "contains";   // subject / body
 }
 
+// The rule argument after switching actions: folder paths and group ids don't
+// mix, so moving to/from "Put in group" swaps in a sensible default (the newest
+// custom group, or Archive for a move) rather than carrying the old one over.
+export function groupArgFor(prevAction, action, arg) {
+  if (action === prevAction) return arg;
+  if (action === "set_group") return (app.settings.customGroups || []).at(-1)?.id || "";
+  if (prevAction === "set_group") return action === "move" ? "Archive" : "";
+  return arg;
+}
+
 // Open the quick "New rule" modal, prefilled from the clicked message.
-export function openRuleModal(message, field) {
+// `patch` overrides draft fields (e.g. { action: "set_group" }).
+export function openRuleModal(message, field, patch = {}) {
   const addr = message?.from_addr || "";
   const domain = addr.includes("@") ? addr.split("@")[1] : "";
   const startField = field || (domain ? "from_domain" : "from");
@@ -960,6 +1047,7 @@ export function openRuleModal(message, field) {
       match_op: ruleOpForField(startField),
       match_value: ruleValueForField(startField, message),
       action: "move", action_arg: "Archive", enabled: true, order: 0,
+      ...patch,
     },
   };
 }
@@ -988,10 +1076,12 @@ export async function setSenderCategory(message, category) {
     app.messages = app.messages.filter((m) => (m.from_addr || "").toLowerCase() !== addr);
   }
   try {
-    await messages.setSenderCategory(message.from_addr, category);
-    notify(category === "auto" ? "Reset sender category" : `Sender → ${category}`);
+    const r = await messages.setSenderCategory(message.from_addr, category);
+    if (category === "auto") notify(t("groups.senderReset"));
+    else if (r?.held) notify(t("groups.senderHeld", { cat: categoryLabel(category), n: r.held }));
+    else notify(t("groups.senderMoved", { cat: categoryLabel(category) }));
     refreshMessages({ background: true });
-  } catch (e) { notify("Couldn't reclassify", "error"); refreshMessages({ background: true }); }
+  } catch (e) { notify(t("groups.reclassifyFailed"), "error"); refreshMessages({ background: true }); }
 }
 
 export async function muteSender(message) {
@@ -2052,9 +2142,21 @@ function scheduleViewRefresh() {
   }, VIEW_REFRESH_MS);
 }
 
+// Which OAuth accounts need signing in again (token revoked/expired - e.g. an
+// org switched on 2FA and ended every session). Read from account health, which
+// classifies the last sync error server-side.
+export async function refreshSigninNeeded() {
+  try {
+    const rows = await accounts.health();
+    const ids = rows.filter((r) => r.needs_signin).map((r) => r.id);
+    if (ids.join() !== app.signinNeeded.join()) app.signinNeeded = ids;
+  } catch {}
+}
+
 let disconnect = null;
 export function startEvents() {
   if (disconnect) return;
+  refreshSigninNeeded();
   // Events emitted while the socket was down (backend restart, network blip)
   // are gone - treat every reconnect as a missed sync:done and catch up.
   const onReconnect = () => {
@@ -2067,6 +2169,7 @@ export function startEvents() {
   disconnect = connectEvents((ev) => {
     if (ev.event === "sync:done") {
       settleSync(ev.payload?.account_id ?? null);
+      if (app.signinNeeded.includes(ev.payload?.account_id)) refreshSigninNeeded();   // signed back in
       scheduleViewRefresh();
       // `notify` = genuinely notify-worthy new inbox mail (unread, survived
       // rules, not notification-muted). Older payloads without it fall back to
@@ -2078,6 +2181,7 @@ export function startEvents() {
       }
     } else if (ev.event === "sync:error") {
       settleSync(ev.payload?.account_id ?? null);
+      refreshSigninNeeded();
     } else if (ev.event === "queue:flushed") {
       // Queued moves/sends reached the server. Refresh the lists, but leave the
       // sync state alone - this is not a completed mailbox sync.

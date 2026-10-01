@@ -30,7 +30,7 @@ from app.models import (
 from app.providers import oauth
 from app.providers.base import HeaderInfo
 from app.providers.imap_smtp import Auth, ImapSmtpProvider
-from app.sync.rules import MessageFields, first_matching_action
+from app.sync.rules import MessageFields, first_matching_action, group_for
 
 log = logging.getLogger("raplmail.sync")
 
@@ -517,9 +517,17 @@ class SyncManager:
                     return
                 muted = {r.thread_key: {p for p in (r.participants or "").split(",") if p}
                          for r in session.exec(select(MutedThread))}
+                # Older mail is filed exactly like new mail - sender overrides and
+                # "put in group" rules included - but no rule ever ACTS on it.
+                from app.models import SenderCategory
+                overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
+                group_rules = [r for r in session.exec(select(Rule).where(
+                    (Rule.account_id == account_id) | (Rule.account_id == None)))  # noqa: E711
+                    if r.action == RuleAction.set_group]
                 provider = build_provider(account)
                 try:
-                    self._backfill_account(session, account, provider, muted)
+                    self._backfill_account(session, account, provider, muted,
+                                           overrides=overrides, group_rules=group_rules)
                 finally:
                     provider.close()
                 session.commit()
@@ -762,7 +770,7 @@ class SyncManager:
         for h in headers:
             if h.uid < min_uid:
                 continue
-            msg = self._upsert_message(session, account, folder, h, overrides or {}, convo)
+            msg = self._upsert_message(session, account, folder, h, overrides or {}, convo, rules)
             if msg is None:
                 continue
             new_count += 1
@@ -860,10 +868,13 @@ class SyncManager:
         session.flush()
 
     def _backfill_folder(self, session: Session, account: Account, folder: Folder,
-                         provider, muted: dict | None = None, limit: int | None = None) -> int:
+                         provider, muted: dict | None = None, limit: int | None = None,
+                         overrides: dict[str, str] | None = None,
+                         group_rules: list[Rule] | None = None) -> int:
         """Page ONE window of older mail (below the current backfill cursor) into
-        the cache. Historical mail: no rules, no notifications - just upsert +
-        restore local state (+ honor muted threads). Returns the count fetched; 0
+        the cache. Historical mail: no rule actions, no notifications - just upsert
+        (filed by sender overrides + group rules like any mail) + restore local
+        state (+ honor muted threads). Returns the count fetched; 0
         (and sets backfill_done) once the folder is fully paged."""
         if folder.backfill_done:
             return 0
@@ -898,7 +909,8 @@ class SyncManager:
         for h in headers:
             if h.uid < min_seen:
                 min_seen = h.uid
-            msg = self._upsert_message(session, account, folder, h, {})
+            msg = self._upsert_message(session, account, folder, h, overrides or {},
+                                       rules=group_rules)
             if msg is None:
                 continue
             new_count += 1
@@ -915,7 +927,8 @@ class SyncManager:
         return new_count
 
     def _backfill_account(self, session: Session, account: Account, provider,
-                          muted: dict | None = None) -> int:
+                          muted: dict | None = None, overrides: dict[str, str] | None = None,
+                          group_rules: list[Rule] | None = None) -> int:
         """Page older history for one account if the user enabled it. Runs windows
         back-to-back within a wall-clock budget, then yields; re-runs each sync
         until every folder is fully paged. The per-folder cursor always descends,
@@ -936,7 +949,8 @@ class SyncManager:
             if folder is None:
                 break   # every folder fully paged (or the rest errored this cycle)
             try:
-                fetched += self._backfill_folder(session, account, folder, provider, muted)
+                fetched += self._backfill_folder(session, account, folder, provider, muted,
+                                                 overrides=overrides, group_rules=group_rules)
                 session.commit()
             except Exception:
                 # Don't let one bad folder wedge the whole backfill: skip it for
@@ -1036,7 +1050,7 @@ class SyncManager:
 
     def _upsert_message(self, session: Session, account: Account, folder: Folder,
                         h: HeaderInfo, overrides: dict[str, str] | None = None,
-                        convo=None) -> Message | None:
+                        convo=None, rules: list[Rule] | None = None) -> Message | None:
         existing = session.exec(
             select(Message.id).where(Message.folder_id == folder.id, Message.uid == h.uid)
         ).first()
@@ -1074,6 +1088,12 @@ class SyncManager:
         category = ((overrides or {}).get((h.from_addr or "").lower())
                     or categorize(h.from_addr, from_name, subject, h.snippet,
                                   conversation=conversation))
+        # "Put in group" rules sort mail on top of that (see sync/rules.py).
+        if rules:
+            category = group_for(rules, MessageFields(
+                from_addr=h.from_addr or "", to_addrs=list(h.to_addrs or []),
+                subject=subject, body=h.snippet or "", category=category,
+                from_name=from_name)) or category
         if not thread_id:
             thread_id = thread_key(account.id, subject, uid=h.uid, folder_id=folder.id,
                                    participants=[h.from_addr, *(h.to_addrs or [])])

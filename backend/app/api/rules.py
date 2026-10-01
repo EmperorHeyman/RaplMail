@@ -65,17 +65,40 @@ def create_rule(body: RuleIn, session: Session = Depends(get_session)) -> RuleOu
     return _to_out(rule)
 
 
+def _is_group_rule(rule: Rule) -> bool:
+    return rule.action == RuleAction.set_group and bool(rule.action_arg)
+
+
+def _refile_group_change(session: Session, old_group: str | None, rule: Rule | None) -> None:
+    """A "put in group" rule was edited, toggled or deleted: re-file the mail it
+    used to hold (so it falls back to its normal category instead of sitting in
+    the group until the next startup) and the mail it now matches."""
+    from app.sync.categorize import refile
+    conds = []
+    if old_group:
+        conds.append(Message.category == old_group)
+    if rule is not None and rule.enabled and _is_group_rule(rule):
+        ids = [m.id for m in _matched_messages(session, rule)]
+        if ids:
+            conds.append(Message.id.in_(ids))
+    if conds:
+        refile(session, or_(*conds))
+        session.commit()
+
+
 @router.put("/{rule_id}", response_model=RuleOut)
 def update_rule(rule_id: int, body: RuleIn, session: Session = Depends(get_session)) -> RuleOut:
     rule = session.get(Rule, rule_id)
     if rule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
+    old_group = rule.action_arg if _is_group_rule(rule) else None
     for k, v in body.model_dump().items():
         setattr(rule, k, v)
     session.add(rule)
     session.commit()
     session.refresh(rule)
     _touch_rules_changed(session)
+    _refile_group_change(session, old_group, rule)
     return _to_out(rule)
 
 
@@ -84,9 +107,11 @@ def delete_rule(rule_id: int, session: Session = Depends(get_session)) -> None:
     rule = session.get(Rule, rule_id)
     if rule is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "rule not found")
+    old_group = rule.action_arg if _is_group_rule(rule) else None
     session.delete(rule)
     session.commit()
     _touch_rules_changed(session)
+    _refile_group_change(session, old_group, None)
 
 
 # How many messages we're willing to scan when a rule needs Python-side matching
@@ -201,6 +226,18 @@ def apply_rule(body: RuleIn, request: Request, session: Session = Depends(get_se
             session.add(m)
         session.commit()
         return ApplyOut(applied=len(msgs))
+    if act == RuleAction.set_group:
+        # Re-file rather than stamp the group on: the rule is saved by now, so
+        # this files the mail exactly as the sync and the startup pass will
+        # (an earlier group rule that also matches keeps its mail).
+        if not rule.action_arg:
+            return ApplyOut(applied=0)
+        from app.sync.categorize import refile
+        refile(session, Message.id.in_(ids))
+        session.commit()
+        applied = session.exec(select(func.count()).select_from(Message).where(
+            Message.id.in_(ids), Message.category == rule.action_arg)).one()
+        return ApplyOut(applied=applied)
     if act in (RuleAction.archive, RuleAction.delete):
         kind = "archive" if act == RuleAction.archive else "delete"
         for m in msgs:

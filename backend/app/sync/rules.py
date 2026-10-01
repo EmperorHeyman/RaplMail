@@ -4,6 +4,11 @@ Rules run against each newly-synced message. A rule has a single condition
 (field + operator + value) and a single action. Block rules mark the sender/
 domain blocked and quarantine the message (move to Junk, or delete).
 
+"Put in group" rules are the exception to first-match-wins: they don't act on
+the mail, they classify it, so they run as part of categorizing (see
+`group_for`) and every other rule still gets its turn afterwards - seeing the
+group as the message's category.
+
 Matching is intentionally simple and predictable - the kind of thing a user can
 reason about from the Rules UI's live preview.
 """
@@ -30,11 +35,17 @@ class MessageFields:
         return self.from_addr.rsplit("@", 1)[-1].lower() if "@" in self.from_addr else ""
 
     @property
-    def sender(self) -> str:
+    def sender(self) -> list[str]:
         # People think of "from" as the whole sender, so match the display name
         # AND the address: a rule "from contains ZERV Reporter" (a display name)
-        # should hit even though the name isn't in the email address.
-        return f"{self.from_name} {self.from_addr}".strip()
+        # should hit even though the name isn't in the email address. Each part
+        # is matched on its own as well as joined - "equals hrms@a123systems.cz"
+        # against the joined "Robee - A123 Systems hrms@a123systems.cz" could
+        # never be true, which silently broke every equals-sender rule (mute,
+        # block, "put in group") for anyone with a display name.
+        parts = [p for p in (self.from_addr, self.from_name) if p]
+        joined = f"{self.from_name} {self.from_addr}".strip()
+        return parts + ([joined] if len(parts) > 1 else [])
 
     @classmethod
     def from_message(cls, m: Message) -> "MessageFields":
@@ -80,8 +91,19 @@ def rule_matches(rule: Rule, f: MessageFields) -> bool:
 
 
 def first_matching_action(rules: list[Rule], f: MessageFields) -> Rule | None:
-    """Return the first (lowest-order) enabled rule that matches, or None."""
+    """Return the first (lowest-order) enabled rule that matches, or None.
+    Group rules are skipped: they already ran when the message was categorized."""
     for rule in sorted(rules, key=lambda r: r.order):
-        if rule_matches(rule, f):
+        if rule.action != RuleAction.set_group and rule_matches(rule, f):
             return rule
+    return None
+
+
+def group_for(rules: list[Rule], f: MessageFields) -> str | None:
+    """The Smart Inbox group the first matching "put in group" rule files this
+    message under, or None. `f.category` should be the heuristic/sender-override
+    category, so a rule can regroup e.g. "category equals newsletters"."""
+    for rule in sorted(rules, key=lambda r: r.order):
+        if rule.action == RuleAction.set_group and rule.action_arg and rule_matches(rule, f):
+            return rule.action_arg
     return None

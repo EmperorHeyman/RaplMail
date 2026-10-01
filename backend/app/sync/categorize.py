@@ -17,6 +17,7 @@ the inbox when it is the reply you were waiting for.
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -201,3 +202,85 @@ def categorize(from_addr: str = "", from_name: str = "", subject: str = "",
     if bulk or any(w in text for w in _NEWSLETTER_WORDS):
         return "newsletters"
     return "primary"
+
+
+def refile(session, where=None) -> int:
+    """Recompute the category (and the reply marker) of stored mail, exactly as
+    the sync would file it today: sender override or heuristic, then "put in
+    group" rules on top. `where` narrows it to a subset (one sender, one group);
+    None re-files everything. Column-only, and the caller commits.
+
+    Every path that re-files existing mail goes through here, so a message can't
+    land in one group after a rule edit and another after the next startup.
+    """
+    from sqlalchemy import text
+    from sqlmodel import select
+
+    from app.models import Message, Rule, RuleAction, SenderCategory
+    from app.sync.rules import MessageFields, group_for
+
+    log = logging.getLogger("raplmail.categorize")
+    overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
+    group_rules = [r for r in session.exec(select(Rule))
+                   if r.enabled and r.action == RuleAction.set_group and r.action_arg]
+    # Same conversation guard the sync applies to fresh mail, so re-filing pulls
+    # already-misfiled replies back into the inbox.
+    try:
+        convo = build_conversation(session)
+    except Exception:
+        log.exception("conversation context failed; re-filing without it")
+        convo = None
+    cols = [Message.id, Message.account_id, Message.from_addr, Message.from_name,
+            Message.subject, Message.snippet, Message.category, Message.in_reply_to,
+            Message.is_reply_to_me, Message.is_automated, Message.unsubscribe]
+    if group_rules:
+        cols.append(Message.to_addrs)   # a rule can match on the recipient
+    stmt = select(*cols)
+    if where is not None:
+        stmt = stmt.where(where)
+    rows = session.exec(stmt).all()
+    # Who wrote the parent of each reply, keyed by the parent's Message-ID.
+    # Everything: one pass over the (indexed) message_id/from_addr columns
+    # instead of a lookup per row. A subset: just the parents it points at.
+    parent_from: dict[str, str] = {}
+    if convo:
+        if where is None:
+            pairs = session.exec(select(Message.message_id, Message.from_addr)).all()
+        else:
+            irts = list({r[7] for r in rows if r[7]})
+            pairs = []
+            for i in range(0, len(irts), 500):
+                pairs += session.exec(select(Message.message_id, Message.from_addr)
+                                      .where(Message.message_id.in_(irts[i:i + 500]))).all()
+        for mid_hdr, fa in pairs:
+            if mid_hdr and (fa or "").strip().lower() in convo.mine:
+                parent_from[mid_hdr] = fa
+    n = 0
+    for row in rows:
+        mid, aid, fa, fn, subj, snip, cat, irt, was_reply, automated, unsub = row[:11]
+        # Mail synced before the sender's list/auto headers were read has
+        # is_automated=False by default, which would let an old ticket blast pass
+        # for a personal reply. A stored List-Unsubscribe (kept whenever a body
+        # was fetched) says the same thing, so use it as the stand-in until the
+        # row is re-synced.
+        is_auto = bool(automated) or bool((unsub or "").strip())
+        parent = parent_from.get(irt or "", "")
+        conversation = bool(convo) and convo.is_conversation(
+            from_addr=fa or "", subject=subj or "", parent_from=parent, automated=is_auto)
+        replied = bool(convo) and convo.answers_my_message(parent_from=parent, automated=is_auto)
+        new = overrides.get((fa or "").lower()) or categorize(
+            fa or "", fn or "", subj or "", snip or "", conversation=conversation)
+        if group_rules:
+            mine = [r for r in group_rules if r.account_id is None or r.account_id == aid]
+            new = group_for(mine, MessageFields(
+                from_addr=fa or "", to_addrs=list(row[11] or []), subject=subj or "",
+                body=snip or "", category=new, from_name=fn or "")) or new
+        # The same pass backfills the reply marker, so the badge appears on mail
+        # that was already synced before it existed - and clears from mail that
+        # never earned it.
+        if new != cat or replied != bool(was_reply):
+            session.exec(
+                text("UPDATE message SET category = :c, is_reply_to_me = :r WHERE id = :i")
+                .bindparams(c=new, r=1 if replied else 0, i=mid))
+            n += 1
+    return n

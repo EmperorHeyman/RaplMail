@@ -11,6 +11,68 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.13] - 2026-10-01
+
+### Added
+- **Choose your Smart Inbox groups right in the list.** A new groups button
+  next to the search box (and right-clicking any group card) opens a picker:
+  tick a group to collapse it into a card, untick it to keep its mail in the
+  main list, see how much mail each holds, make a new group, or add a rule to a
+  custom one - no trip to Settings. Order and placement still live in
+  Settings → General.
+- **"Sign in again" for Microsoft and Google accounts.** When an organization
+  switches on two-factor authentication (or resets a password, or ends all
+  sessions), Microsoft revokes the app's sign-in and the mailbox silently
+  stopped syncing, with only a traceback in the log. RaplMail now recognises
+  that kind of error, shows a banner over the mail list, and walks you through
+  signing in once more - the code is copied for you, the second factor is
+  approved on Microsoft's own page, and the account reconnects by itself. It
+  also refuses to store a sign-in for a different mailbox. Settings → Accounts
+  has the same button, and shows "Sign-in expired" instead of a bare error.
+
+### Fixed
+- **Rules on "Sender address equals …" never matched a sender with a display
+  name.** The rule compared your address against the name and address joined
+  together ("Robee - A123 Systems hrms@a123systems.cz"), which can never equal
+  the bare address - so a "Put in group" rule left its group empty, and every
+  Mute sender / Block sender rule quietly stopped applying to new mail from
+  named senders. The preview matched, because it checks differently, which hid
+  it. Name and address are now matched on their own as well as together; mail
+  already in the box is re-filed on the next launch.
+
+## [0.9.12] - 2026-09-26
+
+### Added
+- **Your own Smart Inbox groups.** Besides Newsletters, Social and the rest, you
+  can now make groups of your own ("HR system", "Invoices") that collapse into a
+  card in the Smart Inbox exactly like the built-in ones - count, "new" badge,
+  sender preview, Done all. Create and style them (name, color, icon) under
+  Settings → General → Smart Inbox → Your groups, which also shows how many
+  rules fill each one and jumps straight to a new rule for it.
+- **"Put in Smart Inbox group" rule action.** A rule can now file mail into a
+  group instead of moving it to a folder, so it stays in the inbox, just
+  collapsed. The group picker lists your groups and the built-in ones, and
+  "New group…" creates one on the spot. Also on the right-click menu of any
+  mail: "Put in a Smart Inbox group…" opens the rule already set to that
+  sender's domain. Unlike other actions it never stops later rules - a mail can
+  be grouped *and* marked read by two rules. A group rule outranks a "Move to"
+  set on the sender (you're told when a rule keeps some of that sender's mail
+  in its group), applies to older mail as history is paged in, and holds
+  through the categorize pass that runs on every launch. Turning the rule off
+  or deleting it puts the mail back where it would otherwise go, and deleting a
+  group takes its rules with it.
+- **Copy from the email's right-click menu.** The reader's menu replaced the
+  native one without offering what it had: it now has Copy (for selected text),
+  Select all text, and Open link / Copy link address when you right-click a link.
+
+### Fixed
+- **Right-click menus stayed open until you clicked the mail list.** They only
+  closed on a click that bubbled up to the window, and many didn't: a click
+  inside an email lands in its frame, and plenty of buttons stop their click
+  from travelling. The list, reader and attachment menus now close on any press
+  outside them (including inside an email), a right-click elsewhere, Escape, the
+  mouse wheel, or switching away from the window.
+
 ## [0.9.11] - 2026-09-14
 
 ### Changed

@@ -1,9 +1,10 @@
 <script>
   import { onMount } from "svelte";
-  import { app, notify, ruleValueForField, ruleOpForField, confirmDialog } from "../store.svelte.js";
+  import { app, notify, ruleValueForField, ruleOpForField, confirmDialog, refreshMessages, groupArgFor } from "../store.svelte.js";
   import { rules as api } from "../api.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import GroupPicker from "./GroupPicker.svelte";
 
   // Draft + source message come from app.ruleModal (set by openRuleModal).
   let draft = $state({ ...app.ruleModal.draft });
@@ -15,7 +16,7 @@
 
   const FIELDS = ["from_domain", "from", "to", "subject", "body", "category"];
   const OPS = ["contains", "equals", "ends_with", "regex"];
-  const ACTIONS = ["move", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script", "save_attachments"];
+  const ACTIONS = ["move", "set_group", "archive", "delete", "mark_read", "mark_done", "block", "mute_notifications", "webhook", "run_script", "save_attachments"];
   const DESTRUCTIVE = new Set(["delete", "archive", "block"]);
   const needsArg = $derived(["move", "webhook", "run_script", "save_attachments"].includes(draft.action));
   const argPlaceholder = $derived(
@@ -45,7 +46,16 @@
     finally { if (gen === _previewGen) previewing = false; }
   }
 
+  // Folder paths and group ids don't mix: switching to/from "Put in group"
+  // swaps the argument for a sensible one instead of carrying "Archive" over.
+  let lastAction = draft.action;
+  function onActionChange() {
+    draft.action_arg = groupArgFor(lastAction, draft.action, draft.action_arg);
+    lastAction = draft.action;
+  }
+
   async function save() {
+    if (draft.action === "set_group" && !draft.action_arg) { notify(t("groups.pickFirst"), "error"); return; }
     if (draft.match_op === "regex") {
       try { new RegExp(draft.match_value); }
       catch (e) { notify(`Invalid regex: ${e.message}`, "error"); return; }
@@ -71,6 +81,7 @@
       let applied = 0;
       try { applied = (await api.apply(draft)).applied || 0; } catch {}
       notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
+      if (applied) refreshMessages({ background: true });
       close();
     }
     catch (e) { notify(e.message, "error"); }
@@ -113,9 +124,11 @@
     </div>
     <div class="cond">
       <span class="lead">then</span>
-      <select bind:value={draft.action}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
-      {#if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
+      <select bind:value={draft.action} onchange={onActionChange}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
+      {#if draft.action === "set_group"}<GroupPicker bind:value={draft.action_arg} />
+      {:else if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
     </div>
+    {#if draft.action === "set_group"}<p class="note">{t("groups.ruleNote")}</p>{/if}
 
     <div class="preview" class:empty={!preview}>
       {#if previewing}
@@ -164,6 +177,7 @@
   .preview.empty { color: var(--muted); }
   .preview ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
   .muted { color: var(--muted); }
+  .note { margin: -6px 0 0 52px; font-size: 12px; color: var(--muted); }
   footer { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
   footer .spacer { flex: 1; }
   .link { color: var(--accent); font-size: 13px; }

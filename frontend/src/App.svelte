@@ -17,6 +17,7 @@
   import AiInbox from "./lib/components/AiInbox.svelte";
   import AiAssistant from "./lib/components/AiAssistant.svelte";
   import RuleModal from "./lib/components/RuleModal.svelte";
+  import ReauthModal from "./lib/components/ReauthModal.svelte";
   import ConfirmDialog from "./lib/components/ConfirmDialog.svelte";
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
@@ -272,6 +273,9 @@
 {/if}
 {#if app.ruleModal}
   <RuleModal />
+{/if}
+{#if app.reauthAccountId != null}
+  <ReauthModal />
 {/if}
 {#if !childWindow && app.vault.unlocked && (!app.settings.onboarded || app.introTour)}
   <Onboarding />

@@ -167,6 +167,8 @@ export const icons = {
   calendar: line('<rect x="3.5" y="5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M8 3v4M16 3v4"/>'),
 
   // Settings tabs / actions
+  // Stacked cards: the Smart Inbox group picker.
+  groups: line('<rect x="4" y="4" width="16" height="6" rx="1.8"/><rect x="4" y="13" width="16" height="6" rx="1.8"/><path d="M7.5 7h5M7.5 16h5"/>'),
   workspaces: line('<path d="M3 7a2 2 0 0 1 2-2h3.5l2 2H19a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 11h18"/>'),
   bolt: line('<path d="M13 2.5 4.5 13.5H11l-1 8 8.5-11.5H12z"/>'),
   palette: line('<path d="M12 3.2a8.8 8.8 0 1 0 0 17.6c1.4 0 1.9-1 1.9-1.9s-.7-1.1-.7-1.9.7-1.4 1.8-1.4h1.6a3 3 0 0 0 3-3c0-4.3-3.8-7.5-7.6-7.5z"/><circle cx="7.5" cy="11.5" r="1"/><circle cx="12" cy="8" r="1"/><circle cx="16" cy="11.5" r="1"/>'),

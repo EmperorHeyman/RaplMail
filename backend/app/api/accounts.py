@@ -78,6 +78,9 @@ def accounts_health(request: Request, session: Session = Depends(get_session)) -
             "last_new": h.get("last_new"),
             "last_error": h.get("last_error"),
             "last_error_at": h.get("last_error_at"),
+            # The token is dead (revoked, expired, 2FA now required): only signing
+            # in again fixes it, so the UI offers that instead of "Error".
+            "needs_signin": bool(a.use_oauth) and oauth.signin_needed(h.get("last_error")),
             "idle_active": h.get("idle_active", False),
             "folders": folder_count,
             "messages": msg_count,
@@ -209,6 +212,66 @@ async def ms_complete(body: CompleteIn, request: Request,
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     account = _upsert_oauth_account(session, store, email, Provider.m365, cache_blob)
     request.app.state.sync.request_sync()
+    return _to_out(account)
+
+
+def _same_mailbox(account: Account, email: str) -> bool:
+    from email.utils import parseaddr
+    e = (email or "").strip().lower()
+    mine = {account.email.lower()} | {(parseaddr(a)[1] or a).strip().lower() for a in (account.aliases or [])}
+    return bool(e) and e in mine
+
+
+def _store_fresh_signin(request: Request, store: SecretStore, account: Account,
+                        email: str, secret_blob: str) -> None:
+    """Swap in the new token for an existing account (and refuse a different
+    one - signing in as someone else here would silently re-point the mailbox)."""
+    if not _same_mailbox(account, email):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                            f"You signed in as {email or 'an unknown account'}, but this account is "
+                            f"{account.email}. Sign in again with {account.email}.")
+    store.set(account.secret_key, secret_blob)
+    try:
+        from app.providers.pool import pool
+        pool.drop(account.id)   # pooled connections hold the dead token
+    except Exception:
+        pass
+    request.app.state.sync.request_account_sync(account.id)
+
+
+@router.post("/{account_id}/reauth/ms", response_model=AccountOut)
+async def ms_reauth(account_id: int, body: CompleteIn, request: Request,
+                    store: SecretStore = Depends(require_unlocked_store),
+                    session: Session = Depends(get_session)) -> AccountOut:
+    """Finish a device-code sign-in for an EXISTING Microsoft account whose token
+    was revoked or expired. Start it with /ms/device-flow/start, as for adding."""
+    account = session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    flow = _pending_ms_flows.pop(body.flow_id, None)
+    if flow is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown or expired flow")
+    try:
+        email, cache_blob = await run_in_threadpool(oauth.ms_complete_device_flow, flow)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    _store_fresh_signin(request, store, account, email, cache_blob)
+    return _to_out(account)
+
+
+@router.post("/{account_id}/reauth/google", response_model=AccountOut)
+async def google_reauth(account_id: int, request: Request,
+                        store: SecretStore = Depends(require_unlocked_store),
+                        session: Session = Depends(get_session)) -> AccountOut:
+    """Sign an existing Gmail account in again (browser loopback flow)."""
+    account = session.get(Account, account_id)
+    if account is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+    try:
+        email, bundle = await run_in_threadpool(oauth.google_run_installed_flow)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    _store_fresh_signin(request, store, account, email, oauth.serialize_bundle(bundle))
     return _to_out(account)
 
 

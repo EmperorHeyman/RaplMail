@@ -586,6 +586,15 @@ def _heal_recipients(msg: Message, recipients: dict) -> None:
         msg.delivered_to = list(recipients["delivered_to"])
 
 
+def _held_by_group_rule(session: Session, msg: Message) -> bool:
+    """Does a "put in group" rule file this message? Then nothing re-files it."""
+    from app.sync.rules import MessageFields, group_for
+    rules = session.exec(select(Rule).where(
+        Rule.action == RuleAction.set_group, Rule.enabled == True,  # noqa: E712
+        (Rule.account_id == None) | (Rule.account_id == msg.account_id))).all()  # noqa: E711
+    return bool(rules) and group_for(rules, MessageFields.from_message(msg)) is not None
+
+
 @router.get("/{message_id}", response_model=MessageDetail)
 async def get_message(message_id: int, session: Session = Depends(get_session)) -> MessageDetail:
     msg = session.get(Message, message_id)
@@ -688,11 +697,13 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
             except Exception: pass
             # A real calendar event in the body proves this is an invite/response,
             # even if the subject didn't look like one.
+            # A "put in group" rule outranks that proof, as it does every heuristic.
             methods = {(e.get("method") or "").upper() for e in events}
-            if "REPLY" in methods:
-                msg.category = "invitation_responses"
-            elif methods & {"REQUEST", "CANCEL"}:
-                msg.category = "invitations"
+            if not _held_by_group_rule(session, msg):
+                if "REPLY" in methods:
+                    msg.category = "invitation_responses"
+                elif methods & {"REQUEST", "CANCEL"}:
+                    msg.category = "invitations"
         session.add(msg)
         # Index the body + any extracted attachment text for full-text search.
         try:
@@ -1828,87 +1839,72 @@ class SenderCategoryIn(BaseModel):
 
 @router.post("/sender-category")
 def set_sender_category(body: SenderCategoryIn, session: Session = Depends(get_session)) -> dict:
-    """Reclassify a sender ('this is a newsletter'): remember it and re-file existing mail."""
-    from app.sync.categorize import build_conversation, categorize
+    """Reclassify a sender ('this is a newsletter'): remember it and re-file existing mail.
+
+    `held` counts the sender's mail a "put in group" rule keeps elsewhere - rules
+    outrank a sender override (they're the deliberate, visible config), so the
+    UI can say why some of it didn't move."""
+    from app.sync.categorize import refile
     email = body.email.strip().lower()
     if not email:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "email required")
     existing = session.exec(select(SenderCategory).where(SenderCategory.email == email)).first()
-    n = 0
-    if body.category == "auto" or not body.category:
+    target = "" if body.category in ("auto", "") else body.category
+    if not target:
         if existing:
             session.delete(existing)
-        # Re-file existing mail from this sender back to the heuristic category -
-        # with the conversation guard, so replies from someone you write to don't
-        # get thrown back out of the inbox by clearing their override.
-        try:
-            convo = build_conversation(session)
-        except Exception:
-            convo = None
-        for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
-            conversation = bool(convo) and convo.is_conversation(
-                from_addr=m.from_addr, subject=m.subject,
-                automated=bool(m.is_automated) or bool((m.unsubscribe or "").strip()))
-            m.category = categorize(m.from_addr, m.from_name, m.subject, m.snippet,
-                                    conversation=conversation); n += 1
+    elif existing:
+        existing.category = target
     else:
-        if existing:
-            existing.category = body.category
-        else:
-            session.add(SenderCategory(email=email, category=body.category))
-        for m in session.exec(select(Message).options(*_NO_BODY).where(func.lower(Message.from_addr) == email)):
-            m.category = body.category; n += 1
+        session.add(SenderCategory(email=email, category=target))
+    session.flush()
+    # Clearing the override re-files by the heuristic (with the conversation
+    # guard, so replies from someone you write to aren't thrown back out of the
+    # inbox); setting one files by it. Both through the one re-file pass.
+    of_sender = func.lower(Message.from_addr) == email
+    n = refile(session, of_sender)
+    held = 0
+    if target:
+        held = session.exec(select(func.count()).select_from(Message)
+                            .where(of_sender, Message.category != target)).one()
     session.commit()
-    return {"updated": n}
+    return {"updated": n, "held": held}
+
+
+class ReleaseGroupIn(BaseModel):
+    group: str
+
+
+@router.post("/release-group")
+def release_group(body: ReleaseGroupIn, session: Session = Depends(get_session)) -> dict:
+    """A custom Smart Inbox group was deleted: drop the rules and sender
+    overrides that fill it, and re-file its mail to where it would go otherwise
+    - instead of leaving it tagged with a group nothing shows any more."""
+    from app.sync.categorize import refile
+    from app.sync.devicesync import touch_rules_changed
+    group = body.group.strip()
+    if not group:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "group required")
+    rules = session.exec(select(Rule).where(Rule.action == RuleAction.set_group,
+                                            Rule.action_arg == group)).all()
+    for r in rules:
+        session.delete(r)
+    for sc in session.exec(select(SenderCategory).where(SenderCategory.category == group)).all():
+        session.delete(sc)
+    session.flush()
+    n = refile(session, Message.category == group)
+    if rules:
+        touch_rules_changed(session)
+    session.commit()
+    return {"updated": n, "rules": len(rules)}
 
 
 @router.post("/recategorize")
 def recategorize(session: Session = Depends(get_session)) -> dict:
-    """Recompute categories for all messages, honoring sender overrides. Column-only."""
-    from app.sync.categorize import build_conversation, categorize
-    overrides = {sc.email.lower(): sc.category for sc in session.exec(select(SenderCategory))}
-    # Same conversation guard the sync applies to fresh mail, so running this
-    # once pulls already-misfiled replies back into the inbox.
-    try:
-        convo = build_conversation(session)
-    except Exception:
-        log.exception("conversation context failed; recategorizing without it")
-        convo = None
-    # Who wrote the parent of each reply, keyed by the parent's Message-ID -
-    # one pass over the (indexed) message_id/from_addr columns instead of a
-    # lookup per row.
-    parent_from: dict[str, str] = {}
-    if convo:
-        for mid_hdr, fa in session.exec(select(Message.message_id, Message.from_addr)):
-            if mid_hdr and (fa or "").strip().lower() in convo.mine:
-                parent_from[mid_hdr] = fa
-    rows = session.exec(
-        select(Message.id, Message.from_addr, Message.from_name, Message.subject,
-               Message.snippet, Message.category, Message.in_reply_to,
-               Message.is_reply_to_me, Message.is_automated, Message.unsubscribe)
-    ).all()
-    n = 0
-    for mid, fa, fn, subj, snip, cat, irt, was_reply, automated, unsub in rows:
-        # Mail synced before the sender's list/auto headers were read has
-        # is_automated=False by default, which would let an old ticket blast pass
-        # for a personal reply. A stored List-Unsubscribe (kept whenever a body
-        # was fetched) says the same thing, so use it as the stand-in until the
-        # row is re-synced.
-        is_auto = bool(automated) or bool((unsub or "").strip())
-        parent = parent_from.get(irt or "", "")
-        conversation = bool(convo) and convo.is_conversation(
-            from_addr=fa or "", subject=subj or "", parent_from=parent, automated=is_auto)
-        replied = bool(convo) and convo.answers_my_message(parent_from=parent, automated=is_auto)
-        new = overrides.get((fa or "").lower()) or categorize(
-            fa or "", fn or "", subj or "", snip or "", conversation=conversation)
-        # The same pass backfills the reply marker, so the badge appears on mail
-        # that was already synced before it existed - and clears from mail that
-        # never earned it.
-        if new != cat or replied != bool(was_reply):
-            session.exec(
-                text("UPDATE message SET category = :c, is_reply_to_me = :r WHERE id = :i")
-                .bindparams(c=new, r=1 if replied else 0, i=mid))
-            n += 1
+    """Recompute categories for all messages, honoring sender overrides and
+    "put in group" rules. Column-only."""
+    from app.sync.categorize import refile
+    n = refile(session)
     session.commit()
     return {"updated": n}
 

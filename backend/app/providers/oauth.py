@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 from dataclasses import dataclass
 
@@ -49,6 +50,23 @@ GCAL_SCOPES = [
 GMAIL_IMAP_HOST = "imap.gmail.com"
 GMAIL_SMTP_HOST = "smtp.gmail.com"
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+
+# Token errors that only a fresh interactive sign-in can fix: the grant was
+# revoked (password reset, an admin turning on 2FA and ending sessions -
+# AADSTS50173), the refresh token expired or is now subject to MFA, or consent
+# changed. Everything else (network, throttling, a server hiccup) is left to
+# the normal retry. Google says "invalid_grant" for a revoked/expired token.
+_SIGNIN_NEEDED = re.compile(
+    r"AADSTS(?:50173|700082|700084|50076|50079|50078|50158|65001|70043|50132|50133)\b"
+    r"|invalid_grant|interaction_required|consent_required|re-authentication required"
+    r"|Token has been expired or revoked",
+    re.IGNORECASE)
+
+
+def signin_needed(error: str | None) -> bool:
+    """Does this sync/token error mean the user has to sign in again?"""
+    return bool(error) and bool(_SIGNIN_NEEDED.search(error))
 
 
 def xoauth2_string(user: str, access_token: str) -> str:

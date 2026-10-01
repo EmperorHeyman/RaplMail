@@ -2,16 +2,20 @@
   import { untrack } from "svelte";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, openRuleModal, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
   import SmartGroupCard from "./SmartGroupCard.svelte";
   import CategoryPeek from "./CategoryPeek.svelte";
+  import SmartGroupsMenu from "./SmartGroupsMenu.svelte";
+  import SigninBanner from "./SigninBanner.svelte";
   import SearchBar from "./SearchBar.svelte";
   import SearchPalette from "./SearchPalette.svelte";
   import { icons } from "../icons.js";
+  import { smartGroupMeta } from "../groups.js";
+  import { dismiss } from "../dismiss.js";
   import { keyCombo } from "../keys.js";
 
   let focusIndex = $state(0);
@@ -85,18 +89,8 @@
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
-  // `tone` colours each group's icon tile. Deliberately fixed hues rather than
-  // theme tokens: the point is telling the groups apart, which a single accent
-  // can't do, and a 15% tint of any of these reads fine on light and dark alike.
-  const CAT_META = $derived.by(() => ({
-    updates: { label: t("list.catNotifications"), icon: icons.bell, tone: "#3b82f6" },
-    newsletters: { label: t("list.catNewsletters"), icon: icons.newspaper, tone: "#a855f7" },
-    social: { label: t("list.catSocial"), icon: icons.chat, tone: "#14b8a6" },
-    promotions: { label: t("list.catPromotions"), icon: icons.tag, tone: "#f0a53a" },
-    invitations: { label: t("list.catInvitations"), icon: icons.calendar, tone: "#22c55e" },
-    invitation_responses: { label: t("list.catInvitationResponses"), icon: icons.done, tone: "#0ea5e9" },
-  }));
-  const CAT_ORDER = ["updates", "newsletters", "social", "promotions", "invitations", "invitation_responses"];
+  // Built-in categories + the user's custom groups (see lib/groups.js).
+  const CAT_META = $derived.by(() => smartGroupMeta());
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
   // Bulk category-done hides ids we don't hold objects for; single-row done
   // relies on the row object's own is_done (so the store's undo, which flips
@@ -487,6 +481,15 @@
   }
   function clearSelection() { selectedIds = []; lastIdx = -1; bulkSnooze = false; }
 
+  // --- Smart Inbox group picker (search-row button / right-click a card) ---
+  let groupsMenu = $state(null);   // { x, y }
+  let groupsBtn = $state();
+  function toggleGroupsMenu() {
+    if (groupsMenu) { groupsMenu = null; return; }
+    const r = groupsBtn.getBoundingClientRect();
+    groupsMenu = { x: r.right - 300, y: r.bottom + 6 };
+  }
+
   // --- right-click context menu ---
   let ctx = $state(null); // { x, y, msg }
   let ctxSearch = $state("");
@@ -531,6 +534,7 @@
       { label: t("list.muteConversation"), icon: icons.mute, kw: "thread", run: () => muteThread(m) },
       { label: t("list.blockSender"), icon: icons.junk, danger: true, run: () => blockSender(m) },
       { label: t("list.createRule"), icon: icons.bolt, run: () => createRuleFromSender(m) },
+      { label: t("groups.groupRule"), icon: icons.folder, kw: "rule group smart inbox collapse category", run: () => openRuleModal(m, undefined, { action: "set_group", action_arg: (app.settings.customGroups || []).at(-1)?.id || "" }) },
       { label: t("list.sendToLab"), icon: icons.shieldCheck, kw: "security lab scan analyze forensics virustotal headers domain ip whois", run: () => sendToLab(m) },
     ];
     const q = ctxSearch.trim().toLowerCase();
@@ -865,6 +869,7 @@
     { id: "social", label: t("list.catSocial") },
     { id: "updates", label: t("list.catUpdates") },
     { id: "promotions", label: t("list.catPromotions") },
+    ...(app.settings.customGroups || []).map((g) => ({ id: g.id, label: g.name })),
   ]));
   const showCats = $derived(
     !app.search && !smartActive() && app.selectedKind !== "snoozed" && app.selectedKind !== "screener" &&
@@ -881,7 +886,7 @@
   );
 </script>
 
-<svelte:window on:keydown={onKey} on:click={() => ctx && closeCtx()} />
+<svelte:window on:keydown={onKey} />
 
 <SearchPalette open={paletteOpen} initial={app.search}
   smartAvailable={aiEnabled() || app.settings.semanticEnabled}
@@ -905,8 +910,12 @@
   />
 {/if}
 
+{#if groupsMenu}
+  <SmartGroupsMenu x={groupsMenu.x} y={groupsMenu.y} anchor={groupsBtn} onclose={() => (groupsMenu = null)} />
+{/if}
+
 {#if ctx}
-  <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} onclick={(e) => e.stopPropagation()}>
+  <div class="ctxmenu" use:placeMenu={{ x: ctx.x, y: ctx.y }} use:dismiss={closeCtx} onclick={(e) => e.stopPropagation()}>
     {#if ctx.group}<div class="ctx-title">{t("list.selectionActions", { n: selectedIds.length })}</div>{/if}
     <input class="ctx-search" placeholder={t("list.searchActions")} bind:value={ctxSearch} autofocus
       onkeydown={(e) => { if (e.key === "Enter") ctxEnter(); else if (e.key === "Escape") closeCtx(); }} />
@@ -925,6 +934,7 @@
 
 <section class="list">
   <header>
+    <SigninBanner />
     <div class="row1">
       {#if app.selectedKind === "smart"}
         <!-- Smart Inbox: no redundant static title. When a group is open, show a
@@ -961,6 +971,10 @@
     <div class="searchrow">
       <SearchBar value={app.search} oninput={onSearch} onexpand={() => (paletteOpen = true)} />
       <button class="adv" title={t("search.advancedTitle")} onclick={() => (paletteOpen = true)}>{@html icons.sliders}</button>
+      {#if smartActive() && !app.search}
+        <button class="adv" class:on={!!groupsMenu} bind:this={groupsBtn} title={t("groups.chooseTip")}
+          aria-label={t("groups.chooseTip")} onclick={toggleGroupsMenu}>{@html icons.groups}</button>
+      {/if}
       {#if aiEnabled()}
         <button class="adv aibtn" title={t("list.aiAssistant")}
           onclick={() => openAiAssistant({ messageId: app.selectedMessageId, threadKey: app.threadKey || "" })}>{@html icons.bolt}</button>
@@ -1066,6 +1080,7 @@
               onDoneAll={() => { focusIndex = i; doneCategory(item); }}
               onPeek={(rect) => schedulePeek(item, rect)}
               onPeekOut={() => schedulePeekClose()}
+              onMenu={(e) => (groupsMenu = { x: e.clientX, y: e.clientY })}
             />
           {:else}
             <GroupRow
@@ -1128,6 +1143,7 @@
     transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
   .adv:hover { color: var(--accent); border-color: var(--accent); }
   .adv.aibtn { color: var(--accent); }
+  .adv.on { color: var(--accent); border-color: var(--accent); }
   .adv :global(svg) { width: 16px; height: 16px; }
   .cats { display: flex; gap: 4px; flex-wrap: wrap; }
   .cat { font-size: 12px; font-weight: 550; padding: 4px 11px; border-radius: 999px; color: var(--muted); background: var(--surface-2); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }

@@ -4,6 +4,7 @@
   import { api } from "../api.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
 
   let status = $state(null);
   let loading = $state(true);
@@ -66,7 +67,7 @@
 
   function fmt(iso) {
     if (!iso) return t("dsync.never");
-    try { return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }); }
+    try { return new Date(iso).toLocaleString(dateLocale(), { dateStyle: "medium", timeStyle: "short" }); }
     catch { return iso; }
   }
 
@@ -425,7 +426,7 @@
   .btn:hover { background: color-mix(in srgb, var(--surface-3) 76%, var(--text) 10%); }
   .btn:disabled { opacity: 0.6; }
   .btn :global(svg) { width: 15px; height: 15px; }
-  .btn.primary { background: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
   .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
   .statuscard { gap: 8px; }
   .st { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; }

@@ -11,6 +11,157 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.18] - 2026-10-05
+
+### Fixed
+- **Dates follow the app's language.** With RaplMail in Czech, dates and times
+  were still written the English way in several places. Now the reading pane
+  header, conversations, Home, the calendar (month and weekday names, the week
+  title), Scheduled, the Newsletter feed, snooze times, the reminder pop-up and
+  the dates in Settings all use Czech formats (e.g. "4. 10. 2026 19:49",
+  "pondělí 5. října", "říjen 2026"). In English nothing changes: it still uses
+  your system's date and time format. The "On ... wrote:" line quoted into
+  replies keeps its format, since that text is English.
+- The snooze choices (Later today, This evening, Tomorrow, ...) are translated
+  too, and the dot between a choice and its time no longer sticks to the name.
+
+## [0.9.17] - 2026-10-05
+
+A new look, in the style of Google's Material You on recent Android phones.
+Everything works as before; only the look changed.
+
+### Added
+- **Dynamic color.** The whole app is tinted from one color, the way Android
+  takes its colors from your wallpaper. Pick it in Settings → Appearance
+  → Color: eight preset circles, or any color from the color picker. Or turn
+  on **Use the Windows accent color** to follow your Windows accent; it's
+  picked up again when it changes. Light, Dark or **System** (follows Windows'
+  light/dark mode), plus a **Pure black background** option for dark mode. A
+  grey or black accent gives a calm neutral scheme.
+- The first-run wizard's theme step uses the same color picker.
+
+### Changed
+- **Google Sans Flex typeface and Material Symbols icons** throughout, bundled
+  with the app so they work offline. The selected item's icon turns solid, as
+  on Android.
+- **The sidebar is a Material navigation drawer.** It folds (the menu button,
+  top left) into a navigation rail with a round Compose button. Pills mark the
+  selected item, and the Sync / Layout / Settings buttons sit at the bottom.
+  Drag-to-reorder, folder management and drag-a-message-to-move all work as
+  before. Tickets got its own icon (it shared Paper Trail's).
+- **Mail list:** a Google-style search bar on top (filters and AI as icon
+  buttons inside it), a larger "Smart Inbox" title, and Smart Inbox groups as
+  filter chips. Rows sit flat on the page: round letter avatars tinted in each
+  sender's color, a soft highlight for the open message and a ring for the
+  keyboard focus. Mark all read is an icon button now, so the title row stays
+  on one line. The account mark beside a row is a short tick instead of a
+  full-height stripe.
+- **Reading pane:** one rounded panel with a larger subject, pill-shaped
+  Reply / Forward / Done buttons, outlined attachment cards, and the message
+  body flowing straight on the panel instead of a card inside a card. A
+  conversation's avatars match the list's.
+- **Settings look like Android's:** a large page title, the section list as
+  pills, groups as rounded cards, and every on/off setting a switch on the
+  right.
+- Menus, chips, buttons and text fields follow Material 3 (rounded pills,
+  quieter hover highlights instead of a full accent fill). Text on accent
+  colors now always stays readable, also in light mode.
+- The old themes (True Black, Dracula, Nord, your saved palettes, the day /
+  night schedule) are kept under **Classic themes**. Picking one turns dynamic
+  color off; one click turns it back on. Your current theme was carried over:
+  its accent became your color, and a light, dark or true-black theme stays
+  light, dark or pure black.
+
+### Fixed
+- Dragging a column divider in Layout mode no longer jumps the column by a few
+  pixels on the first move.
+
+## [0.9.16] - 2026-10-04
+
+A cleanup release: the mail list and Settings had grown one feature at a time
+and it showed.
+
+### Changed
+- **Smart Inbox groups sit in one strip at the top of the list.** A compact row
+  of pills (name, count, a dot when something is new) in a fixed order - your
+  own if you've dragged one in Settings - instead of a full card per group that
+  floated up and down with new mail and filled the first screen. Click a pill to
+  open that group's mail right below it (one group at a time, with Done all and
+  close); click again to fold it away. The groups button moved into the strip.
+  New mail still shows in the timeline, tagged, until read.
+- **A shorter right-click menu.** The long lists - where to file the sender,
+  snooze times, sender options, rules - are submenus now, so the top level is
+  about a dozen entries instead of ~35. Typing in the menu's search box still
+  finds everything, submenu entries included.
+- **Settings are reorganized** into five sections (Mail, People & calendar,
+  Privacy & security, Look & feel, System). The old General tab - about fifteen
+  unrelated topics over six screens - is split into Inbox, Compose,
+  Notifications, Backup & sync and Integrations, leaving General with language,
+  updates and tray. Small tabs moved into the one they belong to: Workspaces
+  into Accounts, Signatures and Snippets into Compose, PGP and S/MIME into
+  Encryption, Tracking aliases into Security & privacy, Device sync into Backup
+  & sync, RAPL Desk into Integrations. Nothing was renamed out from under you:
+  every setting is still there, search finds it in its new place, and old links
+  open the right tab.
+- **"Unified inbox" and "Smart Inbox" are one choice** (Smart Inbox, all inboxes
+  combined, or one inbox per account) instead of two toggles that contradicted
+  each other.
+- **The Smart Inbox groups in Settings are one list:** tick to group, drag to
+  order, rename / recolor / add a rule to your own groups in place.
+- **Appearance shows fewer themes up front** (the rest under "More themes"), and
+  its behavior options moved where they belong: collapsing quoted replies and
+  code highlighting to Inbox, link previews to Security & privacy.
+- **The subscription audit is a tool** (Tools → Subscriptions in the sidebar)
+  instead of the only thing in a Settings tab called "Utility".
+- **Settings are fully translated.** In Czech, every page used to be half
+  English. Times in the hour pickers follow the language (24-hour in Czech), as
+  do relative times in the list ("před 3 hodinami") and the search box.
+- **The keyboard hint bar under the list is off by default** (Settings →
+  Shortcuts; `?` shows every shortcut anyway), and the search row's filter
+  button is labeled.
+
+### Removed
+- **Bundle notifications** - Smart Inbox groups cover it.
+- **Smart Inbox placement options, senders-per-card and the card preview** -
+  they only existed because the cards moved around.
+
+### Fixed
+- **The Flag icon was blank** everywhere it appeared (it was defined without
+  its shape).
+- **The right-click menu could hang off the bottom of the window** - it measured
+  itself mid-animation, while still scaled down.
+- **A new message could be listed twice** - inline and inside its opened group.
+- **The list title was cut to a letter or two** when the header buttons had
+  longer labels; they now wrap under the title instead.
+
+## [0.9.15] - 2026-10-04
+
+### Changed
+- **New mail no longer disappears into a group card the moment it arrives.**
+  A new newsletter, notification or mail from your own groups now shows in the
+  Smart Inbox timeline, where it arrived, with a small tag in its group's color
+  naming the group - so a glance at the inbox shows everything new, without a
+  detour through Home. Once you've read it, it folds into its group (the one you
+  have open stays put until you move on). "New" means the same as the card's
+  "N new" badge: unread, from the last few days. It can be switched off in the
+  groups menu or under Settings → General → Smart Inbox.
+
+## [0.9.14] - 2026-10-01
+
+### Fixed
+- **A compose window opened as a separate window stayed open after Send.** The
+  undo-send countdown ran inside that window, so it couldn't close without
+  killing the countdown and the mail with it. It now hands the send to the main
+  window - which shows the usual undo bar, and reopens the message in a new
+  compose window if you cancel - and closes straight away. If the main window
+  doesn't answer, the compose window sends the mail itself, so nothing is left
+  behind or sent twice.
+- **Closing a compose, reminder or attachment-analysis window only hid it.**
+  With "close to tray" on, every window was kept running invisibly in the
+  background instead of closing; that now applies to the main window only.
+  Discard and Send later in a separate compose window also close it reliably
+  now.
+
 ## [0.9.13] - 2026-10-01
 
 ### Added

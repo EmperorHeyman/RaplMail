@@ -1,6 +1,14 @@
 <script>
-  import { app, saveSettings, applyTheme, THEME_TOKENS, notify, LIGHT_THEME } from "../store.svelte.js";
+  import { app, saveSettings, applyTheme, THEME_TOKENS, notify, LIGHT_THEME, LIST_DENSITY } from "../store.svelte.js";
   import { PRESETS, PRESET_CATEGORIES } from "../themes.js";
+  import ColorPicker from "./ColorPicker.svelte";
+  import { t } from "../i18n.svelte.js";
+  import { hourLabel } from "../time.svelte.js";
+
+  // Dynamic colour (Material You) lives in ColorPicker; the classic themes
+  // below switch it off, and this brings it back.
+  const dynamic = $derived(app.settings.colorStyle !== "classic");
+  function useDynamic() { saveSettings({ colorStyle: "dynamic" }); applyTheme(); }
 
   // Effective email appearance mode (migrates the old two booleans).
   const emailMode = $derived(
@@ -9,14 +17,15 @@
   );
 
   // Configurable quick-action buttons (which buttons show on rows / in the reader).
+  // Second element is an i18n key, translated with t() at render time.
   const ROW_CHOICES = [
-    ["none", "- None -"], ["done", "Done"], ["snooze", "Snooze"], ["flag", "Flag"],
-    ["read", "Read / unread"], ["archive", "Archive"], ["delete", "Delete"],
+    ["none", "sAppear.actNone"], ["done", "common.done"], ["snooze", "sAppear.actSnooze"], ["flag", "sAppear.actFlag"],
+    ["read", "sAppear.actRead"], ["archive", "sAppear.actArchive"], ["delete", "common.delete"],
   ];
   const READER_CHOICES = [
-    ["reply", "Reply"], ["replyAll", "Reply all"], ["forward", "Forward"],
-    ["archive", "Archive"], ["snooze", "Snooze"],
-    ["done", "Done"], ["flag", "Flag"], ["delete", "Delete"],
+    ["reply", "sAppear.actReply"], ["replyAll", "sAppear.actReplyAll"], ["forward", "sAppear.actForward"],
+    ["archive", "sAppear.actArchive"], ["snooze", "sAppear.actSnooze"],
+    ["done", "common.done"], ["flag", "sAppear.actFlag"], ["delete", "common.delete"],
   ];
   function setRowAction(index, key) {
     const cur = [...(app.settings.rowActions || ["snooze", "done"])];
@@ -30,59 +39,73 @@
     saveSettings({ readerActions: order.filter((k) => cur.has(k)) });
   }
 
+  // Token -> i18n key for its label (translated with t() at render time).
   const LABELS = {
-    "--app-bg": "Window ground", "--bg": "Background", "--surface": "Surface", "--surface-2": "Surface 2",
-    "--surface-3": "Surface 3", "--border": "Border", "--text": "Text",
-    "--muted": "Muted text", "--accent": "Accent", "--done": "Done / success",
-    "--danger": "Danger", "--warning": "Warning",
+    "--app-bg": "sAppear.tokAppBg", "--bg": "sAppear.tokBg", "--surface": "sAppear.tokSurface", "--surface-2": "sAppear.tokSurface2",
+    "--surface-3": "sAppear.tokSurface3", "--border": "sAppear.tokBorder", "--text": "sAppear.tokText",
+    "--muted": "sAppear.tokMuted", "--accent": "sAppear.tokAccent", "--done": "sAppear.tokDone",
+    "--danger": "sAppear.tokDanger", "--warning": "sAppear.tokWarning",
+  };
+  // PRESET_CATEGORIES (themes.js) are English ids; map them to i18n keys for display.
+  const CAT_KEYS = {
+    "Essentials": "sAppear.catEssentials", "High contrast": "sAppear.catHighContrast",
+    "Neutral": "sAppear.catNeutral", "Color": "sAppear.catColor", "Editor": "sAppear.catEditor",
   };
 
   // Accent-led presets live in ../themes.js (shared with onboarding).
 
   // Quick reference shown under the Custom CSS box so users know what to target.
+  // Second element is an i18n key for the description (translated at render time).
   const SELECTORS = [
-    [".sidebar", "Left navigation pane"],
-    [".folder", "A nav row (inbox, folder, smart view)"],
-    [".folder.active", "The selected nav row"],
-    [".btn", "Any button"],
-    [".btn.primary", "Primary buttons (Compose, Send)"],
-    [".btn.ghost", "Subtle / secondary buttons"],
-    [".list", "Message-list column"],
-    [".row", "A message row in the list"],
-    [".row.unread", "Unread message rows"],
-    [".row.focused", "Keyboard-focused row"],
-    [".avatar", "Sender avatar disc"],
-    [".subject", "Subject line in a row"],
-    [".snippet", "Preview text in a row"],
-    [".thread, .reader", "Reading pane"],
-    [".card", "Settings / grouped panels"],
-    [".cat", "Category tab pill"],
-    [".bulkbar", "Multi-select action bar"],
-    [".sg", "Smart Inbox group card"],
+    [".sidebar", "sAppear.selSidebar"],
+    [".folder", "sAppear.selFolder"],
+    [".folder.active", "sAppear.selFolderActive"],
+    [".btn", "sAppear.selBtn"],
+    [".btn.primary", "sAppear.selBtnPrimary"],
+    [".btn.ghost", "sAppear.selBtnGhost"],
+    [".list", "sAppear.selList"],
+    [".row", "sAppear.selRow"],
+    [".row.unread", "sAppear.selRowUnread"],
+    [".row.focused", "sAppear.selRowFocused"],
+    [".avatar", "sAppear.selAvatar"],
+    [".subject", "sAppear.selSubject"],
+    [".snippet", "sAppear.selSnippet"],
+    [".thread, .reader", "sAppear.selReader"],
+    [".card", "sAppear.selCard"],
+    [".cat", "sAppear.selCat"],
+    [".bulkbar", "sAppear.selBulkbar"],
+    [".sg", "sAppear.selSg"],
   ];
 
   const auto = $derived(app.settings.themeMode === "auto");
   function val(token, def) { return app.settings.theme[token] || def; }
   function setToken(token, value) {
-    saveSettings({ theme: { ...app.settings.theme, [token]: value }, themeMode: "manual" });
+    saveSettings({ theme: { ...app.settings.theme, [token]: value }, themeMode: "manual", colorStyle: "classic" });
     applyTheme();
   }
   function applyPreset(p) {
-    saveSettings({ theme: { ...p.theme }, themeMode: "manual" });
+    saveSettings({ theme: { ...p.theme }, themeMode: "manual", colorStyle: "classic" });
     applyTheme();
-    notify(`Theme: ${p.name}`);
+    notify(t("sAppear.themeApplied", { name: p.name }));
   }
   // Presets grouped by category (in the order themes.js declares them).
   const DEF = Object.fromEntries(THEME_TOKENS);   // token -> default (dark) value
   const presetGroups = PRESET_CATEGORIES
     .map((cat) => ({ cat, items: PRESETS.filter((p) => p.category === cat) }))
     .filter((g) => g.items.length);
+  // 26 presets filled a whole screen before any real option. Show the first
+  // group (Essentials) and whichever group holds the theme in use; the rest
+  // fold under "More themes".
+  const shownGroups = $derived(presetGroups.filter((g, i) => i === 0 || g.items.some((p) => isActivePreset(p))));
+  const moreGroups = $derived(presetGroups.filter((g) => !shownGroups.includes(g)));
+  const moreCount = $derived(moreGroups.reduce((n, g) => n + g.items.length, 0));
   // A token's value for a preset, falling back to the default dark palette so the
   // preview chip shows the REAL background/surface, not just the accent (that's
   // why Light's deep-blue accent used to read as "darker" than Dark).
   const pv = (p, token) => p.theme[token] || DEF[token];
   // Highlight the preset currently in effect (Dark = the empty {} theme).
   function isActivePreset(p) {
+    if (app.settings.colorStyle !== "classic") return false;
     const cur = app.settings.theme || {};
     const keys = new Set([...Object.keys(cur), ...Object.keys(p.theme)]);
     for (const k of keys) if ((cur[k] || "") !== (p.theme[k] || "")) return false;
@@ -119,16 +142,16 @@
       "--border": H(27, 13), "--text": H(93, 16), "--muted": H(62, 12), "--accent": accent };
   }
   function applyGenerated() {
-    applyPreset({ name: "Generated", theme: generatePalette(genAccent, genBase) });
+    applyPreset({ name: t("sAppear.generated"), theme: generatePalette(genAccent, genBase) });
   }
   // --- Your own saved presets ------------------------------------------------
   function saveAsPreset() {
-    const name = (prompt("Name this preset:") || "").trim();
+    const name = (prompt(t("sAppear.namePrompt")) || "").trim();
     if (!name) return;
     const id = (crypto.randomUUID?.() || String(Date.now())).replace(/[^a-z0-9]/gi, "").slice(0, 12);
     const list = [...(app.settings.userPresets || []), { id, name, theme: { ...app.settings.theme } }];
     saveSettings({ userPresets: list });
-    notify(`Saved preset "${name}"`);
+    notify(t("sAppear.presetSaved", { name }));
   }
   function deleteUserPreset(id) {
     saveSettings({ userPresets: (app.settings.userPresets || []).filter((p) => p.id !== id) });
@@ -139,10 +162,10 @@
   // A flat list of everything you can assign to day/night: built-in presets +
   // your saved ones. We store the resolved theme object, matched back by value.
   const themeChoices = $derived([
-    { key: "dark", name: "Dark (default)", theme: {} },
+    { key: "dark", name: t("sAppear.darkDefault"), theme: {} },
     { key: "light", name: "Light", theme: LIGHT_THEME },
     ...PRESETS.filter((p) => p.name !== "Dark" && p.name !== "Light").map((p) => ({ key: "b:" + p.name, name: p.name, theme: p.theme })),
-    ...userPresets.map((p) => ({ key: "u:" + p.id, name: p.name + " (yours)", theme: p.theme })),
+    ...userPresets.map((p) => ({ key: "u:" + p.id, name: t("sAppear.yoursSuffix", { name: p.name }), theme: p.theme })),
   ]);
   // Map a stored theme object back to its dropdown key. null = "not set" → the
   // per-slot default (Light for day, Dark for night).
@@ -154,66 +177,80 @@
   function setDayNight(which, key) {
     const c = themeChoices.find((x) => x.key === key);
     if (!c) return;
-    saveSettings({ [which]: c.theme });
+    saveSettings({ [which]: c.theme, colorStyle: "classic" });
     applyTheme();
   }
   const HOURS = Array.from({ length: 24 }, (_, i) => i);
   function setHour(which, v) { saveSettings({ [which]: Number(v) }); applyTheme(); }
 
   // --- Live shape/layout preview ---------------------------------------------
-  const DENSITY = { comfortable: [11, 11, 34], compact: [6, 9, 28], cozy: [15, 13, 36] };
+  const DENSITY = LIST_DENSITY;
   const dens = $derived(DENSITY[app.settings.density] || DENSITY.comfortable);
 
-  function setMode(mode) { saveSettings({ themeMode: mode }); applyTheme(); }
+  function setMode(mode) { saveSettings({ themeMode: mode, colorStyle: "classic" }); applyTheme(); }
   function setRadius(v) { saveSettings({ radius: Number(v) }); applyTheme(); }
   function setScale(v) { saveSettings({ uiScale: Number(v) }); applyTheme(); }
   function setCss(v) { saveSettings({ customCss: v }); applyTheme(); }
   function reset() {
-    saveSettings({ theme: {}, themeMode: "manual" });
+    saveSettings({ theme: {}, themeMode: "manual", colorStyle: "classic" });
     applyTheme();
-    notify("Theme reset to default");
+    notify(t("sAppear.themeReset"));
   }
 </script>
 
 <div class="wrap">
+  <section class="card color">
+    <h3>{t("sColor.title")}</h3>
+    {#if !dynamic}
+      <div class="classic-note">
+        <span>{t("sColor.classicOn")}</span>
+        <button class="btn tonal sm" onclick={useDynamic}>{t("sColor.useDynamic")}</button>
+      </div>
+    {/if}
+    <ColorPicker />
+  </section>
+
+  <details class="classic" open={!dynamic}>
+  <summary>{t("sColor.classicTitle")}</summary>
+  <p class="hint">{t("sColor.classicHint")}</p>
   <section class="card">
-    <h3>Mode</h3>
+    <h3>{t("sAppear.modeTitle")}</h3>
     <label class="radio"><input type="radio" name="tmode" checked={!auto} onchange={() => setMode("manual")} />
-      <div><b>Manual</b><span>Use the preset / colors you pick below.</span></div></label>
+      <div><b>{t("sAppear.manual")}</b><span>{t("sAppear.manualHint")}</span></div></label>
     <label class="radio"><input type="radio" name="tmode" checked={auto} onchange={() => setMode("auto")} />
-      <div><b>Auto (day / night)</b><span>Switch themes by time of day. Overrides your manual colors while on.</span></div></label>
+      <div><b>{t("sAppear.auto")}</b><span>{t("sAppear.autoHint")}</span></div></label>
     {#if auto}
       <div class="daynight">
-        <label class="dn"><span>Day theme</span>
+        <label class="dn"><span>{t("sAppear.dayTheme")}</span>
           <select value={keyForTheme(app.settings.dayTheme, "light")} onchange={(e) => setDayNight("dayTheme", e.currentTarget.value)}>
             {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>from</span>
+        <label class="dn"><span>{t("sAppear.from")}</span>
           <select value={app.settings.dayStart ?? 7} onchange={(e) => setHour("dayStart", e.currentTarget.value)}>
-            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+            {#each HOURS as h}<option value={h}>{hourLabel(h)}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>Night theme</span>
+        <label class="dn"><span>{t("sAppear.nightTheme")}</span>
           <select value={keyForTheme(app.settings.nightTheme, "dark")} onchange={(e) => setDayNight("nightTheme", e.currentTarget.value)}>
             {#each themeChoices as c}<option value={c.key}>{c.name}</option>{/each}
           </select>
         </label>
-        <label class="dn"><span>from</span>
+        <label class="dn"><span>{t("sAppear.from")}</span>
           <select value={app.settings.nightStart ?? 19} onchange={(e) => setHour("nightStart", e.currentTarget.value)}>
-            {#each HOURS as h}<option value={h}>{(h % 12 || 12)}:00 {h < 12 ? "AM" : "PM"}</option>{/each}
+            {#each HOURS as h}<option value={h}>{hourLabel(h)}</option>{/each}
           </select>
         </label>
       </div>
-      <p class="hint" style="margin:10px 0 0">Tip: build a look under Custom colors, hit <b>Save as preset</b>, then pick it here as your day or night theme.</p>
+      <p class="hint" style="margin:10px 0 0">{t("sAppear.tipBuildA")} <b>{t("sAppear.saveAsPreset")}</b>{t("sAppear.tipBuildB")}</p>
     {/if}
   </section>
 
   <section class="card" class:dim={auto}>
-    <h3>Presets</h3>
-    <p class="hint">Each preview shows the actual background, panel and accent - pick a mood, then fine-tune below.</p>
+    <h3>{t("sAppear.presetsTitle")}</h3>
+    <p class="hint">{t("sAppear.presetsHint")}</p>
     {#if userPresets.length}
-      <div class="preset-cat">Yours</div>
+      <div class="preset-cat">{t("sAppear.catYours")}</div>
       <div class="presets">
         {#each userPresets as p (p.id)}
           <div class="preset upreset" class:active={isActivePreset(p)}>
@@ -225,13 +262,13 @@
               </span>
               <span class="preset-name">{p.name}</span>
             </button>
-            <button class="updel" title="Delete preset" onclick={() => deleteUserPreset(p.id)}>×</button>
+            <button class="updel" title={t("sAppear.deletePreset")} onclick={() => deleteUserPreset(p.id)}>×</button>
           </div>
         {/each}
       </div>
     {/if}
-    {#each presetGroups as g}
-      <div class="preset-cat">{g.cat}</div>
+    {#snippet groupBlock(g)}
+      <div class="preset-cat">{CAT_KEYS[g.cat] ? t(CAT_KEYS[g.cat]) : g.cat}</div>
       <div class="presets">
         {#each g.items as p}
           <button class="preset" class:active={isActivePreset(p)} onclick={() => applyPreset(p)} title={p.name}>
@@ -244,43 +281,51 @@
           </button>
         {/each}
       </div>
-    {/each}
+    {/snippet}
+    {#each shownGroups as g}{@render groupBlock(g)}{/each}
+    {#if moreGroups.length}
+      <details class="morethemes">
+        <summary>{t("sAppear.moreThemes", { n: moreCount })}</summary>
+        {#each moreGroups as g}{@render groupBlock(g)}{/each}
+      </details>
+    {/if}
   </section>
 
   <section class="card" class:dim={auto}>
-    <div class="head"><h3>Custom colors</h3>
+    <div class="head"><h3>{t("sAppear.customTitle")}</h3>
       <div class="head-btns">
-        <button class="btn ghost" onclick={saveAsPreset}>Save as preset</button>
-        <button class="btn ghost" onclick={reset}>Reset all</button>
+        <button class="btn ghost" onclick={saveAsPreset}>{t("sAppear.saveAsPreset")}</button>
+        <button class="btn ghost" onclick={reset}>{t("sAppear.resetAll")}</button>
       </div>
     </div>
     <div class="gen">
-      <span class="gen-lbl">Generate from one color</span>
-      <input class="gen-swatch" type="color" bind:value={genAccent} title="Accent color" />
+      <span class="gen-lbl">{t("sAppear.genLabel")}</span>
+      <input class="gen-swatch" type="color" bind:value={genAccent} title={t("sAppear.accentColor")} />
       <div class="seg">
-        <button class="segbtn" class:on={genBase === "dark"} onclick={() => (genBase = "dark")}>Dark base</button>
-        <button class="segbtn" class:on={genBase === "light"} onclick={() => (genBase = "light")}>Light base</button>
+        <button class="segbtn" class:on={genBase === "dark"} onclick={() => (genBase = "dark")}>{t("sAppear.darkBase")}</button>
+        <button class="segbtn" class:on={genBase === "light"} onclick={() => (genBase = "light")}>{t("sAppear.lightBase")}</button>
       </div>
-      <button class="btn" onclick={applyGenerated}>Generate palette</button>
+      <button class="btn" onclick={applyGenerated}>{t("sAppear.genPalette")}</button>
     </div>
-    <p class="hint">Or tune each token below - every one is a CSS variable used across the whole app.</p>
+    <p class="hint">{t("sAppear.tokensHint")}</p>
     <div class="tokens">
       {#each THEME_TOKENS as [token, def]}
         <label class="token">
           <input type="color" value={val(token, def)} oninput={(e) => setToken(token, e.currentTarget.value)} />
-          <span class="tname">{LABELS[token] || token}</span>
+          <span class="tname">{LABELS[token] ? t(LABELS[token]) : token}</span>
           <span class="tval">{val(token, def)}</span>
         </label>
       {/each}
     </div>
   </section>
+  </details>
 
   <section class="card">
-    <h3>Shape & layout</h3>
+    <h3>{t("sAppear.shapeTitle")}</h3>
     <!-- Live preview: a mock message row + button that reflect the roundness and
          density below as you drag, so you see the effect before committing. -->
     <div class="lp" style="--lp-r:{app.settings.radius}px">
-      <div class="lp-lbl">Preview</div>
+      <div class="lp-lbl">{t("common.preview")}</div>
       <div class="lp-card">
         <div class="lp-row" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
           <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
@@ -288,7 +333,7 @@
             <span class="lp-l1"></span>
             <span class="lp-l2"></span>
           </span>
-          <span class="lp-btn">Done</span>
+          <span class="lp-btn">{t("common.done")}</span>
         </div>
         <div class="lp-row alt" style="padding:{dens[0]}px 12px; gap:{dens[1]}px">
           <span class="lp-av" style="width:{dens[2]}px; height:{dens[2]}px"></span>
@@ -300,22 +345,22 @@
       </div>
     </div>
     <label class="slider-row">
-      <span>Text &amp; UI size</span>
+      <span>{t("sAppear.uiSize")}</span>
       <input type="range" min="0.8" max="1.4" step="0.05" value={app.settings.uiScale ?? 1} oninput={(e) => setScale(e.currentTarget.value)} />
       <span class="val">{Math.round((app.settings.uiScale ?? 1) * 100)}%</span>
     </label>
     <label class="slider-row">
-      <span>Corner roundness</span>
+      <span>{t("sAppear.cornerRoundness")}</span>
       <input type="range" min="0" max="22" value={app.settings.radius} oninput={(e) => setRadius(e.currentTarget.value)} />
       <span class="val">{app.settings.radius}px</span>
     </label>
     <div class="field">
-      <b>Translucent window</b>
-      <span class="fhint">Let the Windows backdrop (Mica) shimmer through the dark ground behind the panes. Turn off if you prefer a solid background or notice slower rendering.</span>
+      <b>{t("sAppear.translucent")}</b>
+      <span class="fhint">{t("sAppear.translucentHint")}</span>
       <div class="seg">
         {#each [
-          { v: true, t: "Translucent" },
-          { v: false, t: "Solid" },
+          { v: true, t: t("sAppear.translucentOn") },
+          { v: false, t: t("sAppear.translucentOff") },
         ] as o}
           <button class="segbtn" class:on={(app.settings.glassBg !== false) === o.v}
             onclick={() => { saveSettings({ glassBg: o.v }); applyTheme(); }}>{o.t}</button>
@@ -323,13 +368,13 @@
       </div>
     </div>
     <div class="field">
-      <b>Message density</b>
-      <span class="fhint">How tightly rows are packed in the message list.</span>
+      <b>{t("sAppear.density")}</b>
+      <span class="fhint">{t("sAppear.densityHint")}</span>
       <div class="seg">
         {#each [
-          { v: "compact", t: "Compact", d: "Tightest - fit the most messages on screen." },
-          { v: "comfortable", t: "Comfortable", d: "The default balance of density and breathing room." },
-          { v: "cozy", t: "Cozy", d: "Roomiest - extra padding and a larger avatar." },
+          { v: "compact", t: t("sAppear.densCompact"), d: t("sAppear.densCompactHint") },
+          { v: "comfortable", t: t("sAppear.densComfortable"), d: t("sAppear.densComfortableHint") },
+          { v: "cozy", t: t("sAppear.densCozy"), d: t("sAppear.densCozyHint") },
         ] as o}
           <button class="segbtn" class:on={(app.settings.density || "comfortable") === o.v} title={o.d}
             onclick={() => { saveSettings({ density: o.v }); applyTheme(); }}>{o.t}</button>
@@ -337,11 +382,11 @@
       </div>
     </div>
     <div class="field">
-      <b>Reading width</b>
-      <span class="fhint">Cap the width of email bodies so long lines don't stretch across a wide screen.</span>
+      <b>{t("sAppear.readingWidth")}</b>
+      <span class="fhint">{t("sAppear.readingWidthHint")}</span>
       <div class="seg">
         {#each [
-          { v: 0, t: "Full" }, { v: 680, t: "Narrow" }, { v: 820, t: "Medium" }, { v: 1000, t: "Wide" },
+          { v: 0, t: t("sAppear.widthFull") }, { v: 680, t: t("sAppear.widthNarrow") }, { v: 820, t: t("sAppear.widthMedium") }, { v: 1000, t: t("sAppear.widthWide") },
         ] as o}
           <button class="segbtn" class:on={(app.settings.emailMaxWidth ?? 820) === o.v}
             onclick={() => saveSettings({ emailMaxWidth: o.v })}>{o.t}</button>
@@ -349,97 +394,72 @@
       </div>
     </div>
     <div class="field">
-      <b>Email appearance</b>
-      <span class="fhint">How email bodies are rendered in a dark theme.</span>
+      <b>{t("sAppear.emailLook")}</b>
+      <span class="fhint">{t("sAppear.emailLookHint")}</span>
       <div class="seg">
         {#each [
-          { v: "dark", t: "Dark", d: "Force a dark background on every email - no white, ever." },
-          { v: "adaptive", t: "Adaptive", d: "Dark pane for plain mail; branded mail keeps its own design." },
-          { v: "original", t: "Original", d: "Show every email exactly as the sender designed it (white)." },
+          { v: "dark", t: t("sAppear.emailDark"), d: t("sAppear.emailDarkTip") },
+          { v: "adaptive", t: t("sAppear.emailAdaptive"), d: t("sAppear.emailAdaptiveTip") },
+          { v: "original", t: t("sAppear.emailOriginal"), d: t("sAppear.emailOriginalTip") },
         ] as o}
           <button class="segbtn" class:on={emailMode === o.v} title={o.d}
             onclick={() => saveSettings({ emailTheme: o.v })}>{o.t}</button>
         {/each}
       </div>
-      <span class="fhint">{emailMode === "dark" ? "Near-white backgrounds are recolored to your theme; saturated brand colors are kept." : emailMode === "adaptive" ? "Plain emails get a dark pane; designed emails are left untouched on white." : "No adaptation - emails render on a white reading pane as authored."}</span>
+      <span class="fhint">{emailMode === "dark" ? t("sAppear.emailDarkNote") : emailMode === "adaptive" ? t("sAppear.emailAdaptiveNote") : t("sAppear.emailOriginalNote")}</span>
     </div>
     <div class="field">
-      <b>Reply / action buttons</b>
-      <span class="fhint">Where Reply · Forward · Done sit when reading a message.</span>
+      <b>{t("sAppear.actionsPos")}</b>
+      <span class="fhint">{t("sAppear.actionsPosHint")}</span>
       <div class="seg">
-        <button class="segbtn" class:on={(app.settings.readerActionsPos || "top") === "top"} onclick={() => saveSettings({ readerActionsPos: "top" })}>Top</button>
-        <button class="segbtn" class:on={app.settings.readerActionsPos === "bottom"} onclick={() => saveSettings({ readerActionsPos: "bottom" })}>Bottom-right</button>
+        <button class="segbtn" class:on={(app.settings.readerActionsPos || "top") === "top"} onclick={() => saveSettings({ readerActionsPos: "top" })}>{t("sAppear.posTop")}</button>
+        <button class="segbtn" class:on={app.settings.readerActionsPos === "bottom"} onclick={() => saveSettings({ readerActionsPos: "bottom" })}>{t("sAppear.posBottomRight")}</button>
       </div>
     </div>
-    <label class="check">
-      <input type="checkbox" checked={app.settings.collapseQuotes !== false}
-        onchange={(e) => saveSettings({ collapseQuotes: e.currentTarget.checked })} />
-      <div>
-        <b>Collapse quoted replies</b>
-        <span>Show the new message plus the most-recent quoted reply, with older "On … wrote:" history behind a "Show earlier messages" toggle. Turn off to always show the full thread.</span>
-      </div>
-    </label>
-    <label class="check">
-      <input type="checkbox" checked={!!app.settings.linkUnfurls}
-        onchange={(e) => saveSettings({ linkUnfurls: e.currentTarget.checked })} />
-      <div>
-        <b>Rich link previews</b>
-        <span>Show a preview card (title, image) for the main link in a message. Off by default - enabling fetches the linked page from your machine.</span>
-      </div>
-    </label>
-    <label class="check">
-      <input type="checkbox" checked={app.settings.highlightCode !== false}
-        onchange={(e) => saveSettings({ highlightCode: e.currentTarget.checked })} />
-      <div>
-        <b>Syntax-highlight code blocks</b>
-        <span>Color keywords, strings, and comments inside <code>&lt;pre&gt;</code> code blocks in messages. Language-agnostic.</span>
-      </div>
-    </label>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.relativeTime}
         onchange={(e) => saveSettings({ relativeTime: e.currentTarget.checked })} />
       <div>
-        <b>Relative timestamps</b>
-        <span>Show "3 hours ago" in the message list instead of a date/clock.</span>
+        <b>{t("sAppear.relTime")}</b>
+        <span>{t("sAppear.relTimeHint")}</span>
       </div>
     </label>
     <label class="check">
       <input type="checkbox" checked={app.settings.senderAvatars !== false}
         onchange={(e) => saveSettings({ senderAvatars: e.currentTarget.checked })} />
       <div>
-        <b>Sender logos as avatars</b>
-        <span>Show each sender's brand logo by fetching their domain's favicon (cached locally after the first time). Falls back to initials. Off = always initials - and no domain lookups leave your machine.</span>
+        <b>{t("sAppear.senderLogos")}</b>
+        <span>{t("sAppear.senderLogosHint")}</span>
       </div>
     </label>
-    <p class="hint" style="margin:12px 0 0">Tip: turn on <b>Customize layout</b> (lock icon in the sidebar) to drag-resize the columns.</p>
+    <p class="hint" style="margin:12px 0 0">{t("sAppear.tipLayoutA")} <b>{t("sAppear.tipLayoutB")}</b>{t("sAppear.tipLayoutC")}</p>
   </section>
 
   <section class="card">
-    <h3>Quick-action buttons</h3>
-    <p class="fhint">The two buttons that appear on each message row when you hover.</p>
+    <h3>{t("sAppear.quickTitle")}</h3>
+    <p class="fhint">{t("sAppear.quickRowHint")}</p>
     <div class="rowbtns">
       {#each [0, 1] as idx}
-        <label class="inline">{idx === 0 ? "Left" : "Right"}
+        <label class="inline">{idx === 0 ? t("sAppear.left") : t("sAppear.right")}
           <select value={(app.settings.rowActions || ["snooze", "done"])[idx]} onchange={(e) => setRowAction(idx, e.currentTarget.value)}>
-            {#each ROW_CHOICES as [val, label]}<option value={val}>{label}</option>{/each}
+            {#each ROW_CHOICES as [val, label]}<option value={val}>{t(label)}</option>{/each}
           </select>
         </label>
       {/each}
     </div>
-    <p class="fhint" style="margin-top:16px">Buttons shown under the recipient when reading a message.</p>
+    <p class="fhint" style="margin-top:16px">{t("sAppear.quickReaderHint")}</p>
     <div class="rdrcats">
       {#each READER_CHOICES as [val, label]}
         <label class="grp"><input type="checkbox"
           checked={(app.settings.readerActions || READER_CHOICES.map((c) => c[0])).includes(val)}
-          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{label}</span></label>
+          onchange={(e) => toggleReaderAction(val, e.currentTarget.checked)} /> <span>{t(label)}</span></label>
       {/each}
     </div>
   </section>
 
   <section class="card">
-    <h3>Custom CSS</h3>
-    <p class="hint">Power-user escape hatch - applied app-wide and live. Target the classes and
-      CSS variables in the reference below.</p>
+    <h3>{t("sAppear.cssTitle")}</h3>
+    <p class="hint">{t("sAppear.cssHint")}</p>
     <textarea class="css" spellcheck="false" placeholder={'.btn.primary { border-radius: 999px; }\n.row { font-size: 15px; }\n:root { --accent: #ff5d8f; }'}
       value={app.settings.customCss} oninput={(e) => setCss(e.currentTarget.value)}></textarea>
 
@@ -447,27 +467,27 @@
       <input type="checkbox" checked={!!app.settings.customCssInEmails}
         onchange={(e) => saveSettings({ customCssInEmails: e.currentTarget.checked })} />
       <div>
-        <b>Apply custom CSS inside emails</b>
-        <span>By default your CSS styles only the app, not message bodies. Enable to also inject it into the email reading pane.</span>
+        <b>{t("sAppear.cssInEmails")}</b>
+        <span>{t("sAppear.cssInEmailsHint")}</span>
       </div>
     </label>
 
     <details class="docs">
-      <summary>Reference - selectors &amp; variables</summary>
-      <p class="dh">Elements</p>
+      <summary>{t("sAppear.refSummary")}</summary>
+      <p class="dh">{t("sAppear.refElements")}</p>
       <table>
         <tbody>
           {#each SELECTORS as [sel, desc]}
-            <tr><td><code>{sel}</code></td><td>{desc}</td></tr>
+            <tr><td><code>{sel}</code></td><td>{t(desc)}</td></tr>
           {/each}
         </tbody>
       </table>
-      <p class="dh">CSS variables <span class="dim">(override under <code>:root</code>)</span></p>
+      <p class="dh">{t("sAppear.refVars")} <span class="dim">({t("sAppear.refOverride")} <code>:root</code>)</span></p>
       <table>
         <tbody>
-          <tr><td><code>--radius</code></td><td>Corner roundness (also <code>--radius-sm</code>)</td></tr>
+          <tr><td><code>--radius</code></td><td>{t("sAppear.cornerRoundness")} ({t("sAppear.refAlso")} <code>--radius-sm</code>)</td></tr>
           {#each Object.entries(LABELS) as [token, label]}
-            <tr><td><code>{token}</code></td><td>{label}</td></tr>
+            <tr><td><code>{token}</code></td><td>{t(label)}</td></tr>
           {/each}
         </tbody>
       </table>
@@ -499,7 +519,9 @@
   .seg { display: inline-flex; gap: 4px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; width: fit-content; }
   .segbtn { font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 999px; color: var(--muted); }
   .segbtn:hover { color: var(--text); }
-  .segbtn.on { background: var(--accent); color: #fff; }
+  .segbtn.on { background: var(--sel); color: var(--on-sel); }
+  .segbtn { display: inline-flex; align-items: center; gap: 6px; }
+  .segbtn :global(svg) { width: 18px; height: 18px; }
   .css { width: 100%; min-height: 120px; font-family: ui-monospace, monospace; font-size: 12px; resize: vertical; }
   .rowbtns { display: flex; gap: 18px; }
   .inline { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
@@ -517,6 +539,9 @@
   .docs code { background: var(--surface-2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
   .preset-cat { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); margin: 14px 0 8px; }
   .preset-cat:first-of-type { margin-top: 6px; }
+  .morethemes { margin-top: 14px; }
+  .morethemes > summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--accent); padding: 4px 0; }
+  .morethemes > summary:hover { text-decoration: underline; }
   .presets { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
   .preset { display: flex; flex-direction: column; align-items: stretch; gap: 8px; padding: 8px; border: 1px solid var(--border);
     border-radius: var(--radius); background: var(--surface-2); font-weight: 550; text-align: center;
@@ -554,7 +579,7 @@
   .updel:hover { background: var(--danger); color: #fff; }
   /* Live shape/layout preview */
   .lp { margin-bottom: 16px; }
-  .lp-lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--faint); margin-bottom: 6px; }
+  .lp-lbl { font-size: 12px; font-weight: 500; color: var(--muted); margin-bottom: 8px; }
   .lp-card { border: 1px solid var(--border); border-radius: var(--lp-r); overflow: hidden; background: var(--surface-2); }
   .lp-row { display: flex; align-items: center; }
   .lp-row.alt { border-top: 1px solid var(--hairline); }
@@ -563,5 +588,15 @@
   .lp-l1 { height: 8px; width: 55%; border-radius: 999px; background: var(--muted); opacity: 0.75; }
   .lp-l2 { height: 7px; width: 78%; border-radius: 999px; background: var(--faint); opacity: 0.6; }
   .lp-l1.short { width: 38%; } .lp-l2.short { width: 60%; }
-  .lp-btn { flex: none; font-size: 11px; font-weight: 600; color: #fff; background: var(--accent); padding: 5px 12px; border-radius: var(--lp-r); }
+  .lp-btn { flex: none; font-size: 11px; font-weight: 600; color: var(--on-accent); background: var(--accent); padding: 5px 12px; border-radius: var(--lp-r); }
+  /* Color card: Windows accent, seed circles (Pixel's split discs), brightness. */
+  .classic-note { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 10px 12px 10px 16px; margin-bottom: 6px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: 13.5px; }
+  /* The classic themes, folded under the Color card. */
+  .classic { display: flex; flex-direction: column; gap: 20px; }
+  .classic > summary { cursor: pointer; font-size: 14px; font-weight: 600; color: var(--accent); padding: 4px 4px; list-style-position: inside; }
+  .classic > summary:hover { text-decoration: underline; }
+  .classic[open] > summary { margin-bottom: 4px; }
+  .classic > .hint { margin: -8px 4px 4px; }
+  .classic > .card { margin-top: 16px; }
 </style>

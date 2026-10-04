@@ -28,8 +28,8 @@
     try {
       backfill = await api.setBackfill(!backfill?.enabled);
       notify(backfill.enabled
-        ? "Syncing your full mail history - older messages appear as it runs."
-        : "Full-history sync paused.");
+        ? t("sAcct.backfillOn")
+        : t("sAcct.backfillOff"));
     } catch (e) { notify(e.message, "error"); }
     finally { backfillBusy = false; }
   }
@@ -38,13 +38,13 @@
   onMount(() => { tick(); healthTimer = setInterval(tick, 5000); });
   onDestroy(() => clearInterval(healthTimer));
 
-  const STATUS = {
-    ok:       { dot: "#3fb950", text: "Connected" },
-    syncing:  { dot: "#3b82f6", text: "Syncing…" },
-    error:    { dot: "#f85149", text: "Error" },
-    idle:     { dot: "#8b949e", text: "Idle" },
-    disabled: { dot: "#6e7681", text: "Disabled" },
-  };
+  const STATUS = $derived.by(() => ({
+    ok:       { dot: "#3fb950", text: t("sAcct.stOk") },
+    syncing:  { dot: "#3b82f6", text: t("sAcct.stSyncing") },
+    error:    { dot: "#f85149", text: t("sAcct.stError") },
+    idle:     { dot: "#8b949e", text: t("sAcct.stIdle") },
+    disabled: { dot: "#6e7681", text: t("sAcct.stDisabled") },
+  }));
   const stMeta = (s) => STATUS[s] || STATUS.idle;
 
   // Add-account wizard state.
@@ -66,7 +66,7 @@
 
   async function continueEmail() {
     error = "";
-    if (!email.includes("@")) { error = "Enter a full email address."; return; }
+    if (!email.includes("@")) { error = t("sAcct.errEmail"); return; }
     busy = true;
     try {
       disc = await api.autodiscover(email);
@@ -77,17 +77,17 @@
   // Override a wrong auto-detect (e.g. an M365 tenant that looks like plain IMAP).
   function forceProvider(p) {
     usePassword = false; msFlow = null; error = "";
-    if (p === "m365") disc = { ...disc, provider: "m365", auth: "oauth", source: "manual choice", note: "" };
-    else if (p === "gmail") disc = { ...disc, provider: "gmail", auth: "oauth", source: "manual choice", note: "" };
-    else disc = { ...disc, provider: "imap", auth: "password", source: "manual choice",
+    if (p === "m365") disc = { ...disc, provider: "m365", auth: "oauth", source: t("sAcct.manualChoice"), note: "" };
+    else if (p === "gmail") disc = { ...disc, provider: "gmail", auth: "oauth", source: t("sAcct.manualChoice"), note: "" };
+    else disc = { ...disc, provider: "imap", auth: "password", source: t("sAcct.manualChoice"),
                   imap_host: disc.imap_host || "", smtp_host: disc.smtp_host || "" };
   }
 
   // OAuth providers - the sign-in itself is the connection test.
   async function connectGoogle() {
     busy = true; error = "";
-    notify("Opening browser to sign in with Google…");
-    try { await api.googleConnect(); notify("Gmail connected"); app.syncing = true; await loadAccountsAndFolders(); reset(); }
+    notify(t("sAcct.openingGoogle"));
+    try { await api.googleConnect(); notify(t("sAcct.gmailConnected")); app.syncing = true; await loadAccountsAndFolders(); reset(); }
     catch (e) { error = e.message; } finally { busy = false; }
   }
 
@@ -97,7 +97,7 @@
       msFlow = await api.msStart();
       openMsLogin();  // auto-open the Microsoft page + copy the code
       api.msComplete(msFlow.flow_id)
-        .then(async () => { notify("Microsoft account connected"); app.syncing = true; await loadAccountsAndFolders(); reset(); })
+        .then(async () => { notify(t("sAcct.msConnected")); app.syncing = true; await loadAccountsAndFolders(); reset(); })
         .catch((e) => { error = e.message; msFlow = null; });
     } catch (e) { error = e.message; } finally { busy = false; }
   }
@@ -112,7 +112,7 @@
   // Password account - verifies the connection before adding.
   async function testAndAdd() {
     error = "";
-    if (!password) { error = "Enter your password."; return; }
+    if (!password) { error = t("sAcct.errPassword"); return; }
     busy = true;
     try {
       await api.createImap({
@@ -121,7 +121,7 @@
         imap_host: disc.imap_host, imap_port: disc.imap_port, imap_ssl: disc.imap_ssl,
         smtp_host: disc.smtp_host, smtp_port: disc.smtp_port,
       });
-      notify("Connected ✓ - syncing your mail");
+      notify(t("sAcct.connectedSyncing"));
       app.syncing = true;
       await loadAccountsAndFolders();
       reset();
@@ -130,32 +130,32 @@
 
   async function remove(a) {
     const ok = await confirmDialog({
-      title: `Remove ${a.email}?`,
-      message: "This deletes the account, its stored credentials, and its cached mail from this device. Mail on the server is untouched.",
-      confirmLabel: "Remove account", danger: true,
+      title: t("sAcct.removeTitle", { email: a.email }),
+      message: t("sAcct.removeMsg"),
+      confirmLabel: t("sAcct.removeConfirm"), danger: true,
     });
     if (!ok) return;
     try {
       await api.remove(a.id);
       await loadAccountsAndFolders();
-      notify("Account removed");
+      notify(t("sAcct.removed"));
     } catch (e) {
-      notify(`Couldn't remove the account: ${e.message}`, "error");
+      notify(t("sAcct.removeFailed", { error: e.message }), "error");
     }
   }
 
   async function triggerSync(a) {
-    try { await api.sync(a.id); notify(`Syncing ${a.email}…`); setTimeout(refreshHealth, 600); }
+    try { await api.sync(a.id); notify(t("sAcct.syncingAcct", { email: a.email })); setTimeout(refreshHealth, 600); }
     catch (e) { notify(e.message, "error"); }
   }
 
   // Re-enter the password for a password account (fixes "no saved password").
   async function reconnect(a) {
-    const pw = prompt(`Enter the password for ${a.email}:`);
+    const pw = prompt(t("sAcct.reconnectPrompt", { email: a.email }));
     if (!pw) return;
     try {
       await api.reconnect(a.id, pw);
-      notify("Reconnected ✓ - syncing");
+      notify(t("sAcct.reconnected"));
       setTimeout(refreshHealth, 800);
     } catch (e) { notify(e.message, "error"); }
   }
@@ -169,7 +169,7 @@
   }
   async function saveAliases(a) {
     const aliases = idText.split("\n").map((s) => s.trim()).filter(Boolean);
-    try { await api.update(a.id, { aliases }); await loadAccountsAndFolders(); idEdit = null; notify("Identities saved"); }
+    try { await api.update(a.id, { aliases }); await loadAccountsAndFolders(); idEdit = null; notify(t("sAcct.identitiesSaved")); }
     catch (e) { notify(e.message, "error"); }
   }
 
@@ -186,7 +186,7 @@
                                smtp_host: srv.smtp_host.trim(), smtp_port: Number(srv.smtp_port) });
       await loadAccountsAndFolders();
       srvEdit = null;
-      notify("Server settings saved - try sending again");
+      notify(t("sAcct.serverSaved"));
     } catch (e) { notify(e.message, "error"); }
   }
   // Re-run provider detection (MX/known-host) for this account's domain and fill
@@ -196,7 +196,7 @@
       const d = await api.autodiscover(a.email);
       srv = { imap_host: d.imap_host || srv.imap_host, imap_port: d.imap_port || srv.imap_port,
               smtp_host: d.smtp_host || srv.smtp_host, smtp_port: d.smtp_port || srv.smtp_port };
-      notify(`Detected ${d.smtp_host || "?"} via ${d.source}`);
+      notify(t("sAcct.detected", { host: d.smtp_host || "?", source: d.source }));
     } catch (e) { notify(e.message, "error"); }
   }
 
@@ -228,11 +228,11 @@
       <div class="acct-card">
         {#if app.accounts.length > 1}
           <div class="reorder">
-            <button class="ord" title="Move up" disabled={i === 0} onclick={() => move(a, -1)}>▲</button>
-            <button class="ord" title="Move down" disabled={i === app.accounts.length - 1} onclick={() => move(a, 1)}>▼</button>
+            <button class="ord" title={t("sAcct.moveUp")} disabled={i === 0} onclick={() => move(a, -1)}>▲</button>
+            <button class="ord" title={t("sAcct.moveDown")} disabled={i === app.accounts.length - 1} onclick={() => move(a, 1)}>▼</button>
           </div>
         {/if}
-        <input class="colorpick" type="color" value={a.color} title="Account color"
+        <input class="colorpick" type="color" value={a.color} title={t("sAcct.color")}
           onchange={(e) => setColor(a, e.currentTarget.value)} />
         <div class="info">
           <input class="namei" value={a.display_name} onchange={(e) => rename(a, e.currentTarget.value)} />
@@ -240,58 +240,58 @@
           {#if h}
             <div class="health">
               <span class="st" title={st.text}><span class="sdot" style="background:{st.dot}"></span>{st.text}</span>
-              {#if h.idle_active}<span class="tag idle" title="Live push connection (IMAP IDLE) is active">⚡ live</span>{/if}
-              <span class="meta">{h.messages.toLocaleString()} msgs · {h.folders} folders</span>
-              {#if h.last_sync}<span class="meta">synced {relativeTime(h.last_sync)}</span>{/if}
+              {#if h.idle_active}<span class="tag idle" title={t("sAcct.liveTip")}>⚡ {t("sAcct.live")}</span>{/if}
+              <span class="meta">{t("sAcct.healthCounts", { msgs: h.messages.toLocaleString(), folders: h.folders })}</span>
+              {#if h.last_sync}<span class="meta">{t("sAcct.synced", { time: relativeTime(h.last_sync) })}</span>{/if}
             </div>
             {#if h.last_error}
               <span class="herr" title={h.last_error}>⚠ {h.last_error.slice(0, 80)}{h.last_error.length > 80 ? "…" : ""}</span>
             {/if}
           {/if}
         </div>
-        <button class="btn ghost" onclick={() => openIdentities(a)} title="Send-as identities">
-          Identities{a.aliases?.length ? ` (${a.aliases.length})` : ""}
+        <button class="btn ghost" onclick={() => openIdentities(a)} title={t("sAcct.identitiesTip")}>
+          {t("sAcct.identities")}{a.aliases?.length ? ` (${a.aliases.length})` : ""}
         </button>
         {#if a.provider === "m365" || a.provider === "gmail"}
           <button class="btn" class:primary={h?.needs_signin} onclick={() => (app.reauthAccountId = a.id)}
             title={t("reauth.settingsTip")}>{t("reauth.signIn")}</button>
         {/if}
         {#if a.provider === "imap"}
-          <button class="btn ghost" onclick={() => reconnect(a)} title="Re-enter / fix the password for this account">Reconnect</button>
-          <button class="btn ghost" onclick={() => openServer(a)} title="Edit IMAP/SMTP server settings">Server</button>
+          <button class="btn ghost" onclick={() => reconnect(a)} title={t("sAcct.reconnectTip")}>{t("sAcct.reconnect")}</button>
+          <button class="btn ghost" onclick={() => openServer(a)} title={t("sAcct.serverTip")}>{t("sAcct.server")}</button>
         {/if}
-        <button class="btn ghost" onclick={() => triggerSync(a)} disabled={h?.status === "syncing"} title="Sync now">↻</button>
-        <button class="btn ghost danger" onclick={() => remove(a)}>Remove</button>
+        <button class="btn ghost" onclick={() => triggerSync(a)} disabled={h?.status === "syncing"} title={t("sAcct.syncNow")}>↻</button>
+        <button class="btn ghost danger" onclick={() => remove(a)}>{t("sAcct.remove")}</button>
       </div>
       {#if srvEdit === a.id && srv}
         <div class="idedit">
-          <p class="muted">Fix the mail server for this account. Seznam is <code>imap.seznam.cz</code> / <code>smtp.seznam.cz</code> (SMTP port 465).</p>
+          <p class="muted">{t("sAcct.srvHintA")} <code>imap.seznam.cz</code> / <code>smtp.seznam.cz</code> {t("sAcct.srvHintB")}</p>
           <div class="srvgrid">
-            <label>IMAP host<input bind:value={srv.imap_host} placeholder="imap.seznam.cz" /></label>
-            <label>IMAP port<input type="number" bind:value={srv.imap_port} /></label>
-            <label>SMTP host<input bind:value={srv.smtp_host} placeholder="smtp.seznam.cz" /></label>
-            <label>SMTP port<input type="number" bind:value={srv.smtp_port} /></label>
+            <label>{t("sAcct.imapHost")}<input bind:value={srv.imap_host} placeholder="imap.seznam.cz" /></label>
+            <label>{t("sAcct.imapPort")}<input type="number" bind:value={srv.imap_port} /></label>
+            <label>{t("sAcct.smtpHost")}<input bind:value={srv.smtp_host} placeholder="smtp.seznam.cz" /></label>
+            <label>{t("sAcct.smtpPort")}<input type="number" bind:value={srv.smtp_port} /></label>
           </div>
           <div class="idactions">
-            <button class="btn primary" onclick={() => saveServer(a)}>Save server settings</button>
-            <button class="btn" onclick={() => autodetectServer(a)} title="Detect from the domain's MX records">Auto-detect</button>
-            <button class="btn ghost" onclick={() => (srvEdit = null)}>Cancel</button>
+            <button class="btn primary" onclick={() => saveServer(a)}>{t("sAcct.saveServer")}</button>
+            <button class="btn" onclick={() => autodetectServer(a)} title={t("sAcct.autodetectTip")}>{t("sAcct.autodetect")}</button>
+            <button class="btn ghost" onclick={() => (srvEdit = null)}>{t("common.cancel")}</button>
           </div>
         </div>
       {/if}
       {#if idEdit === a.id}
         <div class="idedit">
-          <p class="muted">One identity per line - a plain address or <code>Name &lt;addr@host&gt;</code>. The server sends as it only if it recognizes the address. Your primary address ({a.email}) is always available.</p>
-          <textarea bind:value={idText} rows="3" placeholder={"Sales <sales@" + (a.email.split("@")[1] || "company.com") + ">\nme+side@" + (a.email.split("@")[1] || "company.com")}></textarea>
+          <p class="muted">{t("sAcct.idHintA")} <code>{t("sAcct.idFormat")}</code>. {t("sAcct.idHintB", { email: a.email })}</p>
+          <textarea bind:value={idText} rows="3" placeholder={t("sAcct.idSampleName") + " <sales@" + (a.email.split("@")[1] || "company.com") + ">\nme+side@" + (a.email.split("@")[1] || "company.com")}></textarea>
           <div class="idactions">
-            <button class="btn primary" onclick={() => saveAliases(a)}>Save identities</button>
-            <button class="btn ghost" onclick={() => (idEdit = null)}>Cancel</button>
+            <button class="btn primary" onclick={() => saveAliases(a)}>{t("sAcct.saveIdentities")}</button>
+            <button class="btn ghost" onclick={() => (idEdit = null)}>{t("common.cancel")}</button>
           </div>
         </div>
       {/if}
     {/each}
     {#if app.accounts.length === 0}
-      <p class="muted">No accounts yet. Add your first below - just type your email.</p>
+      <p class="muted">{t("sAcct.empty")}</p>
     {/if}
   </div>
 
@@ -299,23 +299,19 @@
     <div class="backfill">
       <div class="bf-head">
         <div class="bf-copy">
-          <h3>Mail history</h3>
-          <p class="muted">
-            RaplMail loads your most recent mail first, so older messages aren't
-            searchable yet. Turn this on to pull in your entire back-catalogue -
-            it runs in the background and keeps going until every folder is done.
-          </p>
+          <h3>{t("sAcct.historyTitle")}</h3>
+          <p class="muted">{t("sAcct.historyHint")}</p>
         </div>
         <button class="btn {backfill?.enabled ? '' : 'primary'}" onclick={toggleBackfill} disabled={backfillBusy}>
-          {backfill?.enabled ? "Pause" : "Sync full history"}
+          {backfill?.enabled ? t("sAcct.pause") : t("sAcct.syncFull")}
         </button>
       </div>
       {#if backfill?.enabled}
         <div class="bf-prog">
           {#if backfill.complete}
-            <span class="bf-done">✓ All mail synced - {backfill.messages.toLocaleString()} messages cached.</span>
+            <span class="bf-done">✓ {t("sAcct.bfDone", { n: backfill.messages.toLocaleString() })}</span>
           {:else}
-            <span>Working… {backfill.folders_done} of {backfill.folders_total} folders complete · {backfill.messages.toLocaleString()} messages cached so far.</span>
+            <span>{t("sAcct.bfProgress", { done: backfill.folders_done, total: backfill.folders_total, n: backfill.messages.toLocaleString() })}</span>
           {/if}
         </div>
       {/if}
@@ -323,17 +319,17 @@
   {/if}
 
   <div class="add">
-    <h3>Add an account</h3>
+    <h3>{t("sAcct.addTitle")}</h3>
 
     {#if step === "email"}
-      <p class="lead">Type your email address - RaplMail figures out the rest.</p>
+      <p class="lead">{t("sAcct.addLead")}</p>
       <div class="email-row">
         <input
-          type="email" placeholder="you@example.com" bind:value={email}
+          type="email" placeholder={t("sAcct.emailPlaceholder")} bind:value={email}
           onkeydown={(e) => e.key === "Enter" && continueEmail()} autofocus
         />
         <button class="btn primary" onclick={continueEmail} disabled={busy}>
-          {busy ? "Checking…" : "Continue"}
+          {busy ? t("sAcct.checking") : t("sAcct.continue")}
         </button>
       </div>
       {#if error}<div class="error">{error}</div>{/if}
@@ -345,12 +341,12 @@
           <div>
             <b>{email}</b>
             <span class="prov">{providerLabel[disc.provider]}</span>
-            <span class="src">detected via {disc.source}</span>
+            <span class="src">{t("sAcct.detectedVia", { source: disc.source })}</span>
           </div>
-          <button class="link" onclick={reset}>← change</button>
+          <button class="link" onclick={reset}>← {t("sAcct.change")}</button>
         </div>
         <div class="force">
-          <span>Wrong? Connect as:</span>
+          <span>{t("sAcct.forceLabel")}</span>
           {#each [["m365","Microsoft 365"],["gmail","Google"],["imap","IMAP / SMTP"]] as [p, lbl]}
             <button class="fbtn" class:on={disc.provider === p} onclick={() => forceProvider(p)}>{lbl}</button>
           {/each}
@@ -361,58 +357,58 @@
           <!-- OAuth providers: one button; sign-in is the test -->
           {#if disc.provider === "gmail"}
             <button class="btn primary big" onclick={connectGoogle} disabled={busy}>
-              {busy ? "Waiting for Google…" : "Sign in with Google"}
+              {busy ? t("sAcct.waitingGoogle") : t("sAcct.signInGoogle")}
             </button>
           {:else if disc.provider === "m365"}
             {#if !msFlow}
               <button class="btn primary big" onclick={startMs} disabled={busy}>
-                {busy ? "Starting…" : "Sign in with Microsoft"}
+                {busy ? t("sAcct.starting") : t("sAcct.signInMs")}
               </button>
             {:else}
               <div class="device">
-                <p>A Microsoft sign-in page should have opened (code copied to your clipboard).</p>
-                <button class="btn primary" onclick={openMsLogin}>Open Microsoft sign-in again</button>
+                <p>{t("sAcct.msOpened")}</p>
+                <button class="btn primary" onclick={openMsLogin}>{t("sAcct.msOpenAgain")}</button>
                 <ol>
-                  <li>On the page, sign in as your a123systems account.</li>
-                  <li>If asked for a code, paste / enter: <code class="code">{msFlow.user_code}</code></li>
-                  <li>Come back here - it connects automatically.</li>
+                  <li>{t("sAcct.msStep1")}</li>
+                  <li>{t("sAcct.msStep2")} <code class="code">{msFlow.user_code}</code></li>
+                  <li>{t("sAcct.msStep3")}</li>
                 </ol>
-                <p class="muted">Didn't open? <a href={msFlow.verification_uri_complete || msFlow.verification_uri} target="_blank" rel="noreferrer">{msFlow.verification_uri}</a></p>
+                <p class="muted">{t("sAcct.msDidntOpen")} <a href={msFlow.verification_uri_complete || msFlow.verification_uri} target="_blank" rel="noreferrer">{msFlow.verification_uri}</a></p>
               </div>
             {/if}
           {/if}
           <button class="link appass" onclick={() => { usePassword = true; error = ''; }}>
-            Use an app password instead (no Google/Microsoft sign-in)
+            {t("sAcct.useAppPassword")}
           </button>
         {:else}
           <!-- Password account (incl. OAuth providers via an app password) -->
           {#if usePassword && disc.provider === "gmail"}
-            <p class="note">Create an app password at <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a> (needs 2-Step Verification on), then paste the 16-character code below - no Google verification required.</p>
+            <p class="note">{t("sAcct.gmailNoteA")} <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noreferrer">myaccount.google.com/apppasswords</a> {t("sAcct.gmailNoteB")}</p>
           {:else if usePassword}
-            <p class="note">Use an app password from your provider (not your normal login password).</p>
+            <p class="note">{t("sAcct.appPassNote")}</p>
           {/if}
-          <label class="fld">Your name (optional)
+          <label class="fld">{t("sAcct.yourName")}
             <input bind:value={displayName} placeholder="Jan Novák" />
           </label>
-          <label class="fld">Password{(usePassword || disc.note?.includes("app")) ? " (app password)" : ""}
+          <label class="fld">{t("sAcct.password")}{(usePassword || disc.note?.includes("app")) ? ` (${t("sAcct.appPassword")})` : ""}
             <input type="password" bind:value={password}
               onkeydown={(e) => e.key === "Enter" && testAndAdd()} autofocus />
           </label>
 
           <button class="adv-toggle" onclick={() => (advanced = !advanced)}>
-            {advanced ? "▾" : "▸"} Server settings ({disc.imap_host})
+            {advanced ? "▾" : "▸"} {t("sAcct.serverSettings", { host: disc.imap_host })}
           </button>
           {#if advanced}
             <div class="grid">
-              <label>IMAP host<input bind:value={disc.imap_host} /></label>
-              <label>IMAP port<input type="number" bind:value={disc.imap_port} /></label>
-              <label>SMTP host<input bind:value={disc.smtp_host} /></label>
-              <label>SMTP port<input type="number" bind:value={disc.smtp_port} /></label>
+              <label>{t("sAcct.imapHost")}<input bind:value={disc.imap_host} /></label>
+              <label>{t("sAcct.imapPort")}<input type="number" bind:value={disc.imap_port} /></label>
+              <label>{t("sAcct.smtpHost")}<input bind:value={disc.smtp_host} /></label>
+              <label>{t("sAcct.smtpPort")}<input type="number" bind:value={disc.smtp_port} /></label>
             </div>
           {/if}
 
           <button class="btn primary big" onclick={testAndAdd} disabled={busy}>
-            {busy ? "Testing connection…" : "Test connection & add"}
+            {busy ? t("sAcct.testing") : t("sAcct.testAdd")}
           </button>
         {/if}
 
@@ -462,7 +458,7 @@
   .force { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; font-size: 12px; color: var(--muted); }
   .fbtn { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
   .fbtn:hover { color: var(--text); border-color: var(--accent); }
-  .fbtn.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fbtn.on { background: var(--sel); border-color: var(--sel); color: var(--on-sel); }
   .fld { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--muted); margin-bottom: 12px; }
   .adv-toggle { color: var(--muted); font-size: 12px; margin-bottom: 12px; }
   .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 14px; }

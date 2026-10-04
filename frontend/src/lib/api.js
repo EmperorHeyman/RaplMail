@@ -264,6 +264,7 @@ export const appSettings = {
   import: (bundle) => api.post("/settings/import", bundle),
   exportFull: () => api.get("/settings/export-full"),
   importFull: (blob, password) => api.post("/settings/import-full", { blob, password }),
+  systemAccent: () => api.get("/settings/system-accent"),
 };
 
 // Security Lab: full forensic report for one message.

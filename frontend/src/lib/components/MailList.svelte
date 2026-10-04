@@ -2,12 +2,12 @@
   import { untrack } from "svelte";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, openRuleModal, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
+  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, smartGroupOrder, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, openRuleModal, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
   import GroupRow from "./GroupRow.svelte";
-  import SmartGroupCard from "./SmartGroupCard.svelte";
+  import SmartGroupStrip from "./SmartGroupStrip.svelte";
   import CategoryPeek from "./CategoryPeek.svelte";
   import SmartGroupsMenu from "./SmartGroupsMenu.svelte";
   import SigninBanner from "./SigninBanner.svelte";
@@ -84,13 +84,15 @@
     openCategory(cat, "all");
     app.threadKey = null;
     app.selectedMessageId = m.id;
-    markSticky(cat);
   }
 
   // Group the flat message list into items: plain messages, conversation threads,
   // or notification bundles, depending on settings.
   // Built-in categories + the user's custom groups (see lib/groups.js).
   const CAT_META = $derived.by(() => smartGroupMeta());
+  // Grouped categories: a row from one of these in the main flow is new mail
+  // that hasn't folded into its card yet, so it carries the group's tag.
+  const groupedSet = $derived(new Set(groupedCategories()));
   let smartCatMsgs = $state({});  // category -> loaded messages (lazy on expand)
   // Bulk category-done hides ids we don't hold objects for; single-row done
   // relies on the row object's own is_done (so the store's undo, which flips
@@ -126,38 +128,15 @@
   // "N new" badge = "new"). Switching mode on an already-open group re-filters.
   function openCategory(cat, mode) {
     groupMode = { ...groupMode, [cat]: mode };
-    const s = new Set(expandedKeys); s.add(cat); expandedKeys = s;
-    markSticky(cat);   // opening a group holds it at the top while you read it
+    // One group open at a time - it opens right under the strip, so a second
+    // one would stack below the first and push your mail out of view.
+    const grouped = new Set(groupedCategories());
+    const s = new Set([...expandedKeys].filter((k) => !grouped.has(k)));
+    s.add(cat); expandedKeys = s;
     loadCategory(cat);
   }
   function seeAll(cat) { openCategory(cat, "all"); }
 
-  // Groups the user has touched this session stay pinned to the top even after
-  // their unread count hits 0 - otherwise reading the last new mail in a group
-  // makes the whole card drop from the "hot" band to the end of Today mid-click,
-  // which reads as "the mail I just opened jumped down". Reset when the view /
-  // search changes (or on restart), so it only holds the list stable in-session.
-  let stickyHot = $state(new Set());
-  function markSticky(cat) {
-    if (cat && groupedCategories().includes(cat) && !stickyHot.has(cat))
-      stickyHot = new Set([...stickyHot, cat]);
-  }
-  $effect(() => {
-    app.selectedKind; app.selectedFolderId; app.search;   // reset triggers
-    untrack(() => { if (stickyHot.size) stickyHot = new Set(); });
-  });
-
-  // Which Smart Inbox category cards are currently expanded (their key IS the
-  // category id). Drives the header breadcrumb - the "you're inside this group"
-  // indicator that replaces the old static "Smart Inbox" title.
-  const openCats = $derived(
-    smartActive() ? groupedCategories().filter((c) => expandedKeys.has(c)) : []
-  );
-  function collapseAllGroups() {
-    const s = new Set(expandedKeys);
-    for (const c of groupedCategories()) s.delete(c);
-    expandedKeys = s;
-  }
 
   // Expanded bundles can hold hundreds of in-memory mails; render a window.
   const CHUNK = 12;
@@ -215,7 +194,6 @@
   const BUCKET_KEYS = { "Today": "list.today", "Yesterday": "list.yesterday", "This week": "list.thisWeek", "Last week": "list.lastWeek", "This month": "list.thisMonth", "Last month": "list.lastMonth", "Older": "list.older" };
   const bucketLabel = (b) => t(BUCKET_KEYS[b] || "list.older");
 
-  const NOTIF = new Set(["updates", "social", "newsletters"]);
 
   // Flatten a group card + (when expanded) its loaded messages into the item
   // stream. Expanded rows are REAL items: keyboard-navigable, and `e` acts on
@@ -254,86 +232,33 @@
     // category with no `q`). Sender bundles are skipped for the same reason -
     // a `from:` search is all one sender, so it collapsed to a single bundle.
     if (smartActive() && !app.search) {
-      const items = msgs.map((m) => ({ kind: "msg", msg: m }));
-      const n = app.settings.smartPreviewCount || 4;
+      // One fixed place for the groups: a strip at the top, in a stable order
+      // (smartGroupOrder). The group you open lists its mail right under it.
+      // Below, the timeline in date sections - new grouped mail included,
+      // tagged, until it's read (see refreshMessages).
+      const grouped = new Set(groupedCategories());
       const groups = [];
-      for (const c of groupedCategories()) {
-        const g = app.smartGroupData[c];
+      for (const c of smartGroupOrder()) {
+        const g = grouped.has(c) ? app.smartGroupData[c] : null;
         if (g && g.count > 0) {
-          const shown = (g.senders || []).slice(0, n);
-          const more = Math.max(0, (g.distinct ?? shown.length) - shown.length);
           groups.push({ kind: "group", gtype: "category", key: c, category: c,
                         count: g.count, unread: g.unread || 0, new: g.new || 0,
-                        senders: shown, more, latest: g.latest, recent: g.recent || [] });
+                        latest: g.latest, recent: g.recent || [] });
         }
       }
-      if (app.settings.smartOrderMode === "custom") {
-        const order = app.settings.smartOrder || [];
-        const rank = (c) => { const i = order.indexOf(c); return i < 0 ? 999 : i; };
-        groups.sort((a, b) => rank(a.category) - rank(b.category));
-      } else {
-        // Most-recently-active group floats to the top.
-        groups.sort((a, b) => (b.latest || "").localeCompare(a.latest || ""));
+      const out = [{ kind: "strip", key: "strip", groups }];
+      const open = groups.find((g) => expandedKeys.has(g.key));
+      if (open) out.push(...expandGroup(open));
+      // With a group open, its new mail is listed under its header - don't
+      // show the same message a second time down in the timeline.
+      const shown = open ? msgs.filter((m) => m.category !== open.category) : msgs;
+      let bucket = null;
+      for (const m of shown) {
+        const b = dateBucket(m.date);
+        if (b !== bucket) { out.push({ kind: "header", key: "h:" + b, label: b }); bucket = b; }
+        out.push({ kind: "msg", msg: m });
       }
-      // Where the group cards sit relative to the classic messages.
-      const placement = app.settings.smartGroupPlacement || "dateSections";
-      if (placement === "dateSections") {
-        // Spark-style date sections (Today / Yesterday / This week / …). Groups
-        // with NEW (unread) mail float to the very top so you notice them; quiet
-        // (all-read) groups are tucked at the END of Today, out of the way. When
-        // Today is empty (you've cleared it), the tucked groups surface at top
-        // too instead of sinking below older sections.
-        // Pin the group you're currently reading to its hot spot: opening the
-        // last unread of a group drops its g.new to 0, which would otherwise make
-        // the card fall to the end of Today while the message is still open.
-        // Keeping the open category hot holds the list stable under the reader;
-        // it settles back once you close/leave (selectedMessageId changes).
-        const openId = app.selectedMessageId;
-        const openCat = openId == null ? null
-          : (msgs.find((m) => m.id === openId)?.category
-             ?? groups.find((g) => (g.recent || []).some((r) => r.id === openId))?.category
-             ?? null);
-        const isHot = (g) => g.new > 0 || g.category === openCat || stickyHot.has(g.category);
-        const hot = groups.filter(isHot);    // NEW mail, being read, or touched this session → top
-        const cold = groups.filter((g) => !isHot(g)); // otherwise → end of Today
-        const hotItems = hot.flatMap(expandGroup);
-        const coldItems = cold.flatMap(expandGroup);
-        const out = [...hotItems];
-        let bucket = null;
-        let coldPlaced = false;
-        let sawToday = false;
-        for (const it of items) {
-          const b = dateBucket(it.msg.date);
-          if (b !== bucket) {
-            if (bucket === "Today" && !coldPlaced) { out.push(...coldItems); coldPlaced = true; }
-            out.push({ kind: "header", key: "h:" + b, label: b });
-            bucket = b;
-          }
-          if (b === "Today") sawToday = true;
-          out.push(it);
-        }
-        if (!coldPlaced) {
-          // Today was the last (or only) section → cold groups after it. If there
-          // were no Today messages at all, they land right under the hot groups
-          // at the top rather than below Yesterday/older.
-          if (sawToday) out.push(...coldItems);
-          else out.splice(hotItems.length, 0, ...coldItems);
-        }
-        return out;
-      }
-      if (placement === "top") return [...groups.flatMap(expandGroup), ...items];
-      if (placement === "afterN") {
-        const k = Math.max(0, app.settings.smartGroupsAfter ?? 3);
-        return [...items.slice(0, k), ...groups.flatMap(expandGroup), ...items.slice(k)];
-      }
-      if (placement === "timeline") {
-        // Interleave groups + messages by recency: a group floats to the date of
-        // its newest mail, and any newer standalone mail pushes it down.
-        const dateOf = (it) => String((it.kind === "group" ? it.latest : it.msg.date) || "");
-        return [...items, ...groups].sort((a, b) => dateOf(b).localeCompare(dateOf(a)))
-          .flatMap((it) => (it.kind === "group" ? expandGroup(it) : [it]));
-      }
-      return [...items, ...groups.flatMap(expandGroup)]; // "bottom"
+      return out;
     }
     if (app.settings.threading) {
       const map = new Map();
@@ -346,29 +271,13 @@
           ? { kind: "group", gtype: "thread", key: g[0].thread_id, msgs: g, latest: g[0] }
           : { kind: "msg", msg: g[0] });
     }
-    if (app.settings.bundles && !app.search) {
-      const counts = {};
-      for (const m of msgs) if (NOTIF.has(m.category)) counts[m.from_addr] = (counts[m.from_addr] || 0) + 1;
-      const senders = new Set(Object.keys(counts).filter((s) => counts[s] >= 3));
-      const map = new Map(); const items = [];
-      for (const m of msgs) {
-        if (NOTIF.has(m.category) && senders.has(m.from_addr)) {
-          if (!map.has(m.from_addr)) {
-            const g = { kind: "group", gtype: "bundle", key: m.from_addr, msgs: [], latest: m };
-            map.set(m.from_addr, g); items.push(g);
-          }
-          map.get(m.from_addr).msgs.push(m);
-        } else items.push({ kind: "msg", msg: m });
-      }
-      return items.flatMap((it) => (it.kind === "group" ? expandGroup(it) : [it]));
-    }
     return msgs.map((m) => ({ kind: "msg", msg: m }));
   }
   const items = $derived.by(() => {
     const built = buildItems(app.messages);
     // Date-section layout has its own ordering (with header rows) - don't pull
     // pinned/VIP to the top or it would orphan the section headers.
-    if (smartActive() && (app.settings.smartGroupPlacement || "dateSections") === "dateSections") return built;
+    if (smartActive() && !app.search) return built;
     // Pinned first, then VIP-sender mail, then everything else (stable).
     // Never hoist rows living inside an expanded group out of their card.
     // VIP ranking is skipped in Sent/Drafts: every row there was written by you,
@@ -487,15 +396,17 @@
   function toggleGroupsMenu() {
     if (groupsMenu) { groupsMenu = null; return; }
     const r = groupsBtn.getBoundingClientRect();
-    groupsMenu = { x: r.right - 300, y: r.bottom + 6 };
+    groupsMenu = { x: r.left, y: r.bottom + 6 };
   }
 
   // --- right-click context menu ---
   let ctx = $state(null); // { x, y, msg }
   let ctxSearch = $state("");
+  let ctxSub = $state(null);   // label of the open submenu (null = top level)
   function openCtx(e, msg) {
     e.preventDefault();
     ctxSearch = "";
+    ctxSub = null;
     // Right-clicking a row that's part of a multi-selection acts on the WHOLE
     // selection (group menu); otherwise it's the usual single-message menu.
     const group = selectedIds.length > 1 && selectedIds.includes(msg.id);
@@ -506,75 +417,101 @@
   function toggleSeen(m) { setMessageSeen(m, !m.is_seen); }
   function toggleFlag(m) { const v = !m.is_flagged; m.is_flagged = v; messagesApi.setFlag(m.id, v).catch(() => {}); }
 
-  // Flat, searchable action list for the right-click menu. `kw` adds extra
-  // search keywords beyond the label.
+  // The right-click menu. Long lists (where to file the sender, snooze times,
+  // sender options, rules) live in submenus - `sub` entries open in place with
+  // a Back row - so the top level stays short. `kw` adds search keywords;
+  // typing searches submenu entries too (see ctxShown).
   function ctxActions(m) {
-    const acts = [
+    return [
       // -1: the right-clicked row isn't necessarily the keyboard-focused one.
       { label: t("list.open"), run: () => open(m, -1) },
       ...(aiEnabled() ? [{ label: t("list.addToAiChat"), icon: icons.bolt, kw: "ai assistant chat context", run: () => addToAiChat(m) }] : []),
-      { label: m.pinned ? t("list.unpin") : t("list.pinToTop"), icon: icons.pin, run: () => pinMessage(m) },
+      { sep: "" },
       { label: m.is_done ? t("list.markNotDone") : t("list.markDone"), icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },
       { label: m.is_seen ? t("list.markUnread") : t("list.markRead"), kw: "seen", run: () => toggleSeen(m) },
       { label: m.is_flagged ? t("list.unflag") : t("list.flag"), icon: icons.flag, kw: "star", run: () => toggleFlag(m) },
-      { label: isVip(m.from_addr) ? t("list.removeVip") : t("list.markSenderVip"), icon: icons.star, run: () => toggleVip(m.from_addr) },
-      { label: isTrustedSender(m.from_addr) ? t("list.unmarkSafe") : t("list.markSenderSafe"), icon: icons.shieldCheck, run: () => toggleTrusted(m.from_addr) },
-      { sep: t("list.moveToCategory"), kw: "" },
-      { label: t("list.moveToPrimary"), icon: icons.inbox, kw: "move out newsletter normal queue", run: () => setSenderCategory(m, "primary") },
-      ...Object.entries(CAT_META).map(([id, meta]) => ({ label: t("list.moveTo", { cat: meta.label }), icon: meta.icon, kw: "move category " + id, run: () => setSenderCategory(m, id) })),
-      { label: t("list.resetCategory"), icon: icons.reset, kw: "move category", run: () => setSenderCategory(m, "auto") },
-      { sep: t("list.snooze") },
-      ...snoozePresets().map((p) => ({ label: t("list.snoozePrefix", { label: p.label }), icon: icons.snooze, kw: "snooze remind later", run: () => snoozeMessage(m, p.iso, p.presence) })),
-      { sep: t("list.more") },
+      { label: m.pinned ? t("list.unpin") : t("list.pinToTop"), icon: icons.pin, run: () => pinMessage(m) },
+      { label: t("list.snooze"), icon: icons.snooze, kw: "remind later", sub:
+        snoozePresets().map((p) => ({ label: p.label, icon: icons.snooze, kw: "snooze remind later", run: () => snoozeMessage(m, p.iso, p.presence) })) },
+      { sep: "" },
       { label: t("list.archive"), icon: icons.archive, run: () => archiveOne(m) },
       { label: t("list.delete"), icon: icons.trash, danger: true, run: () => deleteOne(m) },
+      { label: t("list.moveSenderTo"), icon: icons.inboxMove || icons.inbox, kw: "move category group newsletter", sub: [
+        { label: t("list.catPrimary"), icon: icons.inbox, kw: "move out newsletter normal queue primary inbox", run: () => setSenderCategory(m, "primary") },
+        ...Object.entries(CAT_META).map(([id, meta]) => ({ label: meta.label, icon: meta.icon, kw: "move category " + id, run: () => setSenderCategory(m, id) })),
+        { label: t("list.resetCategory"), icon: icons.reset, kw: "move category auto", run: () => setSenderCategory(m, "auto") },
+      ] },
+      { sep: t("list.senderHead") },
       { label: t("list.showMailFromSender"), kw: "filter from", run: () => searchAddress(m.from_addr) },
-      { label: t("list.muteSender"), icon: icons.mute, run: () => muteSender(m) },
-      { label: t("rules.muteFromSender"), icon: icons.bell, kw: "notification notify silence", run: () => muteNotificationsFromSender(m) },
-      { label: t("list.muteConversation"), icon: icons.mute, kw: "thread", run: () => muteThread(m) },
-      { label: t("list.blockSender"), icon: icons.junk, danger: true, run: () => blockSender(m) },
-      { label: t("list.createRule"), icon: icons.bolt, run: () => createRuleFromSender(m) },
-      { label: t("groups.groupRule"), icon: icons.folder, kw: "rule group smart inbox collapse category", run: () => openRuleModal(m, undefined, { action: "set_group", action_arg: (app.settings.customGroups || []).at(-1)?.id || "" }) },
+      { label: t("list.senderOptions"), icon: icons.contacts, kw: "vip safe mute block", sub: [
+        { label: isVip(m.from_addr) ? t("list.removeVip") : t("list.markSenderVip"), icon: icons.star, run: () => toggleVip(m.from_addr) },
+        { label: isTrustedSender(m.from_addr) ? t("list.unmarkSafe") : t("list.markSenderSafe"), icon: icons.shieldCheck, run: () => toggleTrusted(m.from_addr) },
+        { label: t("list.muteSender"), icon: icons.mute, run: () => muteSender(m) },
+        { label: t("rules.muteFromSender"), icon: icons.bell, kw: "notification notify silence", run: () => muteNotificationsFromSender(m) },
+        { label: t("list.muteConversation"), icon: icons.mute, kw: "thread", run: () => muteThread(m) },
+        { label: t("list.blockSender"), icon: icons.junk, danger: true, run: () => blockSender(m) },
+      ] },
+      { label: t("list.rulesSub"), icon: icons.bolt, kw: "rule filter automate group", sub: [
+        { label: t("list.createRule"), icon: icons.bolt, run: () => createRuleFromSender(m) },
+        { label: t("groups.groupRule"), icon: icons.folder, kw: "rule group smart inbox collapse category", run: () => openRuleModal(m, undefined, { action: "set_group", action_arg: (app.settings.customGroups || []).at(-1)?.id || "" }) },
+      ] },
       { label: t("list.sendToLab"), icon: icons.shieldCheck, kw: "security lab scan analyze forensics virustotal headers domain ip whois", run: () => sendToLab(m) },
     ];
-    const q = ctxSearch.trim().toLowerCase();
-    if (!q) return acts;
-    // When searching, drop section separators and match label + keywords.
-    return acts.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
   }
   // Group right-click menu: the selection-bar actions plus move-to-folder, applied
   // to the whole current selection.
   function moveSelectionTo(f) { const ids = [...selectedIds]; clearSelection(); moveMessages(ids, f); }
   function ctxGroupActions(msg) {
     const targets = app.folders.filter((f) => f.account_id === msg.account_id && f.id !== msg.folder_id);
-    const acts = [
+    return [
       { label: t("list.markDone"), icon: icons.done, kw: "complete e", run: () => bulk("done") },
       { label: t("list.markRead"), kw: "seen", run: () => bulk("seen") },
       { label: t("list.flag"), icon: icons.flag, kw: "star", run: () => bulk("flag") },
-      { sep: t("list.snooze") },
-      ...snoozePresets().filter((p) => p.iso).map((p) => ({ label: p.label, icon: icons.snooze, kw: "snooze remind later", run: () => bulk("snooze", p.iso) })),
-      ...(targets.length ? [{ sep: t("list.moveToFolder") },
-        ...targets.map((f) => ({ label: f.name, icon: icons.folder, kw: "move folder " + f.name, run: () => moveSelectionTo(f) }))] : []),
-      { sep: t("list.more") },
+      { label: t("list.snooze"), icon: icons.snooze, kw: "remind later", sub:
+        snoozePresets().filter((p) => p.iso).map((p) => ({ label: p.label, icon: icons.snooze, kw: "snooze remind later", run: () => bulk("snooze", p.iso) })) },
+      { sep: "" },
       { label: t("list.archive"), icon: icons.archive, run: () => bulk("archive") },
       { label: t("list.delete"), icon: icons.trash, danger: true, run: () => bulk("delete") },
+      ...(targets.length ? [{ label: t("list.moveToFolder"), icon: icons.folder, kw: "move folder", sub:
+        targets.map((f) => ({ label: f.name, icon: icons.folder, kw: "move folder " + f.name, run: () => moveSelectionTo(f) })) }] : []),
+      { sep: "" },
       { label: t("list.clearSelection"), icon: icons.close, run: () => clearSelection() },
     ];
-    const q = ctxSearch.trim().toLowerCase();
-    if (!q) return acts;
-    return acts.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
   }
   const currentCtxActions = () => (ctx?.group ? ctxGroupActions(ctx.msg) : ctxActions(ctx.msg));
-  function runCtx(a) { if (a?.run) ctxDo(a.run); }
+  // What the menu shows right now: a search flattens everything (submenu
+  // entries included, so "newsl" still finds "Newsletters"); an open submenu
+  // shows its entries under a Back row; otherwise the top level.
+  function ctxShown() {
+    const acts = currentCtxActions();
+    const q = ctxSearch.trim().toLowerCase();
+    if (q) {
+      const flat = acts.flatMap((a) => (a.sub ? a.sub.map((x) => ({ ...x, label: `${a.label} › ${x.label}` })) : [a]));
+      return flat.filter((a) => !a.sep && ((a.label + " " + (a.kw || "")).toLowerCase().includes(q)));
+    }
+    // (Read-only: this runs while the menu renders, so a stale ctxSub just
+    // falls back to the top level instead of being reset here.)
+    const parent = ctxSub ? acts.find((a) => a.sub && a.label === ctxSub) : null;
+    return parent ? [{ back: true, label: parent.label }, ...parent.sub] : acts;
+  }
+  function runCtx(a) {
+    if (!a) return;
+    if (a.back) { ctxSub = null; return; }
+    if (a.sub) { ctxSub = a.label; return; }
+    if (a.run) ctxDo(a.run);
+  }
   function ctxEnter() {
-    const first = currentCtxActions().find((a) => !a.sep);
+    const first = ctxShown().find((a) => !a.sep && !a.back);
     if (first) runCtx(first);
   }
 
   // Position the menu fully on-screen - flip up/left near edges, cap height.
   function placeMenu(node, pos) {
     const apply = (p) => {
-      const r = node.getBoundingClientRect();
+      // Layout size, not getBoundingClientRect: the menu pops in scaled down,
+      // so its on-screen box is still too small here and it would be left
+      // hanging off the bottom of the window.
+      const r = { width: node.offsetWidth, height: node.offsetHeight };
       const vw = window.innerWidth, vh = window.innerHeight, pad = 8;
       let x = p.x, y = p.y;
       if (x + r.width > vw - pad) x = Math.max(pad, vw - r.width - pad);
@@ -762,7 +699,6 @@
        app.messages.some((m) => m.thread_id === message.thread_id && m.id !== message.id))
         ? message.thread_id : null;
     app.selectedMessageId = message.id;
-    markSticky(message.category);   // keep this mail's group pinned so it doesn't drop mid-click
     if (!message.is_seen) setMessageSeen(message, true);   // instant -1 on badges
     refocusList();
   }
@@ -920,14 +856,18 @@
     <input class="ctx-search" placeholder={t("list.searchActions")} bind:value={ctxSearch} autofocus
       onkeydown={(e) => { if (e.key === "Enter") ctxEnter(); else if (e.key === "Escape") closeCtx(); }} />
     <div class="ctx-list">
-      {#each currentCtxActions() as a}
-        {#if a.sep}
-          <div class="ctx-head">{a.sep}</div>
+      {#each ctxShown() as a}
+        {#if a.sep !== undefined}
+          {#if a.sep}<div class="ctx-head">{a.sep}</div>{:else}<div class="ctx-sep"></div>{/if}
+        {:else if a.back}
+          <button class="ctx-back" onclick={() => runCtx(a)}><span class="ctx-ic">{@html icons.back}</span>{a.label}</button>
         {:else}
-          <button class:danger={a.danger} onclick={() => runCtx(a)}>{#if a.icon}{@html a.icon} {/if}{a.label}</button>
+          <button class:danger={a.danger} class:hassub={!!a.sub} onclick={() => runCtx(a)}>
+            <span class="ctx-ic">{@html a.icon || ""}</span>{a.label}{#if a.sub}<span class="ctx-arrow">{@html icons.chevronRight}</span>{/if}
+          </button>
         {/if}
       {/each}
-      {#if currentCtxActions().length === 0}<div class="ctx-empty">{t("list.noMatchingAction")}</div>{/if}
+      {#if ctxShown().length === 0}<div class="ctx-empty">{t("list.noMatchingAction")}</div>{/if}
     </div>
   </div>
 {/if}
@@ -935,30 +875,28 @@
 <section class="list">
   <header>
     <SigninBanner />
+    <!-- Google-style search bar: one pill holding the query, Save, filters and AI. -->
+    <div class="searchrow">
+      <SearchBar value={app.search} oninput={onSearch} onexpand={() => (paletteOpen = true)} />
+      {#if app.search.trim()}<button class="savesearch" title={t("list.saveSmartFolder")} onclick={saveSearch}>{@html icons.star} {t("list.save")}</button>{/if}
+      <button class="adv" title={t("search.advancedTitle")} aria-label={t("search.filters")} onclick={() => (paletteOpen = true)}>{@html icons.sliders}</button>
+      {#if aiEnabled()}
+        <button class="adv aibtn" title={t("list.aiAssistant")} aria-label={t("list.aiAssistant")}
+          onclick={() => openAiAssistant({ messageId: app.selectedMessageId, threadKey: app.threadKey || "" })}>{@html icons.sparkles}</button>
+      {/if}
+    </div>
     <div class="row1">
       {#if app.selectedKind === "smart"}
-        <!-- Smart Inbox: no redundant static title. When a group is open, show a
-             breadcrumb so you can see which group folder you're in (and collapse it). -->
-        <div class="crumbs">
-          {#if openCats.length}
-            <button class="crumb root" onclick={collapseAllGroups}>{t("list.smartInbox")}</button>
-            {#each openCats as c}
-              <span class="csep">›</span>
-              <button class="crumb cur" onclick={() => toggleExpand(c)} title={t("list.collapseGroup")}>
-                <span class="cic">{@html CAT_META[c]?.icon || icons.folder}</span>
-                {CAT_META[c]?.label || c}
-                <span class="cx">×</span>
-              </button>
-            {/each}
-          {/if}
-        </div>
+        <!-- The open group names itself (and closes) in its header under the
+             strip, so the title stays put instead of turning into a breadcrumb. -->
+        <h2>{t("list.smartInbox")}</h2>
       {:else}
         <h2>{title}</h2>
       {/if}
       <div class="row1-actions">
         {#if hasUnread}
-          <button class="markread" title={t("list.markAllReadTip")} onclick={markAllRead}>
-            {@html icons.doneAll || icons.done} {t("list.markAllRead")}
+          <button class="markread" title={t("list.markAllReadTip")} aria-label={t("list.markAllRead")} onclick={markAllRead}>
+            {@html icons.doneAll}
           </button>
         {/if}
         <label class="slider" title={t("list.showDoneTip")}>
@@ -967,19 +905,6 @@
           <span class="lbl">{app.showDone ? t("list.showingAll") : t("list.showDone")}</span>
         </label>
       </div>
-    </div>
-    <div class="searchrow">
-      <SearchBar value={app.search} oninput={onSearch} onexpand={() => (paletteOpen = true)} />
-      <button class="adv" title={t("search.advancedTitle")} onclick={() => (paletteOpen = true)}>{@html icons.sliders}</button>
-      {#if smartActive() && !app.search}
-        <button class="adv" class:on={!!groupsMenu} bind:this={groupsBtn} title={t("groups.chooseTip")}
-          aria-label={t("groups.chooseTip")} onclick={toggleGroupsMenu}>{@html icons.groups}</button>
-      {/if}
-      {#if aiEnabled()}
-        <button class="adv aibtn" title={t("list.aiAssistant")}
-          onclick={() => openAiAssistant({ messageId: app.selectedMessageId, threadKey: app.threadKey || "" })}>{@html icons.bolt}</button>
-      {/if}
-      {#if app.search.trim()}<button class="savesearch" title={t("list.saveSmartFolder")} onclick={saveSearch}>{@html icons.star} {t("list.save")}</button>{/if}
     </div>
     {#if showCats}
       <div class="cats">
@@ -1030,7 +955,7 @@
         {emptyState.text}
       </div>
     {:else}
-      {#each items.slice(0, mainShown) as item, i (item.kind === "msg" ? "m" + item.msg.id : item.kind === "group" ? "g" + item.key : item.key)}
+      {#each items.slice(0, mainShown) as item, i (item.kind === "msg" ? (item.inGroup ? "gm" : "m") + item.msg.id : item.kind === "group" ? "g" + item.key : item.key)}
         <div class:bundled={item.kind === "msg" && item.inGroup} class:cv={item.kind !== "header"}
              draggable={item.kind === "msg"}
              ondragstart={item.kind === "msg" ? (e) => onRowDragStart(e, item.msg) : undefined}
@@ -1054,6 +979,7 @@
               onapprove={() => approveSender(item.msg)}
               onblock={() => blockSender(item.msg)}
               onmenu={(e) => openCtx(e, item.msg)}
+              groupTag={!item.inGroup && smartActive() && !app.search && groupedSet.has(item.msg.category) ? CAT_META[item.msg.category] : null}
             />
           {:else if item.kind === "groupload"}
             <div class="gpart loading"><span class="spin">{@html icons.sync}</span> {t("list.loading")}</div>
@@ -1067,21 +993,28 @@
             <div class="gpart">
               <button class="morebtn" onclick={() => seeAll(item.cat)}>{t("list.seeAllInGroup", { n: item.total.toLocaleString() })}</button>
             </div>
-          {:else if item.gtype === "category"}
-            <SmartGroupCard
-              label={CAT_META[item.category]?.label || item.category}
-              icon={CAT_META[item.category]?.icon || icons.folder}
-              tone={CAT_META[item.category]?.tone || ""}
-              count={item.count} unread={item.unread} newCount={item.new} senders={item.senders} more={item.more}
-              focused={i === focusIndex} expanded={expandedKeys.has(item.key)} mode={modeOf(item.category)}
-              onToggle={() => { focusIndex = i; activate(item); }}
-              onNewBadge={() => { focusIndex = i; openCategory(item.category, "new"); }}
-              onSender={(email) => searchAddress(email)}
-              onDoneAll={() => { focusIndex = i; doneCategory(item); }}
-              onPeek={(rect) => schedulePeek(item, rect)}
-              onPeekOut={() => schedulePeekClose()}
+          {:else if item.kind === "strip"}
+            <SmartGroupStrip groups={item.groups} meta={CAT_META}
+              openKey={item.groups.find((g) => expandedKeys.has(g.key))?.key ?? null}
+              editOn={!!groupsMenu} bind:editEl={groupsBtn}
+              onToggle={(g) => { closePeek(true); activate(g); }}
               onMenu={(e) => (groupsMenu = { x: e.clientX, y: e.clientY })}
-            />
+              onPeek={(g, rect) => schedulePeek(g, rect)}
+              onPeekOut={() => schedulePeekClose()}
+              onEdit={toggleGroupsMenu} />
+          {:else if item.gtype === "category"}
+            <!-- The open group's header: what you're looking at, Done all, close. -->
+            {@const gm = CAT_META[item.category] || {}}
+            <div class="ghead" class:focused={i === focusIndex} style="--tone:{gm.tone || 'var(--accent)'}">
+              <span class="gic">{@html gm.icon || icons.folder}</span>
+              <span class="gname">{gm.label || item.category}</span>
+              <span class="gcount tnum">{item.count.toLocaleString()}</span>
+              <span class="gsp"></span>
+              <button class="gbtn" title={t("list.doneAllTip")}
+                onclick={() => { focusIndex = i; doneCategory(item); }}>{@html icons.done} {t("list.doneAll")}</button>
+              <button class="gbtn x" title={t("list.collapseGroup")} aria-label={t("list.collapseGroup")}
+                onclick={() => toggleExpand(item.key)}>{@html icons.close}</button>
+            </div>
           {:else}
             <GroupRow
               gtype={item.gtype} msgs={item.msgs} latest={item.latest}
@@ -1103,86 +1036,96 @@
     {/key}
   </div>
 
-  <footer class="hint">
-    <kbd>↓</kbd><kbd>↑</kbd> {t("list.hintMove")} · <kbd>e</kbd> {t("list.hintToggleDone")} · <kbd>↵</kbd> {t("list.hintOpen")}
-  </footer>
+  {#if app.settings.listHints}
+    <footer class="hint">
+      <kbd>↓</kbd><kbd>↑</kbd> {t("list.hintMove")} · <kbd>e</kbd> {t("list.hintToggleDone")} · <kbd>↵</kbd> {t("list.hintOpen")}
+    </footer>
+  {/if}
 </section>
 
 <style>
+  /* The list sits on the window ground (same tone with the dynamic palette), so
+     it reads as part of the page - the reading pane beside it is the raised
+     container. Rounded so classic themes still show a soft pane. */
   .list { display: flex; flex-direction: column; min-height: 0; background: var(--bg);
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  header { padding: 14px 16px 11px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 10px; }
-  .row1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .row1-actions { display: flex; align-items: center; gap: 10px; flex: none; }
-  .markread { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: 12px; font-weight: 600;
-    color: var(--muted); padding: 5px 11px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface-2);
-    transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
-  .markread:hover { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
-  .markread :global(svg) { width: 14px; height: 14px; }
-  h2 { margin: 0; font-size: 16.5px; font-weight: 700; letter-spacing: -0.02em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Smart Inbox breadcrumb - the "you're in this group folder" indicator. Flex:1
-     so it holds the header height and pushes the actions to the right even when
-     empty (no group open = deliberately blank, no static "Smart Inbox" title). */
-  .crumbs { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; min-height: 26px; overflow: hidden; }
-  .crumb { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 650; white-space: nowrap; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-  .crumb.root { color: var(--muted); }
-  .crumb.root:hover { background: var(--hover); color: var(--text); }
-  .crumb.cur { background: var(--accent-soft); color: var(--text); }
-  .crumb.cur:hover { background: var(--accent-soft-2); }
-  .crumb .cic { display: inline-flex; color: var(--accent); }
-  .crumb .cic :global(svg) { width: 14px; height: 14px; }
-  .crumb .cx { color: var(--faint); font-size: 15px; line-height: 1; margin-left: 2px; }
-  .crumb.cur:hover .cx { color: var(--text); }
-  .csep { color: var(--faint); font-size: 13px; flex: none; }
-  .searchrow { display: flex; gap: 8px; align-items: center; }
-  .search { flex: 1; }
-  .savesearch { flex: none; color: var(--accent); font-weight: 600; font-size: 12px; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); transition: background var(--t-fast) var(--ease); }
-  .savesearch:hover { background: var(--accent-soft-2); }
-  .adv { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px;
-    border-radius: var(--radius-sm); color: var(--muted); background: var(--surface-2); border: 1px solid var(--border);
-    transition: color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease); }
-  .adv:hover { color: var(--accent); border-color: var(--accent); }
+    border-radius: var(--radius-lg); overflow: hidden; }
+  header { padding: 2px 6px 6px; display: flex; flex-direction: column; gap: 4px; }
+
+  /* ── Search: one pill, like Gmail's ── */
+  .searchrow { display: flex; align-items: center; gap: 2px; min-height: 48px; padding: 0 4px 0 4px;
+    border-radius: 28px; background: var(--surface-2);
+    transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease); }
+  .searchrow:focus-within { background: var(--surface); box-shadow: var(--shadow); }
+  .savesearch { flex: none; display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px;
+    color: var(--on-sel); background: var(--sel); font-weight: 600; font-size: 13px; border-radius: 8px;
+    transition: background var(--t-fast) var(--ease); }
+  .savesearch :global(svg) { width: 16px; height: 16px; }
+  .savesearch:hover { background: color-mix(in srgb, var(--sel) 88%, var(--on-sel)); }
+  .adv { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+    color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .adv:hover { background: var(--hover); color: var(--text); }
   .adv.aibtn { color: var(--accent); }
-  .adv.on { color: var(--accent); border-color: var(--accent); }
-  .adv :global(svg) { width: 16px; height: 16px; }
-  .cats { display: flex; gap: 4px; flex-wrap: wrap; }
-  .cat { font-size: 12px; font-weight: 550; padding: 4px 11px; border-radius: 999px; color: var(--muted); background: var(--surface-2); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-  .cat:hover { background: var(--surface-3); color: var(--text); }
-  .cat.active { background: var(--accent); color: #fff; }
+  .adv :global(svg) { width: 22px; height: 22px; }
 
-  .bulkbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--hairline); flex-wrap: wrap; }
-  .bulkbar .count { font-weight: 600; font-size: 13px; margin-right: 4px; font-variant-numeric: tabular-nums; }
-  .bulkbar button { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 12px; font-weight: 550; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-  .bulkbar button:hover { background: color-mix(in srgb, var(--surface-3) 76%, var(--text) 10%); }
+  /* ── Title row ── */
+  /* Wraps rather than squeezing: with longer (e.g. Czech) button labels the
+     actions drop under the title instead of cutting it down to "C…". */
+  .row1 { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 10px 6px 2px 12px; }
+  .row1-actions { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
+  h2 { margin: 0; font-size: 22px; line-height: 28px; font-weight: 400; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* Mark all read: an icon button (the label is its tooltip), so the title
+     row keeps to one line at the default list width. */
+  .markread { display: grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%;
+    color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .markread:hover { background: var(--hover); color: var(--text); }
+  .markread :global(svg) { width: 22px; height: 22px; }
+
+  /* Category chips (folder views with categories). */
+  .cats { display: flex; gap: 8px; flex-wrap: wrap; padding: 6px 6px 2px 12px; }
+  .cat { height: 32px; padding: 0 14px; font-size: 13px; font-weight: 500; border-radius: 8px; color: var(--muted);
+    box-shadow: inset 0 0 0 1px var(--border); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .cat:hover { background: var(--hover); color: var(--text); }
+  .cat.active { background: var(--sel); color: var(--on-sel); box-shadow: none; }
+
+  /* ── Selection toolbar ── */
+  .bulkbar { display: flex; align-items: center; gap: 4px; margin: 0 8px 6px; padding: 6px 8px 6px 16px;
+    background: var(--sel); color: var(--on-sel); border-radius: var(--radius); flex-wrap: wrap; }
+  .bulkbar .count { font-weight: 600; font-size: 14px; margin-right: 6px; font-variant-numeric: tabular-nums; }
+  .bulkbar button { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 999px;
+    font-size: 13px; font-weight: 500; color: inherit; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .bulkbar button :global(svg) { width: 18px; height: 18px; }
+  .bulkbar button:hover { background: color-mix(in srgb, var(--on-sel) 10%, transparent); }
   .bulkbar button.danger:hover { background: var(--danger-soft); color: var(--danger); }
-  .bulkbar .clear { margin-left: auto; background: transparent; }
+  .bulkbar .clear { margin-left: auto; width: 34px; padding: 0; justify-content: center; }
   .snz { position: relative; }
-  .snz-menu { position: absolute; top: 100%; left: 0; z-index: 15; margin-top: 4px; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column; min-width: 150px; animation: pop-in var(--t) var(--ease); transform-origin: top left; }
-  .snz-menu button { text-align: left; background: transparent; }
-  .snz-menu button:hover { background: var(--accent); color: #fff; }
+  .snz-menu { position: absolute; top: 100%; left: 0; z-index: 15; margin-top: 4px; background: var(--surface-2); color: var(--text);
+    border-radius: var(--radius-menu); box-shadow: var(--shadow-lg); padding: 6px 0; display: flex; flex-direction: column;
+    min-width: 180px; animation: pop-in var(--t) var(--ease); transform-origin: top left; }
+  .snz-menu button { text-align: left; border-radius: 0; height: auto; padding: 9px 16px; font-size: 14px; }
+  .snz-menu button:hover { background: var(--hover); }
 
-  /* The Spark-style done slider */
+  /* Show-done: a Material switch. */
   .slider { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; }
   .slider input { display: none; }
   .slider .track {
-    width: 38px; height: 22px; border-radius: 999px; background: var(--surface-3);
-    position: relative; transition: background var(--t) var(--ease);
-    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.18);
+    width: 40px; height: 24px; border-radius: 999px; position: relative; flex: none;
+    background: var(--surface-3); box-shadow: inset 0 0 0 2px var(--outline);
+    transition: background var(--t) var(--ease), box-shadow var(--t) var(--ease);
   }
   .slider .knob {
-    position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
-    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    transition: transform var(--t) var(--ease-spring);
+    position: absolute; top: 50%; left: 12px; width: 12px; height: 12px; border-radius: 50%;
+    background: var(--outline); transform: translate(-50%, -50%);
+    transition: left var(--t) var(--ease), width var(--t) var(--ease), height var(--t) var(--ease), background var(--t) var(--ease);
   }
-  .slider input:checked + .track { background: var(--done); }
-  .slider input:checked + .track .knob { transform: translateX(16px); }
-  .slider .lbl { font-size: 12px; color: var(--muted); min-width: 64px; }
+  .slider input:checked + .track { background: var(--accent); box-shadow: none; }
+  .slider input:checked + .track .knob { left: 28px; width: 18px; height: 18px; background: var(--on-accent); }
+  .slider .lbl { font-size: 13px; color: var(--muted); min-width: 64px; }
 
   /* layout+paint containment: content-visibility realizes/unrealizes rows while
      scrolling, and each realization is a layout change - containment keeps those
      invalidations inside the scroller instead of rippling out to the app grid.
      No clipping change: as a scroller, .rows already clips its children. */
-  .rows { flex: 1; overflow-y: auto; min-height: 0; contain: layout paint; }
+  .rows { flex: 1; overflow-y: auto; min-height: 0; contain: layout paint; padding-bottom: 8px; }
   .rows:focus { outline: none; }
   /* Kill hover work while scrolling - see onRowsScroll. Rows can't fire :hover
      with pointer-events off, so no button springs / background transitions play
@@ -1205,58 +1148,82 @@
   .rows.intro > *:nth-child(n+10) { animation-delay: 270ms; }
   /* Skip layout/paint for offscreen rows entirely - the single biggest scroll
      win. Date headers are excluded: paint containment would clip their sticky
-     positioning. The placeholder height matches a real 3-line row (~74px), so
+     positioning. The placeholder height matches a real 3-line row (~88px), so
      scroll distance estimates stay honest and the scrollbar doesn't jump. */
-  .cv { content-visibility: auto; contain-intrinsic-size: auto 74px; }
-  /* Spark-style date section header. NOTE: no backdrop-filter here - blur on a
-     sticky element repaints every scroll frame in WebView2 (felt "heavy"). */
-  .datesep { position: sticky; top: 0; z-index: 4; padding: 8px 16px 5px; font-size: 10.5px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint);
-    background: var(--bg);
-    border-bottom: 1px solid var(--hairline); }
-  /* Expanded group content: flat rows with a quiet accent guide on the left. */
-  .bundled :global(.row) { padding-left: 24px; box-shadow: inset 2px 0 0 var(--accent-soft-2); }
-  .bundled :global(.row.focused) { box-shadow: inset 3px 0 0 var(--accent); }
-  .gpart { display: flex; align-items: center; gap: 8px; padding: 6px 24px; color: var(--muted); font-size: 12px;
-    border-bottom: 1px solid var(--hairline); box-shadow: inset 2px 0 0 var(--accent-soft-2); }
-  .gpart.loading { padding: 10px 24px; }
-  .morebtn { color: var(--accent); font-weight: 600; font-size: 12px; padding: 4px 10px; margin: 2px 0; border-radius: 999px; transition: background var(--t-fast) var(--ease); }
+  .cv { content-visibility: auto; contain-intrinsic-size: auto 88px; }
+  /* Date section header. NOTE: no backdrop-filter here - blur on a sticky
+     element repaints every scroll frame in WebView2 (felt "heavy"). */
+  .datesep { position: sticky; top: 0; z-index: 4; padding: 12px 20px 6px; font-size: 13px; font-weight: 500;
+    color: var(--muted); background: var(--bg); }
+  /* Expanded group content: rows indented under the group's header. */
+  .bundled :global(.wrap) { margin-left: 18px; }
+  /* Header of the group opened from the strip: sits above its mail. */
+  .ghead { display: flex; align-items: center; gap: 10px; margin: 4px 6px 4px; padding: 6px 6px 6px 8px;
+    border-radius: var(--radius); background: color-mix(in srgb, var(--tone) 12%, transparent); font-size: 14px; }
+  .ghead.focused { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
+  .gic { width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%;
+    color: color-mix(in srgb, var(--tone) 75%, var(--text)); background: color-mix(in srgb, var(--tone) 22%, transparent); }
+  .gic :global(svg) { width: 18px; height: 18px; }
+  .gname { font-weight: 600; font-size: 15px; }
+  .gcount { color: var(--muted); font-size: 13px; }
+  .gsp { flex: 1; }
+  .gbtn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 14px; border-radius: 999px;
+    font-size: 13px; font-weight: 500; color: var(--text); transition: background var(--t-fast) var(--ease); }
+  .gbtn :global(svg) { width: 18px; height: 18px; }
+  .gbtn:hover { background: var(--hover); }
+  .gbtn.x { width: 34px; padding: 0; justify-content: center; color: var(--muted); }
+  .gpart { display: flex; align-items: center; gap: 8px; padding: 4px 14px; color: var(--muted); font-size: 13px; margin-left: 18px; }
+  .gpart :global(svg) { width: 16px; height: 16px; }
+  .gpart.loading { padding: 10px 14px; }
+  .morebtn { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; margin: 2px 0;
+    color: var(--accent); font-weight: 600; font-size: 13px; border-radius: 999px; transition: background var(--t-fast) var(--ease); }
   .morebtn:hover { background: var(--accent-soft); }
-  .loadmore { display: flex; align-items: center; gap: 8px; padding: 10px 22px; color: var(--muted); font-size: 12px; }
+  .loadmore { display: flex; align-items: center; gap: 8px; padding: 12px 22px; color: var(--muted); font-size: 13px; }
+  .loadmore :global(svg) { width: 16px; height: 16px; }
   .spin { display: inline-flex; animation: spin 0.9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  .ctxmenu { position: fixed; z-index: 300; width: 248px; max-height: min(72vh, 560px); background: var(--surface-2);
-    border: 1px solid var(--hairline); border-radius: var(--radius); box-shadow: var(--shadow-lg); padding: 6px;
+  /* ── Right-click menu (Material menu) ── */
+  .ctxmenu { position: fixed; z-index: 300; width: 260px; max-height: min(72vh, 560px); background: var(--surface-2);
+    border-radius: var(--radius-menu); box-shadow: var(--shadow-lg); padding: 8px 0 6px;
     display: flex; flex-direction: column; min-height: 0; animation: pop-in var(--t) var(--ease); }
-  .ctx-title { font-size: 12px; font-weight: 700; color: var(--accent); padding: 4px 6px 7px; }
-  .ctx-search { width: 100%; box-sizing: border-box; margin-bottom: 5px; padding: 7px 10px; font-size: 13px;
-    background: var(--surface); border: 1px solid var(--hairline); border-radius: 7px; color: var(--text); }
+  .ctx-title { font-size: 13px; font-weight: 600; color: var(--accent); padding: 4px 16px 8px; }
+  .ctx-search { width: auto; margin: 0 8px 6px; padding: 8px 12px; font-size: 13px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-field); color: var(--text); }
   .ctx-search:focus { border-color: var(--accent); outline: none; box-shadow: none; }
   .ctx-list { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; }
-  .ctx-list > button { text-align: left; padding: 8px 11px; border-radius: 7px; font-size: 13px; color: var(--text); display: flex; align-items: center; gap: 8px; transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-  .ctx-list > button:hover { background: var(--accent); color: #fff; }
-  .ctx-list > button.danger:hover { background: var(--danger); }
-  .ctx-head { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--faint); padding: 9px 11px 3px; }
-  .ctx-empty { color: var(--muted); font-size: 13px; padding: 10px 11px; }
+  .ctx-list > button { text-align: left; padding: 0 16px; min-height: 40px; border-radius: 0; font-size: 14px; color: var(--text);
+    display: flex; align-items: center; gap: 12px; transition: background var(--t-fast) var(--ease); }
+  .ctx-ic { width: 20px; height: 20px; flex: none; display: grid; place-items: center; color: var(--muted); }
+  .ctx-ic :global(svg) { width: 20px; height: 20px; }
+  .ctx-list > button:hover { background: var(--hover); }
+  .ctx-list > button.danger { color: var(--danger); }
+  .ctx-list > button.danger .ctx-ic { color: var(--danger); }
+  .ctx-list > button.danger:hover { background: var(--danger-soft); }
+  .ctx-head { font-size: 12px; font-weight: 600; color: var(--muted); padding: 10px 16px 4px; }
+  .ctx-empty { color: var(--muted); font-size: 13px; padding: 10px 16px; }
+  .ctx-sep { height: 1px; margin: 6px 0; background: var(--hairline); }
+  .ctx-arrow { margin-left: auto; color: var(--muted); display: grid; place-items: center; }
+  .ctx-arrow :global(svg) { width: 20px; height: 20px; }
+  .ctx-list > button.ctx-back { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--hairline); margin-bottom: 4px; }
 
   /* Loading skeleton */
-  .skel { display: flex; gap: 11px; align-items: center; padding: 13px 14px; border-bottom: 1px solid var(--hairline); }
-  .sk-av { width: 34px; height: 34px; border-radius: 50%; flex: none; }
-  .sk-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; }
-  .sk-l { height: 9px; border-radius: 5px; }
+  .skel { display: flex; gap: 14px; align-items: center; padding: 14px 18px; }
+  .sk-av { width: 40px; height: 40px; border-radius: 50%; flex: none; }
+  .sk-lines { flex: 1; display: flex; flex-direction: column; gap: 8px; }
+  .sk-l { height: 10px; border-radius: 5px; }
   .sk-l.short { width: 55%; }
   .sk-av, .sk-l { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%); background-size: 200% 100%; animation: shimmer 1.3s infinite; }
   @keyframes shimmer { to { background-position: -200% 0; } }
   .muted, .empty { color: var(--muted); padding: 24px 16px; text-align: center; }
-  .empty { display: flex; flex-direction: column; gap: 12px; align-items: center; margin-top: 48px; line-height: 1.6; animation: rise-in var(--t-slow) var(--ease); }
-  .big { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 20px;
-    background: var(--accent-soft); color: var(--accent); font-size: 28px; box-shadow: inset 0 0 0 1px var(--accent-soft-2); }
-  .big :global(svg) { width: 30px; height: 30px; }
+  .empty { display: flex; flex-direction: column; gap: 14px; align-items: center; margin-top: 48px; line-height: 1.6; font-size: 15px; animation: rise-in var(--t-slow) var(--ease); }
+  .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 50%;
+    background: var(--sel); color: var(--on-sel); }
+  .big :global(svg) { width: 36px; height: 36px; }
 
-  footer.hint { padding: 8px 14px; border-top: 1px solid var(--hairline); color: var(--faint); font-size: 11px; }
+  footer.hint { padding: 8px 16px; border-top: 1px solid var(--hairline); color: var(--faint); font-size: 11.5px; }
   kbd {
     display: inline-block; padding: 1px 6px; margin: 0 1px; border-radius: 5px;
-    background: var(--surface-2); border: 1px solid var(--hairline); font-size: 10px; font-family: ui-monospace, monospace;
+    background: var(--surface-2); border: 1px solid var(--hairline); font-size: 10.5px; font-family: ui-monospace, monospace;
   }
 </style>

@@ -96,7 +96,7 @@
   .pic :global(svg) { width: 13px; height: 13px; }
   .plabel { flex: 1; min-width: 0; font-size: 12px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.05em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .pnew { flex: none; font-size: 10px; font-weight: 700; color: #fff; background: var(--accent); border-radius: 999px; padding: 2px 7px; }
+  .pnew { flex: none; font-size: 10px; font-weight: 700; color: var(--on-accent); background: var(--accent); border-radius: 999px; padding: 2px 7px; }
   .pcount { flex: none; font-size: 11px; font-weight: 600; color: var(--faint); }
 
   /* The newest mail, in full - the reason to hover. */

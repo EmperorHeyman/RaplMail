@@ -176,7 +176,7 @@
   .lbl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   ul { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer; }
-  li.active { background: var(--accent); color: #fff; }
+  li.active { background: var(--sel); color: var(--on-sel); }
   .ic { width: 20px; text-align: center; }
   .lbl { flex: 1; }
   .hint { font-size: 12px; color: var(--muted); }

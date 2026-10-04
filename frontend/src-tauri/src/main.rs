@@ -233,7 +233,10 @@ fn main() {
                     let app = window.app_handle();
                     let quitting = app.state::<QuitFlag>().0.load(Ordering::SeqCst);
                     let to_tray = app.state::<CloseToTray>().0.load(Ordering::SeqCst);
-                    if !quitting && to_tray {
+                    // Only the main window lives on in the tray. Compose / reminder /
+                    // analysis windows must really close - hiding them left every
+                    // "closed" one running invisibly in the background.
+                    if window.label() == "main" && !quitting && to_tray {
                         let _ = window.hide();
                         api.prevent_close();
                         // Hidden in the tray: let the renderer drop its heap/caches.

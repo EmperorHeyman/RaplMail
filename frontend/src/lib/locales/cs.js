@@ -14,6 +14,12 @@ import sandbox from "./parts/sandbox.js";
 import calendar from "./parts/calendar.js";
 import groups from "./parts/groups.js";
 import reauth from "./parts/reauth.js";
+import settingsPanels from "./parts/settings.js";
+import setAi from "./parts/setAi.js";
+import setLook from "./parts/setLook.js";
+import setAccounts from "./parts/setAccounts.js";
+import setMisc from "./parts/setMisc.js";
+import color from "./parts/color.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -91,11 +97,11 @@ const base = {
   "onboarding.setAccounts": "Připojte Microsoft 365, Gmail nebo libovolnou schránku IMAP/SMTP.",
   "onboarding.setAppearance": "Motivy, barvy, rozvržení, písma a jak se e-maily přizpůsobí tmavému režimu.",
   "onboarding.setRules": "Automaticky filtrujte, směrujte a blokujte poštu podle odesílatele nebo domény.",
-  "onboarding.setSignature": "Vytvořte bohatý podpis s vloženým obrázkem, pro každý účet zvlášť.",
+  "onboarding.setCompose": "Okno pro psaní, zrušení odeslání, podpisy s obrázky a úryvky.",
   "onboarding.setAi": "Zvolte lokální model Ollama nebo API klíč a nastavte, co asistent dělá.",
-  "onboarding.setSync": "Synchronizujte stav Hotové/přečteno mezi zařízeními přes vlastní schránku.",
+  "onboarding.setBackup": "Zálohujte RaplMail, nebo udržujte dva počítače ve shodě přes vlastní schránku.",
   "onboarding.setShortcuts": "Zobrazte a změňte všechny klávesové zkratky.",
-  "onboarding.setGeneral": "Odesílání, oznámení, časy odložení, spouštění, zálohy a další.",
+  "onboarding.setInbox": "Skupiny Chytré schránky, konverzace, časy odložení a další.",
 
   // Nastavení oznámení.
   "notif.title": "Oznámení",
@@ -214,5 +220,5 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
-  ...calendar.cs, ...groups.cs, ...reauth.cs,
+  ...calendar.cs, ...groups.cs, ...reauth.cs, ...settingsPanels.cs, ...setAi.cs, ...setLook.cs, ...setAccounts.cs, ...setMisc.cs, ...color.cs,
 };

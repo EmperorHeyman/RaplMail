@@ -7,6 +7,7 @@
   import { senderHue, avatarColor, initialOf as initialFor } from "../avatar.js";
   import { fileExt, fileKind } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
   import SuspiciousModal from "./SuspiciousModal.svelte";
   import AttachmentMenu from "./AttachmentMenu.svelte";
   import MeetingCard from "./MeetingCard.svelte";
@@ -112,7 +113,7 @@
     }
     expanded = s;
   }
-  function fmt(iso) { return iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : ""; }
+  function fmt(iso) { return iso ? new Date(iso).toLocaleString(dateLocale(), { dateStyle: "medium", timeStyle: "short" }) : ""; }
 
   const subject = $derived(list.length ? (list[list.length - 1].subject || t("reader.noSubject")) : "");
 
@@ -140,9 +141,11 @@
   // avatar.js) so a person looks the same everywhere, plus whether it's from ME
   // (mine = accent + right-aligned, chat-style).
   function isMine(m) { return myIdentities(m).includes((m.from_addr || "").toLowerCase()); }
+  // A tonal disc in the person's hue (the list rows do the same - see
+  // MessageRow .avatar); mine take the accent's.
   function avatarBg(m) {
-    return isMine(m) ? "background: var(--accent);"
-                     : `background: ${avatarColor(m.from_addr || m.from_name)};`;
+    return isMine(m) ? "--av: var(--accent);"
+                     : `--av: ${avatarColor(m.from_addr || m.from_name)};`;
   }
   function initialOf(m) { return initialFor(m.from_name || m.from_addr); }
   function replyTo(m) {
@@ -400,48 +403,50 @@
 {/snippet}
 
 <style>
-  /* Fill the reader card (which clips, but no longer scrolls) so the internal
+  /* Fill the reader pane (which clips, but no longer scrolls) so the internal
      .scroll below is the actual scroller - its scrollbar stays inside the rounded
-     card and ends above the bottom action bar. */
-  .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; background: var(--bg); }
+     pane and ends above the bottom action bar. */
+  .thread { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; background: transparent; }
   .placeholder { flex: 1; display: grid; place-items: center; color: var(--muted); }
-  header { padding: 18px 22px 14px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
-  .subject { font-size: 19px; font-weight: 700; }
-  .sub { color: var(--muted); font-size: 12px; }
-  .actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
-  .actions-bottom { margin-top: 0; padding: 12px 22px; border-top: 1px solid var(--border); background: var(--surface); }
-  .scroll { flex: 1; overflow-y: auto; padding: 14px 16px 28px; display: flex; flex-direction: column; gap: 12px; }
-  /* Each reply is its own rounded card, tagged with the sender's color + initial
+  header { padding: 24px 28px 14px; display: flex; flex-direction: column; gap: 6px; }
+  .subject { font-size: 24px; font-weight: 400; line-height: 32px; overflow-wrap: anywhere; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .actions-bottom { margin-top: 0; padding: 12px 20px; border-top: 1px solid var(--hairline); background: var(--surface); }
+  .scroll { flex: 1; overflow-y: auto; padding: 4px 16px 28px; display: flex; flex-direction: column; gap: 10px; }
+  /* Each reply is its own outlined card, tagged with the sender's colour + initial
      so multiple people in one conversation read at a glance. Mine align right
      with an accent tint (chat-style); everyone else's align left. */
   .msg { border: 1px solid var(--border); border-left: 3px solid color-mix(in srgb, var(--sender) 62%, var(--border));
-    border-radius: 16px; overflow: hidden; background: var(--surface); flex: none;
-    max-width: 94%; align-self: flex-start; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    border-radius: var(--radius); overflow: hidden; background: var(--surface); flex: none;
+    max-width: 94%; align-self: flex-start;
     transition: box-shadow var(--t-fast) var(--ease); }
-  .msg.open { box-shadow: 0 4px 14px rgba(0, 0, 0, 0.10); }
+  .msg.open { box-shadow: var(--shadow); }
   .msg.mine { align-self: flex-end; border-left: 1px solid var(--border); border-right: 3px solid var(--accent);
     background: color-mix(in srgb, var(--accent) 6%, var(--surface)); }
   .mhead { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 0; }
-  .mhead:hover { background: var(--surface-2); }
-  .msg.mine .mhead:hover { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .mhead:hover { background: var(--hover); }
   .mhead.unread .who { font-weight: 700; }
-  .mh-main { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; text-align: left; padding: 10px 0 10px 12px; }
-  .avatar { width: 30px; height: 30px; border-radius: 50%; flex: none; display: grid; place-items: center;
-    color: #fff; font-size: 13px; font-weight: 700; }
+  .mh-main { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; text-align: left; padding: 12px 0 12px 14px; border-radius: 0; }
+  .avatar { width: 36px; height: 36px; border-radius: 50%; flex: none; display: grid; place-items: center;
+    font-size: 15px; font-weight: 500;
+    background: color-mix(in srgb, var(--av, var(--accent)) 34%, var(--surface));
+    color: color-mix(in srgb, var(--av, var(--accent)) 55%, var(--text)); }
   .who-wrap { display: flex; flex-direction: column; min-width: 0; gap: 1px; }
-  .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 13.5px; }
-  .snip { min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+  .snip { min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .warn { color: var(--danger); display: inline-flex; flex: none; }
-  .date { color: var(--faint); font-size: 11.5px; flex: none; }
+  .date { color: var(--muted); font-size: 12px; flex: none; }
   .mh-acts { display: flex; gap: 2px; flex: none; }
-  .mib { width: 28px; height: 28px; border-radius: 6px; display: grid; place-items: center; color: var(--muted); }
-  .mib:hover { background: var(--surface-3); color: var(--accent); }
-  .tnote { padding: 6px 14px; font-size: 11px; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--border); }
-  .atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--surface); }
-  .att { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px 4px 5px; font-size: 12px;
-         border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 260px; }
-  .att:hover { border-color: var(--accent); }
-  .att-badge { flex: none; display: grid; place-items: center; width: 28px; height: 22px; border-radius: 5px;
+  .mib { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); }
+  .mib :global(svg) { width: 19px; height: 19px; }
+  .mib:hover { background: var(--hover); color: var(--text); }
+  .tnote { padding: 6px 14px; font-size: 11.5px; color: var(--muted); background: var(--surface-2); border-top: 1px solid var(--hairline); }
+  .atts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--hairline); background: transparent; }
+  .att { display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px 5px 6px; font-size: 12.5px; border-radius: 0;
+         border: 1px solid var(--border); background: transparent; max-width: 260px; }
+  .att:hover { background: var(--hover); }
+  .att-badge { flex: none; display: grid; place-items: center; width: 30px; height: 24px; border-radius: 6px;
     font-size: 8.5px; font-weight: 800; color: #fff; background: var(--muted); }
   .att-badge.pdf { background: #d84a4a; } .att-badge.image { background: #2ba36b; }
   .att-badge.doc { background: #3e6fe6; } .att-badge.sheet { background: #1a9d5c; }
@@ -454,10 +459,10 @@
   .att-wrap.risky { border-color: color-mix(in srgb, var(--danger, #e5484d) 45%, var(--border)); }
   .att-badge.risk { background: var(--danger, #e5484d); }
   .att-warn { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--danger, #e5484d); }
-  .att-warn :global(svg) { width: 11px; height: 11px; }
-  .att-sb { display: inline-flex; align-items: center; padding: 0 8px; border-left: 1px solid var(--border); color: var(--muted); background: var(--surface-2); }
-  .att-sb:hover { color: var(--accent); background: var(--surface-3); }
-  .att-sb :global(svg) { width: 13px; height: 13px; }
-  iframe { width: 100%; height: 200px; border: none; border-top: 1px solid var(--border); background: var(--bg); display: block; }
+  .att-warn :global(svg) { width: 12px; height: 12px; }
+  .att-sb { display: inline-flex; align-items: center; padding: 0 9px; border-radius: 0; border-left: 1px solid var(--border); color: var(--muted); background: transparent; }
+  .att-sb:hover { color: var(--accent); background: var(--hover); }
+  .att-sb :global(svg) { width: 15px; height: 15px; }
+  iframe { width: 100%; height: 200px; border: none; border-top: 1px solid var(--hairline); background: var(--surface); display: block; }
   .loadingbody { padding: 16px; color: var(--muted); }
 </style>

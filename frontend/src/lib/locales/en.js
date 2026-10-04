@@ -18,6 +18,12 @@ import sandbox from "./parts/sandbox.js";
 import calendar from "./parts/calendar.js";
 import groups from "./parts/groups.js";
 import reauth from "./parts/reauth.js";
+import settingsPanels from "./parts/settings.js";
+import setAi from "./parts/setAi.js";
+import setLook from "./parts/setLook.js";
+import setAccounts from "./parts/setAccounts.js";
+import setMisc from "./parts/setMisc.js";
+import color from "./parts/color.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -95,11 +101,11 @@ const base = {
   "onboarding.setAccounts": "Connect Microsoft 365, Gmail or any IMAP/SMTP mailbox.",
   "onboarding.setAppearance": "Themes, colours, layout, fonts and how emails adapt to dark mode.",
   "onboarding.setRules": "Filter, route and block mail automatically by sender or domain.",
-  "onboarding.setSignature": "Build a rich signature with an embedded image, per account.",
+  "onboarding.setCompose": "The compose window, undo send, signatures with images, and snippets.",
   "onboarding.setAi": "Pick a local Ollama model or an API key, and tune what the assistant does.",
-  "onboarding.setSync": "Sync your Done/read state across devices over your own mailbox.",
+  "onboarding.setBackup": "Back RaplMail up, or keep two computers in step over your own mailbox.",
   "onboarding.setShortcuts": "See and remap every keyboard shortcut.",
-  "onboarding.setGeneral": "Sending, notifications, snooze times, startup, backups and more.",
+  "onboarding.setInbox": "Smart Inbox groups, conversations, snooze times and more.",
 
   // Notifications settings.
   "notif.title": "Notifications",
@@ -218,5 +224,5 @@ export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
   ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
-  ...calendar.en, ...groups.en, ...reauth.en,
+  ...calendar.en, ...groups.en, ...reauth.en, ...settingsPanels.en, ...setAi.en, ...setLook.en, ...setAccounts.en, ...setMisc.en, ...color.en,
 };

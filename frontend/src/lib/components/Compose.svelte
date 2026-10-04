@@ -1,10 +1,11 @@
 <script>
   import { onMount, onDestroy } from "svelte";
-  import { app, notify, loadAccountsAndFolders, queueSend, snoozePresets, presetWhen, confirmDialog, saveSettings, aiEnabled, openAiAssistant } from "../store.svelte.js";
+  import { app, notify, loadAccountsAndFolders, queueSend, handOffSend, sendNow, closeThisWindow, snoozePresets, presetWhen, confirmDialog, saveSettings, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { signatures as sigApi, compose as composeApi, ai } from "../api.js";
   import RecipientInput from "./RecipientInput.svelte";
   import { t, currentLocale } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
   import { mdToHtml } from "../markdown.js";
 
   // Native spell-check (WebView2/Chromium + OS dictionaries). One attribute - no
@@ -381,7 +382,7 @@
   function doClose() {
     confirmDiscard = false;
     closed = true;   // whatever should be kept was already flushed/saved
-    if (standalone) { window.close(); return; }
+    if (standalone) { closeThisWindow(); return; }
     app.composing = null;
   }
   // "Discard": drop the draft close() just flushed, then close for good.
@@ -532,8 +533,19 @@
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "", in_reply_to: c.in_reply_to, account_id: accountId, attachments };
     clearDraft();
     closed = true;   // don't let the unmount flush re-save the sent message
+    if (standalone) {
+      // The main window runs the undo countdown (this window is about to go);
+      // if it doesn't answer, send from here so the mail is never left behind.
+      if (handingOff) return;
+      handingOff = true;
+      const payload = buildPayload();
+      if (!(await handOffSend(payload, seed))) await sendNow(payload);
+      closeThisWindow();
+      return;
+    }
     queueSend(buildPayload(), seed);
   }
+  let handingOff = false;   // a second Send/Ctrl+Enter mid-handoff must not send twice
 
   async function sendLater(iso, label) {
     if (!accountId) { notify(t("compose.pickAccount"), "error"); return; }
@@ -548,7 +560,7 @@
       clearDraft();
       closed = true;
       notify(t("compose.scheduled", { label }));
-      if (standalone) window.close(); else app.composing = null;
+      if (standalone) closeThisWindow(); else app.composing = null;
     } catch (e) { notify(t("compose.couldntSchedule", { error: e.message }), "error"); }
   }
 
@@ -561,7 +573,7 @@
     if (!customWhen) { notify(t("compose.pickDateTime"), "error"); return; }
     const d = new Date(customWhen);
     if (isNaN(d.getTime()) || d <= new Date()) { notify(t("compose.pickFutureTime"), "error"); return; }
-    sendLater(d.toISOString(), d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" }));
+    sendLater(d.toISOString(), d.toLocaleString(dateLocale(), { dateStyle: "medium", timeStyle: "short" }));
   }
 
   function fillVars(body) {
@@ -893,7 +905,7 @@
   .drafts-pick { position: relative; margin-right: 4px; }
   .hbtn { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 9px; border-radius: 6px; }
   .hbtn:hover { background: var(--surface-3); color: var(--text); }
-  .dcount { background: var(--accent); color: #fff; border-radius: 999px; font-size: 10px; padding: 0 5px; }
+  .dcount { background: var(--accent); color: var(--on-accent); border-radius: 999px; font-size: 10px; padding: 0 5px; }
   .drafts-menu { position: absolute; top: 100%; right: 0; margin-top: 6px; z-index: 30; min-width: 240px; max-width: 320px;
     background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px;
     animation: pop-in var(--t) var(--ease); transform-origin: top right; }
@@ -943,9 +955,9 @@
   .later { position: relative; flex: none; }
   .later-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 220px; animation: pop-in var(--t) var(--ease); transform-origin: bottom left; }
   .later-menu > button { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
-  .later-menu > button:hover { background: var(--accent); color: #fff; }
+  .later-menu > button:hover { background: var(--hover); color: var(--text); }
   .later-menu .when { color: var(--muted); font-size: 12px; }
-  .later-menu > button:hover .when { color: #e7e9ff; }
+  .later-menu > button:hover .when { color: var(--muted); }
   .later-menu .custom { display: flex; gap: 6px; padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
   .later-menu .custom input { flex: 1; min-width: 0; font-size: 12px; padding: 5px 6px; }
   .later-menu .custom .sm { padding: 5px 10px; font-size: 12px; }
@@ -962,7 +974,7 @@
     animation: pop-in var(--t) var(--ease); transform-origin: top left; }
   .ai-menu > button, .ai-subhead { display: flex; align-items: center; gap: 7px; text-align: left; width: 100%;
     padding: 7px 10px; border-radius: 6px; font-size: 13px; color: var(--text); }
-  .ai-menu > button:hover, .ai-subhead:hover { background: var(--accent); color: #fff; }
+  .ai-menu > button:hover, .ai-subhead:hover { background: var(--hover); color: var(--text); }
   .ai-menu > button :global(svg) { width: 14px; height: 14px; }
   .ai-src { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
     padding: 5px 10px 3px; }
@@ -971,7 +983,7 @@
   .ai-subhead span { color: var(--faint); }
   .ai-submenu { display: flex; flex-direction: column; padding: 2px 0 2px 10px; }
   .ai-submenu button { text-align: left; padding: 6px 10px; border-radius: 6px; font-size: 13px; color: var(--text); }
-  .ai-submenu button:hover { background: var(--accent); color: #fff; }
+  .ai-submenu button:hover { background: var(--hover); color: var(--text); }
   .ai-custom { padding: 6px 6px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
   .ai-custom input { width: 100%; box-sizing: border-box; font-size: 12px; padding: 6px 8px;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); }
@@ -980,7 +992,7 @@
   .tpl-pick { position: relative; }
   .tpl-menu { position: absolute; bottom: 100%; left: 0; margin-bottom: 6px; z-index: 20; background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm); box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 180px; max-height: 260px; overflow-y: auto; animation: pop-in var(--t) var(--ease); transform-origin: bottom left; }
   .tpl-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; font-size: 13px; }
-  .tpl-menu button:hover { background: var(--accent); color: #fff; }
+  .tpl-menu button:hover { background: var(--hover); color: var(--text); }
   .sigpick { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); }
   .sigpick select { padding: 5px 8px; }
   .hint { color: var(--faint); font-size: 12px; margin-left: auto; }

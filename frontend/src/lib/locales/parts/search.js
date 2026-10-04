@@ -3,6 +3,10 @@
 export default {
   en: {
     "search.advancedTitle": "Advanced search",
+    "search.filters": "Filters",
+    "search.removeChip": "Remove",
+    "search.clear": "Clear search",
+    "search.barPlaceholder": "Search…  from:  to:  has:attachment  is:unread  /regex/",
     "search.title": "Advanced search",
     "search.close": "Close",
     "search.from": "From",
@@ -58,6 +62,10 @@ export default {
   },
   cs: {
     "search.advancedTitle": "Rozšířené hledání",
+    "search.filters": "Filtry",
+    "search.removeChip": "Odebrat",
+    "search.clear": "Vymazat hledání",
+    "search.barPlaceholder": "Hledat…  from:  to:  has:attachment  is:unread  /regex/",
     "search.title": "Rozšířené hledání",
     "search.close": "Zavřít",
     "search.from": "Od",

@@ -375,7 +375,7 @@
   .turn.user { align-self: flex-end; align-items: flex-end; }
   .turn.assistant { align-self: flex-start; }
   .bubble { padding: 9px 12px; border-radius: 13px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-  .turn.user .bubble { background: var(--accent); color: #fff; border-bottom-right-radius: 4px; }
+  .turn.user .bubble { background: var(--accent); color: var(--on-accent); border-bottom-right-radius: 4px; }
   .turn.assistant .bubble { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
   .bubble.thinking { color: var(--muted); font-style: italic; }
   /* Proposed mailbox action (confirm before it runs). */
@@ -388,7 +388,7 @@
   .act-sample li b { color: var(--text); font-weight: 600; }
   .act-sample li.more { color: var(--faint); font-style: italic; }
   .act-btns { display: flex; gap: 8px; margin-top: 2px; }
-  .act-go { display: inline-flex; align-items: center; gap: 5px; background: var(--accent); color: #fff; font-weight: 600; font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
+  .act-go { display: inline-flex; align-items: center; gap: 5px; background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 12.5px; padding: 6px 14px; border-radius: 999px; }
   .act-go :global(svg) { width: 13px; height: 13px; }
   .act-go:hover { filter: brightness(1.08); }
   .act-no { font-size: 12.5px; color: var(--muted); padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); }
@@ -405,12 +405,12 @@
   .ask { flex: 1; background: var(--surface-2); border: 1px solid var(--border); border-radius: 16px; padding: 8px 13px;
     color: var(--text); font-size: 13px; font-family: inherit; line-height: 1.4; resize: none; max-height: 140px; min-height: 20px; }
   .ask:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
-  .btn.primary { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; width: 40px; border-radius: 999px; }
+  .btn.primary { display: inline-flex; align-items: center; justify-content: center; background: var(--accent); color: var(--on-accent); width: 40px; border-radius: 999px; }
   .btn.primary:disabled { opacity: 0.5; }
   .btn.primary :global(svg) { width: 15px; height: 15px; }
   /* Minimized: floating AI circle */
   .ai-fab { position: fixed; right: 24px; bottom: 24px; z-index: 60; width: 52px; height: 52px; border-radius: 50%;
-    background: var(--accent); color: #fff; display: grid; place-items: center; box-shadow: var(--shadow-lg);
+    background: var(--accent); color: var(--on-accent); display: grid; place-items: center; box-shadow: var(--shadow-lg);
     animation: pop-in var(--t) var(--ease); }
   .ai-fab:hover { filter: brightness(1.08); transform: translateY(-1px); }
   .ai-fab :global(svg) { width: 24px; height: 24px; }

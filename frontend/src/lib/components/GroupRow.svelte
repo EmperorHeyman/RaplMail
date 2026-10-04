@@ -59,28 +59,37 @@
 {/if}
 
 <style>
-  .wrap { position: relative; margin: 3px 7px; border-radius: var(--radius); overflow: hidden; }
-  .acct-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3; }
-  .row { display: flex; gap: 11px; align-items: flex-start; padding: 11px 13px; border-radius: inherit;
-    background: var(--surface); cursor: pointer; transition: background var(--t-fast) var(--ease); }
-  .row:hover { background: var(--surface-2); }
-  .row.focused { box-shadow: inset 3px 0 0 var(--accent); }
+  .wrap { position: relative; margin: 1px 6px; border-radius: var(--radius); overflow: hidden; }
+  /* Which account it came to (several accounts): a short mark at the row's
+     edge, beside the avatar - not a full-height line. */
+  .acct-stripe { position: absolute; left: 4px; top: 50%; height: 22px; margin-top: -11px; width: 4px; border-radius: 2px; z-index: 3; }
+  .row { display: flex; gap: var(--row-gap, 14px); align-items: flex-start; padding: var(--row-pad-y, 12px) 12px var(--row-pad-y, 12px) 14px; border-radius: inherit;
+    background: transparent; cursor: pointer; transition: background var(--t-fast) var(--ease); }
+  .row:hover { background: var(--hover); }
+  .row.focused { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
   .row.unread .from, .row.unread .subject { font-weight: 700; }
-  .avatar { flex: none; box-sizing: border-box; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; line-height: 1; background: linear-gradient(135deg, var(--accent), #8a6df0); color: #fff; cursor: pointer; border: 2px solid transparent; }
+  .avatar { flex: none; box-sizing: border-box; width: var(--row-av, 40px); height: var(--row-av, 40px); border-radius: 50%; display: grid; place-items: center;
+    font-weight: 500; font-size: calc(var(--row-av, 40px) * 0.42); line-height: 1;
+    background: var(--accent-cont); color: var(--on-accent-cont); cursor: pointer; border: 2px solid transparent; }
+  .avatar :global(svg) { width: 22px; height: 22px; }
   .avatar.haslogo { background: #fff; }
-  .avatar .logo-img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; }
-  .avatar.checked { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .line1 { display: flex; justify-content: space-between; gap: 8px; }
-  .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .time { flex: none; color: var(--faint); font-size: 12px; }
-  .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-  .snippet { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip { flex: none; align-self: center; font-size: 12px; font-weight: 700; color: var(--accent); background: var(--surface-2); padding: 2px 9px; border-radius: 999px; }
-  .done-all { flex: none; align-self: center; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--border); color: var(--muted); opacity: 0; transition: opacity 0.12s; }
+  .avatar .logo-img { width: 24px; height: 24px; object-fit: contain; border-radius: 5px; }
+  .avatar.checked { background: var(--accent); color: var(--on-accent); }
+  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .line1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 21px; }
+  .time { flex: none; color: var(--muted); font-size: 12px; }
+  .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
+  .snippet { color: var(--muted); font-size: 13.5px; line-height: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .snippet :global(svg) { width: 14px; height: 14px; }
+  .chip { flex: none; align-self: center; font-size: 12px; font-weight: 600; color: var(--on-sel); background: var(--sel); padding: 3px 10px; border-radius: 8px; }
+  .done-all { flex: none; align-self: center; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--surface-2); color: var(--muted); opacity: 0; transition: opacity 0.12s, background var(--t-fast) var(--ease); }
+  .done-all :global(svg) { width: 20px; height: 20px; }
   .row:hover .done-all, .row.focused .done-all { opacity: 1; }
-  .done-all:hover { background: var(--done); border-color: var(--done); color: #06231a; }
+  .done-all:hover { background: var(--done); color: var(--on-done); }
   .catrow { align-items: center; cursor: pointer; }
-  .cat-ic { font-size: 16px; width: 22px; text-align: center; }
-  .cat-label { flex: 1; font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+  .cat-ic { width: 24px; display: grid; place-items: center; }
+  .cat-ic :global(svg) { width: 20px; height: 20px; }
+  .cat-label { flex: 1; font-weight: 500; font-size: 14px; color: var(--muted); }
 </style>

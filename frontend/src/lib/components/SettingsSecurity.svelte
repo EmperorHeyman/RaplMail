@@ -139,6 +139,11 @@
       <div><b>{t("security.trackToggle")}</b><span>{t("security.trackHint")}</span></div>
     </label>
     <label class="check">
+      <input type="checkbox" checked={!!app.settings.linkUnfurls}
+        onchange={(e) => set({ linkUnfurls: e.currentTarget.checked })} />
+      <div><b>{t("sSec.linkPreviews")}</b><span>{t("sSec.linkPreviewsHint")}</span></div>
+    </label>
+    <label class="check">
       <input type="checkbox" checked={app.settings.screener}
         onchange={(e) => set({ screener: e.currentTarget.checked })} />
       <div><b>{t("security.screenerToggle")}</b><span>{t("security.screenerHint")}</span></div>
@@ -197,7 +202,7 @@
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 13px; border-radius: var(--radius-sm);
     border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; font-weight: 600; color: var(--text); flex: none; }
   .btn:hover { border-color: var(--accent); }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
   .btn.ghost { background: transparent; }
   .btn :global(svg) { width: 14px; height: 14px; }
 

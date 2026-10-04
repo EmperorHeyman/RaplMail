@@ -262,3 +262,33 @@ def test_named_sender_rule_fills_the_group_on_apply(client):
         assert _cats([mid]) == [GROUP]
     finally:
         _wipe_rules()
+
+
+# --- new grouped mail stays visible in the main list ------------------------------
+
+def test_new_grouped_mail_stays_in_the_main_list_until_read(client):
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    global _n
+    _n += 1
+    with _s() as s:
+        acct = Account(email=f"grp{_n}@me.example"); s.add(acct); s.commit(); s.refresh(acct)
+        f = Folder(account_id=acct.id, name="INBOX", path="INBOX", role=FolderRole.inbox)
+        s.add(f); s.commit(); s.refresh(f)
+        uids = iter(range(98000 + _n * 10, 98000 + _n * 10 + 10))
+        def mk(subj, seen, hours):
+            m = Message(account_id=acct.id, folder_id=f.id, uid=next(uids),
+                        message_id=f"<keep-{_n}-{subj}@x>", from_addr="news@keep.example",
+                        subject=subj, category="newsletters", is_seen=seen,
+                        date=now - timedelta(hours=hours))
+            s.add(m); s.commit(); s.refresh(m); return m.id
+        fresh_unread = mk("fresh", False, 2)
+        fresh_read = mk("freshread", True, 2)
+        old_unread = mk("oldunread", False, 24 * 10)
+        fid = f.id
+    base = {"folder_id": fid, "exclude_categories": "newsletters,social"}
+    ids = {m["id"] for m in client.get("/messages", params=base).json()}
+    assert not ids & {fresh_unread, fresh_read, old_unread}          # grouped = hidden
+    ids = {m["id"] for m in client.get("/messages", params={**base, "keep_new_days": 3}).json()}
+    assert fresh_unread in ids                                       # new -> stays in the list
+    assert fresh_read not in ids and old_unread not in ids           # read / old -> folded into the card

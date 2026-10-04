@@ -81,9 +81,8 @@
   }
   .logo {
     display: grid; place-items: center; width: 52px; height: 52px; margin: 0 auto 2px;
-    border-radius: 16px; color: #fff;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #a06df0));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), var(--shadow);
+    border-radius: 16px; color: var(--on-accent-cont);
+    background: var(--accent-cont);
   }
   .logo :global(svg) { width: 27px; height: 27px; }
   h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }

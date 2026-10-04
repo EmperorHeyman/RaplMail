@@ -9,6 +9,7 @@ and re-sync once accounts are connected, so they're not part of the bundle.
 
 from __future__ import annotations
 
+import sys
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -43,6 +44,39 @@ def _set_blob(session: Session, data: dict) -> None:
 @router.get("")
 def get_settings(session: Session = Depends(get_session)) -> dict:
     return _get_blob(session)
+
+
+def windows_accent() -> str | None:
+    """The Windows accent colour as "#rrggbb", or None off Windows / when unset.
+
+    Start menu's accent (AccentColorMenu) is the colour picked under Settings →
+    Personalization → Colors; DWM's AccentColor is the same pick as the title
+    bars use, kept as a fallback. Both are DWORDs laid out 0xAABBGGRR.
+    """
+    if sys.platform != "win32":
+        return None
+    import winreg
+
+    for path, name in (
+        (r"Software\Microsoft\Windows\CurrentVersion\Explorer\Accent", "AccentColorMenu"),
+        (r"Software\Microsoft\Windows\DWM", "AccentColor"),
+    ):
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, path) as key:
+                value, kind = winreg.QueryValueEx(key, name)
+        except OSError:
+            continue
+        if kind != winreg.REG_DWORD:
+            continue
+        r, g, b = value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF
+        return f"#{r:02x}{g:02x}{b:02x}"
+    return None
+
+
+@router.get("/system-accent")
+def system_accent() -> dict:
+    """For Appearance → "Use the Windows accent colour" (the dynamic palette's seed)."""
+    return {"color": windows_accent()}
 
 
 class SettingsIn(BaseModel):

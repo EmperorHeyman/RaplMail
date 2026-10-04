@@ -4,6 +4,7 @@
   import { app, markDone, notify } from "../store.svelte.js";
   import { sanitizeTrackers, emailDoc, plainBody } from "../email.js";
   import { icons } from "../icons.js";
+  import { dateLocale } from "../time.svelte.js";
 
   let items = $state([]);    // { msg, detail }
   let loading = $state(true);
@@ -29,7 +30,7 @@
     const p = sanitizeTrackers(detail.html || "", app.settings.blockTrackers);
     return emailDoc(p.html || plainBody(detail.text || ""));
   }
-  function fmt(iso) { return iso ? new Date(iso).toLocaleDateString([], { month: "short", day: "numeric" }) : ""; }
+  function fmt(iso) { return iso ? new Date(iso).toLocaleDateString(dateLocale(), { month: "short", day: "numeric" }) : ""; }
 
   async function doneItem(it) {
     items = items.filter((x) => x.msg.id !== it.msg.id);
@@ -78,8 +79,8 @@
 
 <style>
   .feed { display: flex; flex-direction: column; min-width: 0; background: var(--bg); grid-column: 2 / -1;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+    border-radius: var(--radius-lg); overflow: hidden; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--hairline); }
   h2 { margin: 0; font-size: 18px; }
   .actions { display: flex; gap: 8px; }
   .scroll { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; align-items: center; }
@@ -89,7 +90,7 @@
   .subj { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .date { color: var(--faint); font-size: 12px; }
   .done { width: 28px; height: 28px; border-radius: 50%; border: 1.5px solid var(--border); color: var(--muted); }
-  .done:hover { background: var(--done); border-color: var(--done); color: #06231a; }
+  .done:hover { background: var(--done); border-color: var(--done); color: var(--on-done); }
   iframe { width: 100%; height: 420px; border: none; background: var(--bg); }
   .muted { color: var(--muted); }
   .empty { display: flex; flex-direction: column; align-items: center; gap: 10px; color: var(--muted); margin-top: 50px; }

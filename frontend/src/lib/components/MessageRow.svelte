@@ -5,7 +5,7 @@
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { avatarColor } from "../avatar.js";
   import { listTime, relativeTime } from "../time.svelte.js";
-  let { message, focused, selected, checked = false, selecting = false, screener = false, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
+  let { message, focused, selected, checked = false, selecting = false, screener = false, groupTag = null, onselect, onopen, ondone, onmenu, onarchive, ondelete, onapprove, onblock } = $props();
   const done = $derived(message.is_done);
   const snoozedView = $derived(app.selectedKind === "snoozed");
   // In Sent/Drafts the sender is your own identity, so a "VIP sender" star would
@@ -158,7 +158,7 @@
     onmouseleave={onLeave}
   >
     <button class="avatar" class:checked class:selecting class:haslogo={hasLogo}
-      style={`${acctColor ? `border-color:${acctColor};` : ""}${!hasLogo && !done ? `background:${initialBg};` : ""}`}
+      style={`${acctColor ? `border-color:${acctColor};` : ""}${!hasLogo && !done ? `--av:${initialBg};` : ""}`}
       title={t("list.select")} onclick={(e) => { e.stopPropagation(); onselect?.(e); }}>
       <span class="initial">
         {#if done}{@html icons.done}
@@ -188,7 +188,13 @@
         <span class="time">{fmtTime(message.date)}</span>
       </span>
       <span class="subject">{message.subject || t("list.noSubject")}</span>
-      <span class="snippet">{message.snippet}</span>
+      <span class="snippet">
+        {#if groupTag}
+          <!-- New mail from a Smart Inbox group, shown in the timeline until it's
+               read; the tag says where it will fold away to. On the preview
+               line, so it never squeezes the sender or the subject. -->
+          <span class="gtag" style="--tone:{groupTag.tone}" title={t("list.groupTagTip", { group: groupTag.label })}>{@html groupTag.icon} {groupTag.label}</span>
+        {/if}{message.snippet}</span>
     </span>
     <span class="marks">
       {#if !outgoingView && isVip(message.from_addr)}<span class="vip" title={t("list.vipSender")}>{@html icons.star}</span>{/if}
@@ -209,102 +215,127 @@
         <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, null); }}>{t("list.unsnoozeNow")}</button>
       {/if}
       {#each snoozePresets() as p}
-        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, p.iso, p.presence); }}>{p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}</button>
+        <button onclick={(e) => { e.stopPropagation(); snoozeMenu = false; snoozeMessage(message, p.iso, p.presence); }}>{p.label}{#if p.at}{" · "}<span class="when">{presetWhen(p.at)}</span>{/if}</button>
       {/each}
     </div>
   {/if}
 </div>
 
 <style>
-  .wrap { position: relative; margin: 3px 7px; border-radius: var(--radius); overflow: hidden; }
-  .acct-stripe { position: absolute; left: 0; top: 0; bottom: 0; width: 3px; z-index: 3; }
+  /* A Material list item: flat on the list's ground, a state layer on hover,
+     the selection tint once opened. */
+  .wrap { position: relative; margin: 1px 6px; border-radius: var(--radius); overflow: hidden; }
+  /* Which account it came to (several accounts): a short mark at the row's
+     edge, beside the avatar - not a full-height line. */
+  .acct-stripe { position: absolute; left: 4px; top: 50%; height: 22px; margin-top: -11px; width: 4px; border-radius: 2px; z-index: 3; }
   .action {
-    position: absolute; inset: 0; display: flex; align-items: center; padding-left: 22px;
-    background: var(--done); color: #06231a; font-weight: 700;
+    position: absolute; inset: 0; display: flex; align-items: center; gap: 8px; padding-left: 22px;
+    background: var(--done); color: var(--on-done); font-weight: 600;
     pointer-events: none;
   }
+  .action :global(svg) { width: 20px; height: 20px; }
   .row {
     position: relative; width: 100%; text-align: left;
-    display: flex; gap: var(--row-gap, 11px); align-items: flex-start;
-    padding: var(--row-pad-y, 11px) 13px; border-radius: inherit;
-    background: var(--surface); transition: background var(--t-fast) var(--ease);
+    display: flex; gap: var(--row-gap, 14px); align-items: flex-start;
+    padding: var(--row-pad-y, 12px) 12px var(--row-pad-y, 12px) 14px; border-radius: inherit;
+    background: transparent; color: var(--text);
+    transition: background var(--t-fast) var(--ease);
   }
-  .wrap.swiping .row { transition: none; }
-  .row:hover { background: var(--surface-2); }
-  .row.isdone { opacity: 0.62; }
-  .row.isdone .avatar { background: var(--done); color: #06231a; }
+  .wrap.swiping .row { transition: none; background: var(--bg); }
+  .row:hover { background: var(--hover); }
+  .row.isdone { opacity: 0.6; }
+  .row.isdone .avatar { background: var(--done); color: var(--on-done); }
   .done-check { font-weight: 800; }
-  .row.selected { background: var(--surface-3); }
-  .row.focused { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .row.selected { background: var(--sel); color: var(--on-sel); }
+  .row.selected .snippet, .row.selected .time { color: color-mix(in srgb, var(--on-sel) 78%, transparent); }
+  /* Keyboard focus (j/k / arrows): a ring, so it reads apart from the opened row. */
+  .row.focused { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
   .row.unread .from, .row.unread .subject { font-weight: 700; }
+  .row.unread .time { font-weight: 700; color: var(--text); }
+  .row.selected.unread .time { color: var(--on-sel); }
 
+  /* Letter avatar: a tonal disc in the sender's own hue (Gmail-style) - tinted
+     container + a deeper/lighter tone of the same hue for the letter. */
   .avatar {
-    position: relative; flex: none; width: var(--row-av, 34px); height: var(--row-av, 34px); border-radius: 50%;
-    box-sizing: border-box;
-    display: grid; place-items: center; font-weight: 700; font-size: 14px; line-height: 1;
-    background: linear-gradient(135deg, var(--accent), #8a6df0); color: #fff;
+    position: relative; flex: none; width: var(--row-av, 40px); height: var(--row-av, 40px); border-radius: 50%;
+    box-sizing: border-box; margin-top: 1px;
+    display: grid; place-items: center; font-weight: 500; font-size: calc(var(--row-av, 40px) * 0.42); line-height: 1;
+    background: color-mix(in srgb, var(--av, var(--accent)) 34%, var(--surface));
+    color: color-mix(in srgb, var(--av, var(--accent)) 55%, var(--text));
     cursor: pointer; border: 2px solid transparent;
   }
   .avatar .initial { display: grid; place-items: center; line-height: 1; width: 100%; height: 100%; }
+  .avatar .initial :global(svg) { width: 22px; height: 22px; }
   /* Favicon avatars: neutral disc so the logo reads cleanly. */
   .avatar.haslogo { background: #fff; }
-  .avatar .logo-img { width: 22px; height: 22px; object-fit: contain; border-radius: 4px; }
-  .shield { position: absolute; bottom: -3px; right: -3px; width: 15px; height: 15px; border-radius: 50%;
-            display: grid; place-items: center; font-size: 11px; background: var(--bg); box-shadow: 0 0 0 1.5px var(--bg); }
+  .avatar .logo-img { width: 24px; height: 24px; object-fit: contain; border-radius: 5px; }
+  .shield { position: absolute; bottom: -3px; right: -3px; width: 16px; height: 16px; border-radius: 50%;
+            display: grid; place-items: center; font-size: 12px; background: var(--bg); box-shadow: 0 0 0 1.5px var(--bg); }
+  .shield :global(svg) { width: 13px; height: 13px; }
+  .row.selected .shield { background: var(--sel); box-shadow: 0 0 0 1.5px var(--sel); }
   .shield.ok { color: var(--done); }
   .shield.bad { color: var(--danger); }
   .avatar .box { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 50%; opacity: 0; transition: opacity 0.1s; }
-  /* Show a checkbox on hover, in selection mode, or when checked. */
+  .avatar .box :global(svg) { width: 22px; height: 22px; }
   /* Keep the favicon/initial visible on hover; only swap to a checkbox once
      selection mode is active (or this row is checked). */
   .avatar.selecting .initial, .avatar.checked .initial { opacity: 0; }
-  .avatar.selecting .box, .avatar.checked .box { opacity: 1; background: rgba(0,0,0,0.25); }
-  .avatar.checked { background: var(--accent); }
-  .avatar.checked .box { background: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .line1 { display: flex; justify-content: space-between; gap: 8px; }
-  .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .replied {
-    flex: none; margin-right: auto; display: inline-flex; align-items: center; gap: 3px;
-    font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0.02em;
-    padding: 2px 6px; border-radius: 999px;
-    color: var(--accent); background: var(--accent-soft);
-  }
-  .replied :global(svg) { width: 10px; height: 10px; }
-  .time { flex: none; color: var(--faint); font-size: 12px; }
-  .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-  .snippet { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .avatar.selecting .box, .avatar.checked .box { opacity: 1; background: var(--surface-3); }
+  .avatar.selecting .box { box-shadow: inset 0 0 0 2px var(--outline); }
+  .avatar.checked { background: var(--accent); color: var(--on-accent); }
+  .avatar.checked .box { background: var(--accent); box-shadow: none; color: var(--on-accent); }
 
-  .marks { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; }
-  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent-soft-2); }
-  .star { color: var(--warning); font-size: 13px; }
-  .pin { color: var(--accent); font-size: 12px; }
-  .vip { color: #e8b923; font-size: 12px; }
-  .clip { font-size: 11px; }
+  .body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .line1 { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .from { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; line-height: 21px; }
+  .replied {
+    flex: none; margin-right: auto; align-self: center; display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; font-weight: 600; line-height: 1;
+    padding: 3px 7px; border-radius: 6px;
+    color: var(--on-accent-cont); background: var(--accent-cont);
+  }
+  .replied :global(svg) { width: 12px; height: 12px; }
+  /* Group tag on new grouped mail - the group's own hue, like its chip icon. */
+  .gtag {
+    display: inline-flex; align-items: center; gap: 3px; max-width: 150px; margin-right: 6px; vertical-align: 1px;
+    font-size: 11px; font-weight: 600; line-height: 1;
+    padding: 3px 7px; border-radius: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    color: color-mix(in srgb, var(--tone) 70%, var(--text)); background: color-mix(in srgb, var(--tone) 16%, transparent);
+  }
+  .gtag :global(svg) { width: 12px; height: 12px; flex: none; }
+  .time { flex: none; color: var(--muted); font-size: 12px; }
+  .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
+  .snippet { color: var(--muted); font-size: 13.5px; line-height: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .marks { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none; padding-top: 4px; }
+  .marks :global(svg) { width: 17px; height: 17px; }
+  .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+  .star { color: var(--warning); }
+  .pin { color: var(--accent); }
+  .vip { color: #e8b923; }
+  .clip { color: var(--muted); }
 
   .row-btn {
-    flex: none; align-self: center; width: 30px; height: 30px; border-radius: 50%;
-    border: 1.5px solid var(--border); color: var(--muted); background: var(--bg);
+    flex: none; align-self: center; width: 36px; height: 36px; border-radius: 50%;
+    color: var(--muted); background: var(--surface-2);
     display: grid; place-items: center; opacity: 0; transform: scale(0.9);
     transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease),
-      color var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
-      transform var(--t) var(--ease-spring);
+      color var(--t-fast) var(--ease), transform var(--t) var(--ease-spring);
   }
+  .row-btn :global(svg) { width: 20px; height: 20px; }
   .row:hover .row-btn, .row.focused .row-btn { opacity: 1; transform: scale(1); }
+  .row-btn:hover { color: var(--text); background: var(--surface-3); }
   .row-btn:active { transform: scale(0.92); }
-  .done-btn:hover { background: var(--done); border-color: var(--done); color: #06231a; }
-  .snooze-btn:hover, .read-btn:hover, .arch-btn:hover { background: var(--surface-3); border-color: var(--accent); }
-  .flag-btn:hover { background: var(--surface-3); border-color: var(--warning); color: var(--warning); }
-  .flag-btn.on { color: var(--warning); border-color: var(--warning); }
-  .del-btn:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+  .done-btn:hover { background: var(--done); color: var(--on-done); }
+  .flag-btn.on, .flag-btn:hover { color: var(--warning); }
+  .del-btn:hover { background: var(--danger); color: #fff; }
   .snooze-menu {
     position: absolute; right: 14px; top: 50%; z-index: 15;
-    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column; min-width: 150px;
+    background: var(--surface-2); border-radius: var(--radius-menu);
+    box-shadow: var(--shadow-lg); padding: 6px 0; display: flex; flex-direction: column; min-width: 180px;
     animation: pop-in var(--t) var(--ease); transform-origin: top right;
   }
-  .snooze-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
-  .snooze-menu button:hover { background: var(--accent); color: #fff; }
-  .snooze-menu .when { color: var(--faint); font-size: 11px; }
-  .snooze-menu button:hover .when { color: #e7e9ff; }
+  .snooze-menu button { text-align: left; padding: 9px 16px; border-radius: 0; color: var(--text); font-size: 14px; }
+  .snooze-menu button:hover { background: var(--hover); }
+  .snooze-menu .when { color: var(--muted); font-size: 12px; }
 </style>

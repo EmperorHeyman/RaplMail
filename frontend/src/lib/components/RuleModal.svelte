@@ -23,7 +23,7 @@
     draft.action === "webhook" ? t("rules.webhookHint")
       : draft.action === "run_script" ? t("rules.scriptHint")
       : draft.action === "save_attachments" ? t("rules.saveDirHint")
-      : "folder, e.g. Archive"
+      : t("sRules.folderPh")
   );
 
   // When the field changes, auto-fill the value + operator from the clicked mail.
@@ -58,7 +58,7 @@
     if (draft.action === "set_group" && !draft.action_arg) { notify(t("groups.pickFirst"), "error"); return; }
     if (draft.match_op === "regex") {
       try { new RegExp(draft.match_value); }
-      catch (e) { notify(`Invalid regex: ${e.message}`, "error"); return; }
+      catch (e) { notify(t("sRules.invalidRegex", { error: e.message }), "error"); return; }
     }
     if (DESTRUCTIVE.has(draft.action)) {
       let count = preview?.match_count;
@@ -66,8 +66,8 @@
       const verb = t("rules.action." + draft.action).toLowerCase();
       if (count != null) {
         const ok = await confirmDialog({
-          title: "Apply this rule?",
-          message: `It will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail.`,
+          title: t("sRules.applyTitle"),
+          message: t("sRules.applyBody", { verb, n: count }),
           confirmLabel: `${t("rules.action." + draft.action)} ${count}`, danger: true,
         });
         if (!ok) return;
@@ -80,7 +80,7 @@
       // so the rule visibly does something right away.
       let applied = 0;
       try { applied = (await api.apply(draft)).applied || 0; } catch {}
-      notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
+      notify(applied ? t("sRules.savedApplied", { n: applied }) : t("sRules.saved"));
       if (applied) refreshMessages({ background: true });
       close();
     }
@@ -101,29 +101,29 @@
 <svelte:window on:keydown={onKey} />
 
 <div class="backdrop" onclick={close} role="presentation">
-  <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New rule">
+  <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={t("sRules.newRule")}>
     <header>
-      <h2>{@html icons.bolt || ""} New rule</h2>
-      <button class="x" onclick={close} aria-label="Close">{@html icons.close}</button>
+      <h2>{@html icons.bolt || ""} {t("sRules.newRule")}</h2>
+      <button class="x" onclick={close} aria-label={t("common.close")}>{@html icons.close}</button>
     </header>
 
     {#if message}
-      <p class="src">From this email: <b>{message.from_name || message.from_addr}</b>
+      <p class="src">{t("sRules.fromThisEmail")} <b>{message.from_name || message.from_addr}</b>
         {#if message.subject}· <span class="subj">{message.subject}</span>{/if}</p>
     {/if}
 
-    <label class="fld"><span>Name</span>
-      <input bind:value={draft.name} placeholder="Rule name (optional)" />
+    <label class="fld"><span>{t("sRules.name")}</span>
+      <input bind:value={draft.name} placeholder={t("sRules.namePh")} />
     </label>
 
     <div class="cond">
-      <span class="lead">If</span>
+      <span class="lead">{t("sRules.if")}</span>
       <select bind:value={draft.match_field} onchange={onFieldChange}>{#each FIELDS as f}<option value={f}>{t("rules.field." + f)}</option>{/each}</select>
       <select bind:value={draft.match_op}>{#each OPS as o}<option value={o}>{t("rules.op." + o)}</option>{/each}</select>
-      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : "value"} oninput={schedulePreview} />
+      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : t("sRules.valuePh")} oninput={schedulePreview} />
     </div>
     <div class="cond">
-      <span class="lead">then</span>
+      <span class="lead">{t("sRules.then")}</span>
       <select bind:value={draft.action} onchange={onActionChange}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
       {#if draft.action === "set_group"}<GroupPicker bind:value={draft.action_arg} />
       {:else if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
@@ -132,22 +132,22 @@
 
     <div class="preview" class:empty={!preview}>
       {#if previewing}
-        <span class="muted">Checking matches…</span>
+        <span class="muted">{t("sRules.checking")}</span>
       {:else if preview}
-        <b>{preview.match_count}</b> existing message{preview.match_count === 1 ? "" : "s"} match.
+        {t("sRules.matchCount")} <b>{preview.match_count}</b>
         {#if preview.sample_subjects?.length}
-          <ul>{#each preview.sample_subjects.slice(0, 4) as s}<li>{s || "(no subject)"}</li>{/each}</ul>
+          <ul>{#each preview.sample_subjects.slice(0, 4) as s}<li>{s || t("sRules.noSubject")}</li>{/each}</ul>
         {/if}
       {:else}
-        <span class="muted">Pick a field to auto-fill from this email, then adjust.</span>
+        <span class="muted">{t("sRules.pickFieldHint")}</span>
       {/if}
     </div>
 
     <footer>
-      <button class="link" onclick={manageAll}>Manage all rules in Settings →</button>
+      <button class="link" onclick={manageAll}>{t("sRules.manageAll")} →</button>
       <div class="spacer"></div>
-      <button class="btn ghost" onclick={close}>Cancel</button>
-      <button class="btn primary" onclick={save} disabled={busy || !draft.match_value.trim()}>{busy ? "Saving…" : "Save rule"}</button>
+      <button class="btn ghost" onclick={close}>{t("common.cancel")}</button>
+      <button class="btn primary" onclick={save} disabled={busy || !draft.match_value.trim()}>{busy ? t("sRules.saving") : t("sRules.saveRule")}</button>
     </footer>
   </div>
 </div>

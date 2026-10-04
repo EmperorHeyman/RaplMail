@@ -2,7 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { app, openMessageById, selectSmartInbox, selectUnifiedInbox, openCompose, aiEnabled, openAiAssistant } from "../store.svelte.js";
   import { messages as msgApi, calendar as calApi } from "../api.js";
-  import { listTime } from "../time.svelte.js";
+  import { listTime, dateLocale } from "../time.svelte.js";
   import { icons } from "../icons.js";
   import { currentLocale } from "../i18n.svelte.js";
 
@@ -42,8 +42,8 @@
     return ["#ff7a59", "#c04bd0", "#6d5bd0"];              // sunset evening
   });
   const heroStyle = $derived(`--aur-1:${heroTint[0]}; --aur-2:${heroTint[1]}; --aur-3:${heroTint[2]}`);
-  const clock = $derived(now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false }));
-  const dateStr = $derived(now.toLocaleDateString([], { weekday: "long", day: "numeric", month: "long" }));
+  const clock = $derived(now.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }));
+  const dateStr = $derived(now.toLocaleDateString(dateLocale(), { weekday: "long", day: "numeric", month: "long" }));
   const firstName = $derived((app.accounts[0]?.display_name || app.accounts[0]?.email || "").split(/[ @]/)[0]);
 
   // --- data ----------------------------------------------------------------
@@ -87,10 +87,10 @@
     const today = new Date(now); today.setHours(0, 0, 0, 0);
     const day = new Date(d); day.setHours(0, 0, 0, 0);
     const diff = Math.round((day - today) / 86400000);
-    const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+    const t = d.toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: false });
     if (diff === 0) return `Today · ${t}`;
     if (diff === 1) return `Tomorrow · ${t}`;
-    return d.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" }) + ` · ${t}`;
+    return d.toLocaleDateString(dateLocale(), { weekday: "short", day: "numeric", month: "short" }) + ` · ${t}`;
   }
 
   // --- week strip ----------------------------------------------------------
@@ -230,7 +230,7 @@
 
 <style>
   .dash { flex: 1; overflow-y: auto; padding: 26px 30px 34px; display: flex; flex-direction: column; gap: 18px; min-width: 0;
-    background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-lg); }
+    background: var(--bg); border-radius: var(--radius-lg); }
   /* Staggered entrance: hero, then cards, then quick actions. */
   .dash > * { animation: rise-in var(--t-slow) var(--ease) backwards; }
   .dash > *:nth-child(2) { animation-delay: 40ms; }
@@ -285,7 +285,7 @@
   .mails { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
   .mrow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border-radius: 8px; text-align: left; }
   .mrow:hover { background: var(--surface-2); }
-  .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: linear-gradient(135deg, var(--accent), #8a6df0); color: #fff; flex: none; }
+  .av { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; background: var(--accent-cont); color: var(--on-accent-cont); flex: none; }
   .who { font-size: 13px; font-weight: 600; color: var(--text); flex: none; max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .mrow.unread .who { color: var(--accent); }
   .subj { font-size: 13px; color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -295,7 +295,7 @@
   .airow input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
     padding: 9px 13px; color: var(--text); font-size: 13px; }
   .airow input:focus { border-color: var(--accent); outline: none; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent); }
-  .airow .btn.primary { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: #fff;
+  .airow .btn.primary { display: inline-flex; align-items: center; gap: 6px; background: var(--accent); color: var(--on-accent);
     padding: 9px 16px; border-radius: var(--radius-sm); font-weight: 600; font-size: 13px; white-space: nowrap; }
   .airow .btn.primary:disabled { opacity: 0.5; }
   .airow .btn.primary :global(svg) { width: 14px; height: 14px; }

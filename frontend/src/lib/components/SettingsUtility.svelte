@@ -4,6 +4,9 @@
   import { openCompose, notify, markUnsubscribed, isUnsubscribed } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
+
+  let { showTitle = true } = $props();
 
   let lists = $state([]);
   let loading = $state(true);
@@ -51,7 +54,7 @@
   function setSort(v) { sort = v; load(); }
   const chosen = $derived(lists.filter((l) => selected.has(l.from_addr)));
 
-  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString() : "-"; }
+  function fmtDate(iso) { return iso ? new Date(iso).toLocaleDateString(dateLocale()) : "-"; }
   function ratePct(l) { return l.recent30 ? `${Math.round(l.read_rate * 100)}%` : "-"; }
 
   async function doUnsub(l) {
@@ -106,7 +109,7 @@
 
 <div class="wrap">
   <section>
-    <h3>{t("utility.subscriptionsTitle")}</h3>
+    {#if showTitle}<h3>{t("utility.subscriptionsTitle")}</h3>{/if}
     <p class="muted">{t("utility.subscriptionsHint")}</p>
     {#if loading}
       <p class="muted">…</p>
@@ -166,7 +169,7 @@
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; flex-wrap: wrap; }
   .segbtn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; color: var(--muted); }
   .segbtn:hover { color: var(--text); }
-  .segbtn.on { background: var(--accent); color: #fff; }
+  .segbtn.on { background: var(--sel); color: var(--on-sel); }
   .find { margin-left: auto; min-width: 180px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-2); font-size: 13px; }
   .bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 10px 0; }
   .selall { display: flex; align-items: center; gap: 6px; font-size: 13px; margin-right: auto; }

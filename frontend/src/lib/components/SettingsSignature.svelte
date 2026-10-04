@@ -3,6 +3,7 @@
   import { app, notify } from "../store.svelte.js";
   import { signatures as api } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   let list = $state([]);
   let selected = $state(null);      // signature being edited
@@ -38,8 +39,8 @@
   }
 
   function newSig() {
-    selected = { id: null, name: "New signature", html: "", inline_images: [], account_id: null, is_default: false };
-    name = "New signature"; accountId = null; isDefault = list.length === 0;
+    selected = { id: null, name: t("sSig.newSignature"), html: "", inline_images: [], account_id: null, is_default: false };
+    name = t("sSig.newSignature"); accountId = null; isDefault = list.length === 0;
     htmlSource = "";
     syncEditor();
   }
@@ -102,7 +103,7 @@
       const { html, inline_images } = extractInline(htmlSource);
       const payload = { name, html, inline_images, is_default: isDefault, account_id: accountId };
       const saved = selected.id ? await api.update(selected.id, payload) : await api.create(payload);
-      notify("Signature saved");
+      notify(t("sSig.saved"));
       await load();
       select(list.find((s) => s.id === saved.id) || saved);
     } catch (e) { notify(e.message, "error"); } finally { saving = false; }
@@ -110,78 +111,78 @@
 
   async function del(s) {
     if (!s.id) { selected = null; return; }
-    if (!confirm(`Delete signature “${s.name}”?`)) return;
+    if (!confirm(t("sSig.confirmDelete", { name: s.name }))) return;
     await api.remove(s.id);
     selected = null;
     await load();
   }
 
-  const acctLabel = (id) => id == null ? "All accounts" : (app.accounts.find((a) => a.id === id)?.email || "-");
+  const acctLabel = (id) => id == null ? t("sSig.allAccounts") : (app.accounts.find((a) => a.id === id)?.email || "-");
 </script>
 
 <div class="wrap">
   <aside class="siglist">
-    <button class="btn primary" onclick={newSig}>＋ New signature</button>
+    <button class="btn primary" onclick={newSig}>＋ {t("sSig.newSignature")}</button>
     {#each list as s (s.id)}
       <button class="sig" class:active={selected && selected.id === s.id} onclick={() => select(s)}>
         <b>{s.name}</b>
-        <span>{acctLabel(s.account_id)}{s.is_default ? " · default" : ""}</span>
+        <span>{acctLabel(s.account_id)}{s.is_default ? " · " + t("sSig.default") : ""}</span>
       </button>
     {/each}
-    {#if list.length === 0 && !selected}<p class="muted">No signatures yet.</p>{/if}
+    {#if list.length === 0 && !selected}<p class="muted">{t("sSig.empty")}</p>{/if}
   </aside>
 
   {#if selected}
     <div class="editorpane">
       <div class="row">
-        <label class="fld">Name<input bind:value={name} /></label>
-        <label class="fld">Use for
+        <label class="fld">{t("sSig.name")}<input bind:value={name} /></label>
+        <label class="fld">{t("sSig.useFor")}
           <select bind:value={accountId}>
-            <option value={null}>All accounts</option>
+            <option value={null}>{t("sSig.allAccounts")}</option>
             {#each app.accounts as a}<option value={a.id}>{a.email}</option>{/each}
           </select>
         </label>
-        <label class="chk"><input type="checkbox" bind:checked={isDefault} /> Default</label>
+        <label class="chk"><input type="checkbox" bind:checked={isDefault} /> {t("sSig.defaultChk")}</label>
       </div>
 
       <div class="modebar">
         <div class="seg">
-          <button class:on={mode === "rich"} onclick={() => setMode("rich")}>Basic text</button>
+          <button class:on={mode === "rich"} onclick={() => setMode("rich")}>{t("sSig.modeBasic")}</button>
           <button class:on={mode === "html"} onclick={() => setMode("html")}>HTML</button>
         </div>
         {#if mode === "rich"}
           <div class="tools">
             <button class="tool" onmousedown={(e) => { e.preventDefault(); document.execCommand("bold"); onEditorInput(); }} style="font-weight:700">B</button>
             <button class="tool" onmousedown={(e) => { e.preventDefault(); document.execCommand("italic"); onEditorInput(); }} style="font-style:italic">I</button>
-            <button class="tool" onmousedown={(e) => { e.preventDefault(); document.execCommand("createLink", false, prompt("URL:", "https://")); onEditorInput(); }}>{@html icons.link}</button>
-            <button class="tool" onclick={() => fileInput.click()}>{@html icons.image} Image</button>
+            <button class="tool" onmousedown={(e) => { e.preventDefault(); document.execCommand("createLink", false, prompt(t("sSig.linkPrompt"), "https://")); onEditorInput(); }}>{@html icons.link}</button>
+            <button class="tool" onclick={() => fileInput.click()}>{@html icons.image} {t("sSig.image")}</button>
             <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={(e) => insertImageFile(e.currentTarget.files[0])} />
           </div>
         {:else}
-          <button class="tool" onclick={() => fileInput.click()}>{@html icons.image} Embed image</button>
+          <button class="tool" onclick={() => fileInput.click()}>{@html icons.image} {t("sSig.embedImage")}</button>
           <input bind:this={fileInput} type="file" accept="image/*" hidden onchange={(e) => insertImageFile(e.currentTarget.files[0])} />
         {/if}
       </div>
 
       {#if mode === "rich"}
-        <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label="Signature editor"
+        <div class="editor" contenteditable="true" role="textbox" tabindex="0" aria-label={t("sSig.editorLabel")}
           bind:this={editor} oninput={onEditorInput}
           ondrop={(e) => { e.preventDefault(); for (const f of e.dataTransfer.files) insertImageFile(f); }}
-          ondragover={(e) => e.preventDefault()} data-placeholder="Type your signature; drag an image right in…"></div>
+          ondragover={(e) => e.preventDefault()} data-placeholder={t("sSig.editorPh")}></div>
       {:else}
         <textarea class="htmlsrc" spellcheck="false" bind:value={htmlSource}
-          placeholder={'<table>…</table>  or  <img src="https://…"/>  - paste your HTML here'}></textarea>
+          placeholder={`<table>…</table>  ${t("sSig.htmlOr")}  <img src="https://…"/>  - ${t("sSig.htmlPasteHere")}`}></textarea>
       {/if}
 
       <div class="preview-wrap">
-        <div class="preview-label">Live preview {@html icons.bulb}<span>exactly how recipients see it</span></div>
-        <iframe class="preview" title="Signature preview" sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={preview}></iframe>
+        <div class="preview-label">{t("sSig.livePreview")} {@html icons.bulb}<span>{t("sSig.livePreviewSub")}</span></div>
+        <iframe class="preview" title={t("sSig.previewTitle")} sandbox="allow-popups allow-popups-to-escape-sandbox" srcdoc={preview}></iframe>
       </div>
 
       <div class="actions">
-        <button class="btn primary" onclick={save} disabled={saving}>{saving ? "Saving…" : "Save"}</button>
-        <button class="btn ghost danger" onclick={() => del(selected)}>Delete</button>
-        <span class="note">{@html icons.bulb} Inline (pasted/embedded) images are attached so they always show; external URLs load on the recipient's side.</span>
+        <button class="btn primary" onclick={save} disabled={saving}>{saving ? t("sSig.saving") : t("common.save")}</button>
+        <button class="btn ghost danger" onclick={() => del(selected)}>{t("common.delete")}</button>
+        <span class="note">{@html icons.bulb} {t("sSig.imagesNote")}</span>
       </div>
     </div>
   {/if}
@@ -202,7 +203,7 @@
   .modebar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
   .seg button { padding: 6px 14px; font-size: 13px; color: var(--muted); }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on { background: var(--sel); color: var(--on-sel); }
   .tools { display: flex; gap: 4px; }
   .tool { min-width: 30px; padding: 6px 9px; border-radius: 6px; color: var(--muted); }
   .tool:hover { background: var(--surface-2); color: var(--text); }

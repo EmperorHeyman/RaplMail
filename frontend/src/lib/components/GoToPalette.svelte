@@ -87,12 +87,12 @@
   .qrow input:focus { border: none; box-shadow: none; }
   ul { list-style: none; margin: 0; padding: 6px; overflow-y: auto; }
   li { display: flex; align-items: center; gap: 11px; padding: 9px 12px; border-radius: var(--radius-sm); cursor: pointer; }
-  li.active { background: var(--accent); color: #fff; }
+  li.active { background: var(--sel); color: var(--on-sel); }
   .ic { width: 20px; display: inline-flex; justify-content: center; }
   li .ic :global(svg) { width: 17px; height: 17px; }
   .lbl { flex: 1; }
   kbd { flex: none; padding: 1px 7px; border-radius: 5px; background: var(--surface-2); border: 1px solid var(--hairline);
     font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted); }
-  li.active kbd { background: rgba(255,255,255,0.18); border-color: rgba(255,255,255,0.25); color: #fff; }
+  li.active kbd { background: color-mix(in srgb, var(--on-sel) 12%, transparent); border-color: color-mix(in srgb, var(--on-sel) 22%, transparent); color: var(--on-sel); }
   .none { color: var(--muted); justify-content: center; cursor: default; }
 </style>

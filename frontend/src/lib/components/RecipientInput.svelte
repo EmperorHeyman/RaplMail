@@ -194,7 +194,7 @@
   .suggest li {
     display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; cursor: pointer;
   }
-  .suggest li.active, .suggest li:hover { background: var(--accent); color: #fff; }
+  .suggest li.active, .suggest li:hover { background: var(--sel); color: var(--on-sel); }
   .nm { font-weight: 550; }
   .em { color: var(--muted); font-size: 12px; }
   .suggest li.active .em { color: #e7eaf0; }

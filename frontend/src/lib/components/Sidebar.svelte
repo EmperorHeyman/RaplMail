@@ -3,7 +3,7 @@
   import { slide } from "svelte/transition";
   import { app, selectFolder, selectUnifiedInbox, selectSmartInbox, selectSnoozed, selectScreener, selectPaperTrail, selectFollowups, saveSettings, notify, openCompose, loadAccountsAndFolders, setWorkspace, workspaceAccountIds, runSearch, removeSavedSearch, retryQueue, selectUnifiedSent, selectUnifiedDrafts, confirmDialog, syncAllAccounts, moveMessages } from "../store.svelte.js";
   import { accounts as accountsApi, folders as foldersApi, messages as messagesApi } from "../api.js";
-  import { icons, folderIcon } from "../icons.js";
+  import { icons, filledIcon, folderIcon } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
   // Failed/queued action details (so you can see *what* failed and why).
@@ -65,30 +65,31 @@
     const s = app.settings;
     const primary = [];
     if (s.dashboard !== false)
-      primary.push({ id: "home", icon: icons.home || icons.smart, label: t("nav.home"), active: app.view === "dashboard", run: () => { app.view = "dashboard"; } });
+      primary.push({ id: "home", ik: "home", icon: icons.home, label: t("nav.home"), active: app.view === "dashboard", run: () => { app.view = "dashboard"; } });
     if (hasInbox && s.smartInbox)
-      primary.push({ id: "smart", icon: icons.smart, label: t("nav.smartInbox"), badge: inboxUnread, active: app.selectedKind === "smart" && app.view === "mail", run: () => { app.view = "mail"; selectSmartInbox(); } });
+      primary.push({ id: "smart", ik: "smart", icon: icons.smart, label: t("nav.smartInbox"), badge: inboxUnread, active: app.selectedKind === "smart" && app.view === "mail", run: () => { app.view = "mail"; selectSmartInbox(); } });
     else if (hasInbox && s.unifiedInbox)
-      primary.push({ id: "unified", icon: icons.unified, label: t("nav.allInboxes"), badge: inboxUnread, active: app.selectedKind === "unified" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedInbox(); } });
+      primary.push({ id: "unified", ik: "unified", icon: icons.unified, label: t("nav.allInboxes"), badge: inboxUnread, active: app.selectedKind === "unified" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedInbox(); } });
     if (s.screener)
-      primary.push({ id: "screener", icon: icons.screener, label: t("nav.screener"), active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
+      primary.push({ id: "screener", ik: "screener", icon: icons.screener, label: t("nav.screener"), active: app.selectedKind === "screener" && app.view === "mail", run: () => { app.view = "mail"; selectScreener(); } });
 
     const mail = [
-      { id: "drafts", icon: icons.drafts || icons.edit, label: t("nav.drafts"), active: app.selectedKind === "drafts" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedDrafts(); } },
-      { id: "allsent", icon: icons.sent, label: t("nav.sent"), active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } },
-      { id: "snoozed", icon: icons.snooze, label: t("nav.snoozed"), active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } },
-      { id: "followups", icon: icons.alarm, label: t("nav.followups"), active: app.selectedKind === "followups" && app.view === "mail", run: () => { app.view = "mail"; selectFollowups(); } },
+      { id: "drafts", ik: "drafts", icon: icons.drafts, label: t("nav.drafts"), active: app.selectedKind === "drafts" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedDrafts(); } },
+      { id: "allsent", ik: "sent", icon: icons.sent, label: t("nav.sent"), active: app.selectedKind === "sent" && app.view === "mail", run: () => { app.view = "mail"; selectUnifiedSent(); } },
+      { id: "snoozed", ik: "snooze", icon: icons.snooze, label: t("nav.snoozed"), active: app.selectedKind === "snoozed" && app.view === "mail", run: () => { app.view = "mail"; selectSnoozed(); } },
+      { id: "followups", ik: "alarm", icon: icons.alarm, label: t("nav.followups"), active: app.selectedKind === "followups" && app.view === "mail", run: () => { app.view = "mail"; selectFollowups(); } },
     ];
     if (s.showPaperTrail !== false)
-      mail.push({ id: "papertrail", icon: icons.receipt, label: t("nav.paperTrail"), active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
+      mail.push({ id: "papertrail", ik: "receipt", icon: icons.receipt, label: t("nav.paperTrail"), active: app.selectedKind === "papertrail" && app.view === "mail", run: () => { app.view = "mail"; selectPaperTrail(); } });
 
     const tools = [
-      { id: "calendar", icon: icons.calendar, label: t("nav.calendar"), active: app.view === "calendar", run: () => { app.view = "calendar"; } },
-      { id: "tickets", icon: icons.receipt, label: t("nav.tickets"), active: app.view === "tickets", run: () => { app.view = "tickets"; } },
-      { id: "scheduled", icon: icons.clock, label: t("nav.scheduled"), active: app.view === "scheduled", run: () => { app.view = "scheduled"; } },
+      { id: "calendar", ik: "calendar", icon: icons.calendar, label: t("nav.calendar"), active: app.view === "calendar", run: () => { app.view = "calendar"; } },
+      { id: "tickets", ik: "tickets", icon: icons.tickets, label: t("nav.tickets"), active: app.view === "tickets", run: () => { app.view = "tickets"; } },
+      { id: "scheduled", ik: "clock", icon: icons.clock, label: t("nav.scheduled"), active: app.view === "scheduled", run: () => { app.view = "scheduled"; } },
+      { id: "subscriptions", ik: "subscriptions", icon: icons.subscriptions, label: t("nav.subscriptions"), active: app.view === "subscriptions", run: () => { app.view = "subscriptions"; } },
     ];
     if (s.showNewsletterFeed !== false)
-      tools.push({ id: "newsfeed", icon: icons.newspaper, label: t("nav.newsletterFeed"), active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
+      tools.push({ id: "newsfeed", ik: "newspaper", icon: icons.newspaper, label: t("nav.newsletterFeed"), active: app.view === "newsfeed", run: () => { app.view = "newsfeed"; } });
 
     const order = s.specialOrder || [];
     const rank = (id) => { const i = order.indexOf(id); return i < 0 ? 999 : i; };
@@ -195,17 +196,17 @@
 
 <aside class="sidebar" class:rail={collapsed}>
   <div class="brand">
-    <span class="mark">{@html icons.brand}</span>
-    {#if !collapsed}<span class="title">RaplMail</span>{/if}
-    <button class="collapse" title={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+    <!-- Android's menu button: opens the drawer from the rail and folds it back. -->
+    <button class="menu-btn" title={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")}
+      aria-label={collapsed ? t("nav.expandSidebar") : t("nav.collapseSidebar")} aria-expanded={!collapsed}
       onclick={() => saveSettings({ sidebarCollapsed: !collapsed })}>
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-        {#if collapsed}<path d="m6.5 5 7 7-7 7"/><path d="m12.5 5 7 7-7 7"/>{:else}<path d="m17.5 5-7 7 7 7"/><path d="m11.5 5-7 7 7 7"/>{/if}
-      </svg>
+      {@html collapsed ? icons.menu : icons.menuOpen}
     </button>
+    {#if !collapsed}<span class="mark">{@html filledIcon("brand")}</span><span class="title">RaplMail</span>{/if}
   </div>
 
-  <button class="btn primary compose" title={composeHint ? t("nav.composeWithHint", { hint: composeHint }) : t("nav.compose")} onclick={() => openCompose({ to: "", subject: "", html: "" })}>
+  <button class="fab compose" title={composeHint ? t("nav.composeWithHint", { hint: composeHint }) : t("nav.compose")}
+    aria-label={t("nav.compose")} onclick={() => openCompose({ to: "", subject: "", html: "" })}>
     {@html icons.compose}{#if !collapsed}<span class="compose-label">{t("nav.compose")}</span>{#if composeHint}<kbd>{composeHint}</kbd>{/if}{/if}
   </button>
 
@@ -237,7 +238,7 @@
           ondragover={(e) => e.preventDefault()}
           ondragenter={() => reorderSpecial(it.id, sec.key)}
           onclick={it.run}>
-          <span class="ic">{@html it.icon}</span>
+          <span class="ic">{@html it.active ? filledIcon(it.ik) : it.icon}</span>
           {#if !collapsed}
             <span class="name">{it.label}</span>
             {#if it.badge > 0}<span class="badge tnum">{it.badge > 999 ? "999+" : it.badge}</span>{/if}
@@ -258,21 +259,19 @@
           onclick={() => runSearch(ss.query)}>
           <span class="ic">{@html icons.search}</span>{#if !collapsed}<span class="name">{ss.name}</span>{/if}
         </button>
-        {#if !collapsed}<button class="eye" title={t("nav.removeSavedSearch")} onclick={() => removeSavedSearch(ss.id)}>{@html icons.close}</button>{/if}
+        {#if !collapsed}<button class="eye" title={t("nav.removeSavedSearch")} aria-label={t("nav.removeSavedSearch")} onclick={() => removeSavedSearch(ss.id)}>{@html icons.close}</button>{/if}
       </div>
     {/each}
 
     {#each grouped as g (g.account.id)}
       <div class="acct">
         {#if !collapsed}
-          <button class="acct-head" onclick={() => toggleFold(g.account.id)}>
-            <span class="chev" class:open={!isFolded(g.account.id)}>
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 8 7-8 7"/></svg>
-            </span>
+          <button class="acct-head" aria-expanded={!isFolded(g.account.id)} onclick={() => toggleFold(g.account.id)}>
             <span class="dot" style="background:{g.account.color}"></span>
             <span class="email">{g.account.email}</span>
+            <span class="chev" class:open={!isFolded(g.account.id)}>{@html icons.expandMore}</span>
           </button>
-          <button class="addbtn" title={t("nav.newFolder")} onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>＋</button>
+          <button class="addbtn" title={t("nav.newFolder")} aria-label={t("nav.newFolder")} onclick={() => (creatingFor = creatingFor === g.account.id ? null : g.account.id)}>{@html icons.add}</button>
           {#if manage}<button class="addbtn del" title={t("nav.removeThisAccount")} onclick={() => removeAccount(g.account)}>{@html icons.trash}</button>{/if}
         {:else}
           <!-- Collapsed rail: the old per-account color circle wasn't clickable
@@ -312,7 +311,7 @@
             <button class="nav-it" title={collapsed ? `${f.name} - ${g.account.email}` : f.name}
               class:active={app.selectedKind === "folder" && app.selectedFolderId === f.id && app.view === "mail"}
               onclick={() => { if (!manage) openFolder(f); }}>
-              <span class="ic">{@html folderIcon(f.role)}</span>
+              <span class="ic">{@html folderIcon(f.role, app.selectedKind === "folder" && app.selectedFolderId === f.id && app.view === "mail")}</span>
               {#if !collapsed}<span class="name">{f.name}</span>{/if}
               {#if f.unread_count > 0 && !manage && !collapsed}<span class="badge tnum">{f.unread_count > 999 ? "999+" : f.unread_count}</span>{/if}
             </button>
@@ -379,122 +378,126 @@
   {/if}
 
   <div class="foot">
-    <button class="foot-btn" class:spin-ic={app.syncing} title={t("nav.checkNewMail")} onclick={syncAllAccounts} disabled={app.syncing}>{@html icons.sync}{#if !collapsed}<span>{t("nav.sync")}</span>{/if}</button>
-    <button class="foot-btn" title={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} class:active={app.customizing} onclick={() => (app.customizing = !app.customizing)}>{@html app.customizing ? icons.unlock : icons.customize}{#if !collapsed}<span>{t("nav.layout")}</span>{/if}</button>
-    <button class="foot-btn" title={t("nav.settings")} class:active={app.view === "settings"} onclick={() => (app.view = "settings")}>{@html icons.settings}{#if !collapsed}<span>{t("nav.settings")}</span>{/if}</button>
+    <button class="foot-btn" class:spin-ic={app.syncing} title={t("nav.checkNewMail")} aria-label={t("nav.checkNewMail")} onclick={syncAllAccounts} disabled={app.syncing}><span class="fi">{@html icons.sync}</span>{#if !collapsed}<span>{t("nav.sync")}</span>{/if}</button>
+    <button class="foot-btn" title={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} aria-label={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} class:active={app.customizing} onclick={() => (app.customizing = !app.customizing)}><span class="fi">{@html app.customizing ? icons.unlock : icons.customize}</span>{#if !collapsed}<span>{t("nav.layout")}</span>{/if}</button>
+    <button class="foot-btn" title={t("nav.settings")} aria-label={t("nav.settings")} class:active={app.view === "settings"} onclick={() => (app.view = "settings")}><span class="fi">{@html app.view === "settings" ? filledIcon("settings") : icons.settings}</span>{#if !collapsed}<span>{t("nav.settings")}</span>{/if}</button>
   </div>
 </aside>
 
 <style>
+  /* Material navigation drawer, folding into a navigation rail. It sits on the
+     window ground (no card), like Android's drawer; the active destination is a
+     pill in the selection tint with a filled icon. */
   .sidebar {
-    background: var(--surface);
-    border: 1px solid var(--border); border-radius: var(--radius-lg);
-    display: flex; flex-direction: column;
-    padding: 12px 10px 10px; gap: 10px;
+    display: flex; flex-direction: column; gap: 2px;
+    padding: 0 8px 2px 12px;
     min-height: 0; height: 100%; overflow: hidden;
   }
-  .sidebar.rail { padding: 12px 8px 10px; align-items: stretch; }
+  .sidebar.rail { padding: 0 0 2px; align-items: center; }
 
-  /* ── Brand ── */
-  .brand { display: flex; align-items: center; gap: 9px; padding: 2px 4px 2px 6px; }
-  .mark {
-    display: grid; place-items: center; width: 26px; height: 26px; flex: none;
-    border-radius: 8px; color: #fff;
-    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #a06df0));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), var(--shadow-sm);
-  }
-  .mark :global(svg) { width: 15px; height: 15px; }
-  .title { flex: 1; font-weight: 700; font-size: 14.5px; letter-spacing: -0.01em; }
-  .collapse {
-    margin-left: auto; color: var(--faint); padding: 4px 6px; border-radius: 7px;
-    display: grid; place-items: center;
+  /* ── Menu button + brand ── */
+  .brand { display: flex; align-items: center; gap: 6px; height: 52px; flex: none; padding-left: 2px; }
+  .rail .brand { padding: 0; justify-content: center; width: 100%; }
+  .menu-btn {
+    width: 48px; height: 48px; border-radius: 50%; flex: none;
+    display: grid; place-items: center; color: var(--muted);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .collapse:hover { background: var(--hover); color: var(--text); }
-  .rail .brand { justify-content: center; padding: 2px 0; flex-direction: column; gap: 6px; }
-  .rail .collapse { margin: 0; }
+  .menu-btn :global(svg) { width: 24px; height: 24px; }
+  .menu-btn:hover { background: var(--hover); color: var(--text); }
+  .mark { display: grid; place-items: center; color: var(--accent); flex: none; }
+  .mark :global(svg) { width: 26px; height: 26px; }
+  .title { flex: 1; font-size: 20px; font-weight: 500; letter-spacing: 0; white-space: nowrap; overflow: hidden; }
 
-  /* ── Compose ── */
-  .compose { justify-content: center; padding: 9px 12px; font-weight: 600; }
-  .compose-label { flex: 1; text-align: left; margin-left: 2px; }
-  .compose kbd {
-    font: 600 10px/1 inherit; letter-spacing: 0.03em; color: rgba(255, 255, 255, 0.85);
-    background: rgba(255, 255, 255, 0.14); border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: 5px; padding: 3px 6px;
+  /* ── Compose: extended FAB in the drawer, plain FAB on the rail ── */
+  .fab {
+    flex: none; align-self: flex-start; display: flex; align-items: center; gap: 12px;
+    height: 56px; padding: 0 18px 0 16px; margin: 6px 0 14px 2px;
+    border-radius: 16px; background: var(--accent-cont); color: var(--on-accent-cont);
+    font-size: 14px; font-weight: 600;
+    box-shadow: var(--shadow);
+    transition: box-shadow var(--t) var(--ease), background var(--t) var(--ease);
   }
-  .rail .compose { padding: 9px 0; }
+  .fab :global(svg) { width: 24px; height: 24px; flex: none; }
+  .fab:hover { box-shadow: var(--shadow-lg); background: color-mix(in srgb, var(--accent-cont) 90%, var(--on-accent-cont)); }
+  .fab:active { box-shadow: var(--shadow); }
+  .compose-label { white-space: nowrap; }
+  .fab kbd {
+    font: 600 10.5px/1 var(--font); letter-spacing: 0.02em; opacity: 0.75;
+    background: color-mix(in srgb, var(--on-accent-cont) 12%, transparent);
+    border-radius: 6px; padding: 4px 6px; margin-left: 2px;
+  }
+  .rail .fab { align-self: center; width: 56px; padding: 0; justify-content: center; margin: 6px 0 12px; }
 
-  /* ── Workspaces ── */
-  .ws-switch { display: flex; gap: 4px; flex-wrap: wrap; padding: 0 2px; }
+  /* ── Workspaces: filter chips ── */
+  .ws-switch { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 4px 10px; flex: none; }
   .ws-switch button {
-    font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 999px;
-    background: var(--surface-2); color: var(--muted);
+    height: 30px; padding: 0 12px; border-radius: 8px; font-size: 13px; font-weight: 500;
+    color: var(--muted); box-shadow: inset 0 0 0 1px var(--border);
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .ws-switch button:hover { background: var(--surface-3); color: var(--text); }
-  .ws-switch button.active { background: var(--accent); color: #fff; }
+  .ws-switch button:hover { background: var(--hover); color: var(--text); }
+  .ws-switch button.active { background: var(--sel); color: var(--on-sel); box-shadow: none; }
 
-  /* ── Nav ── */
-  .scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 1px; min-height: 0; padding: 2px 0; }
+  /* ── Destinations ── */
+  .scroll { flex: 1 1 auto; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 1px; min-height: 0; padding: 0 2px 8px 0; }
+  .rail .scroll { width: 100%; padding: 0 0 8px; align-items: center; }
 
-  .sec-label {
-    font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--faint); padding: 14px 10px 5px; user-select: none;
-  }
-  .sec-rule { height: 1px; background: var(--hairline); margin: 10px 10px; flex: none; }
+  .sec-label { font-size: 13px; font-weight: 500; color: var(--muted); padding: 14px 16px 6px; user-select: none; }
+  .sec-rule { height: 1px; width: 40px; background: var(--hairline); margin: 8px auto; flex: none; }
 
   .nav-it {
     position: relative; flex: 0 0 auto;
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; min-width: 0; padding: 7px 10px;
-    border-radius: 8px; color: var(--text); text-align: left; font-size: 13.5px;
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; min-width: 0; height: 40px; padding: 0 14px 0 14px;
+    border-radius: 999px; color: var(--muted); text-align: left; font-size: 14px; font-weight: 500;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .folder-row .nav-it { flex: 1; }
-  .nav-it:hover { background: var(--hover); }
-  .nav-it.active { background: var(--accent-soft); }
-  .nav-it.active .ic { color: var(--accent); }
-  .nav-it.active .name { font-weight: 600; }
-  .nav-it.active::before {
-    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px; width: 3px;
-    border-radius: 999px; background: var(--accent);
-  }
+  .nav-it:hover { background: var(--hover); color: var(--text); }
+  .nav-it.active { background: var(--sel); color: var(--on-sel); font-weight: 650; }
   .nav-it[draggable="true"] { cursor: pointer; }
   .nav-it.dragging { opacity: 0.45; }
   .nav-it .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .ic { width: 18px; display: grid; place-items: center; flex: none; color: var(--muted); transition: color var(--t-fast) var(--ease); }
-  .ic :global(svg) { width: 16.5px; height: 16.5px; }
-  .badge {
-    flex: none; font-size: 10.5px; font-weight: 700; color: var(--accent);
-    background: var(--accent-soft); border-radius: 999px; padding: 2px 7px; min-width: 20px; text-align: center;
-  }
-  .rail-badge { position: absolute; top: 6px; right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-  .rail .nav-it { justify-content: center; padding: 8px 0; }
-  .rail .ic { width: auto; }
+  .ic { width: 24px; display: grid; place-items: center; flex: none; }
+  .ic :global(svg) { width: 22px; height: 22px; }
+  .badge { flex: none; font-size: 12px; font-weight: 650; padding-left: 4px; }
+  /* Rail destination: the 56x32 pill indicator, icon only (label on hover). */
+  .rail .nav-it { width: 56px; height: 32px; padding: 0; justify-content: center; margin: 4px 0; border-radius: 16px; }
+  .rail .folder-row { justify-content: center; width: 100%; }
+  .rail .folder-row .nav-it { flex: none; }
+  .rail-badge { position: absolute; top: 4px; right: 13px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--app-bg); }
 
   /* ── Accounts & folders ── */
-  .acct { display: flex; align-items: center; gap: 4px; padding: 12px 0 3px; }
+  .acct { display: flex; align-items: center; gap: 2px; padding: 12px 0 2px; }
   .acct-head {
-    flex: 1; display: flex; align-items: center; gap: 7px;
-    color: var(--faint); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    padding: 3px 6px; border-radius: 7px; min-width: 0;
+    flex: 1; display: flex; align-items: center; gap: 10px; min-width: 0;
+    height: 34px; padding: 0 8px 0 16px; border-radius: 999px;
+    color: var(--muted); font-size: 13px; font-weight: 500;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
-  .acct-head:hover { background: var(--hover); color: var(--muted); }
-  .chev { display: grid; place-items: center; width: 10px; flex: none; transition: transform var(--t) var(--ease); }
-  .chev.open { transform: rotate(90deg); }
-  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: 0 0 0 2.5px color-mix(in srgb, currentColor 0%, transparent); }
-  .rail-sep { display: block; height: 1px; margin: 9px 12px 3px; background: var(--hairline); border-radius: 1px; }
+  .acct-head:hover { background: var(--hover); color: var(--text); }
+  .chev { display: grid; place-items: center; flex: none; margin-left: auto; transform: rotate(-90deg); transition: transform var(--t) var(--ease); }
+  .chev :global(svg) { width: 20px; height: 20px; }
+  .chev.open { transform: none; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  .rail-sep { display: block; height: 1px; width: 40px; margin: 10px auto 2px; background: var(--hairline); border-radius: 1px; }
   .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .addbtn { color: var(--accent); font-size: 15px; padding: 0 6px; opacity: 0; transition: opacity var(--t-fast) var(--ease); }
+  .addbtn {
+    flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    color: var(--muted); opacity: 0; transition: opacity var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  }
+  .addbtn :global(svg) { width: 20px; height: 20px; }
+  .addbtn:hover { background: var(--hover); color: var(--text); }
   .acct:hover .addbtn, .addbtn:focus-visible { opacity: 1; }
-  .addbtn.del { color: var(--danger); font-size: 13px; display: inline-flex; align-items: center; opacity: 1; }
+  .addbtn.del { color: var(--danger); opacity: 1; }
+  .addbtn.del :global(svg) { width: 18px; height: 18px; }
   .newfolder { display: flex; gap: 6px; padding: 4px 2px 8px; flex-wrap: wrap; }
-  .newfolder select, .newfolder input { flex: 1 1 100%; padding: 6px 8px; }
+  .newfolder select, .newfolder input { flex: 1 1 100%; padding: 6px 10px; }
   .newfolder input { flex: 1; }
-  .newfolder .btn { padding: 6px 12px; }
+  .newfolder .btn { padding: 6px 14px; min-height: 32px; }
 
-  .folder-row { display: flex; align-items: center; gap: 4px; border-radius: 8px; }
+  .folder-row { display: flex; align-items: center; gap: 2px; border-radius: 999px; }
   .folder-row.dim { opacity: 0.5; }
   .folder-row.gone { display: none; }
   .folder-row.dragtarget { outline: 1px dashed var(--border); }
@@ -505,54 +508,63 @@
   .folder-row.dropbad { background: var(--danger-soft); box-shadow: inset 0 0 0 1px var(--danger); }
   .folder-row.dropbad :global(.nav-it) { color: var(--danger); cursor: no-drop; }
   .grip { cursor: grab; color: var(--faint); padding: 0 2px; }
-  .eye, .del { padding: 4px 7px; border-radius: 7px; color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
-  .eye:hover, .del:hover { background: var(--hover); }
+  .eye, .del {
+    flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+    color: var(--muted); transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+  }
+  .eye :global(svg), .del :global(svg) { width: 18px; height: 18px; }
+  .eye:hover, .del:hover { background: var(--hover); color: var(--text); }
   .del:hover { color: var(--danger); }
 
   .quiet-action {
-    margin-top: 2px; padding: 6px 10px; font-size: 12.5px; color: var(--faint);
-    border-radius: 8px; text-align: left;
+    align-self: flex-start; margin-top: 4px; height: 32px; padding: 0 16px; font-size: 13px; font-weight: 500;
+    color: var(--muted); border-radius: 999px; text-align: left;
     transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
   }
   .quiet-action:hover { background: var(--hover); color: var(--text); }
   .quiet-action.on { color: var(--accent); }
-  .manage-hint { color: var(--faint); font-size: 10px; padding: 4px 10px; line-height: 1.5; }
+  .manage-hint { color: var(--faint); font-size: 11px; padding: 4px 16px; line-height: 1.5; }
+  .manage-hint :global(svg) { width: 14px; height: 14px; }
 
   /* ── Status strip (sync / offline queue) ── */
   .status {
-    display: flex; flex-direction: column; gap: 3px;
-    font-size: 11.5px; color: var(--muted);
-    background: var(--surface-2); border: 1px solid var(--hairline);
-    border-radius: var(--radius-sm); padding: 7px 9px;
+    display: flex; flex-direction: column; gap: 4px; flex: none;
+    font-size: 12px; color: var(--muted);
+    background: var(--surface); border-radius: var(--radius-sm); padding: 8px 12px; margin: 0 2px 6px;
   }
-  .st-line { display: flex; align-items: center; gap: 7px; }
+  .st-line { display: flex; align-items: center; gap: 8px; }
+  .st-line :global(svg) { width: 16px; height: 16px; }
   .st-line.failed { color: var(--warning); flex-wrap: wrap; }
   .st-line.failed button { color: var(--accent); font-weight: 600; padding: 0 2px; }
   .qitems { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; max-height: 220px; overflow-y: auto; }
-  .qitem { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px; padding: 7px 9px; }
+  .qitem { background: var(--surface-2); border-radius: 10px; padding: 8px 10px; }
   .qitem.muted { color: var(--muted); }
-  .qsum { font-size: 11px; color: var(--text); font-weight: 600; word-break: break-word; }
-  .qerr { font-size: 10px; color: var(--danger); margin-top: 3px; word-break: break-word; line-height: 1.4; }
-  .qmeta { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 10px; color: var(--faint); }
+  .qsum { font-size: 11.5px; color: var(--text); font-weight: 600; word-break: break-word; }
+  .qerr { font-size: 10.5px; color: var(--danger); margin-top: 3px; word-break: break-word; line-height: 1.4; }
+  .qmeta { display: flex; align-items: center; justify-content: space-between; margin-top: 5px; font-size: 10.5px; color: var(--faint); }
   .qmeta button { color: var(--accent); font-weight: 600; }
   .spin { display: inline-flex; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Footer ── */
-  .foot { display: flex; gap: 2px; border-top: 1px solid var(--hairline); padding-top: 8px; }
+  /* ── Footer: sync / layout / settings ── */
+  .foot { display: flex; gap: 2px; padding-top: 6px; border-top: 1px solid var(--hairline); flex: none; }
   .foot-btn {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-    padding: 6px 4px; border-radius: 8px; color: var(--muted); font-size: 10.5px; font-weight: 600;
-    transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 4px 2px 4px; border-radius: 16px; color: var(--muted); font-size: 12px; font-weight: 500;
+    transition: color var(--t-fast) var(--ease);
   }
-  .foot-btn :global(svg) { width: 16px; height: 16px; }
-  .foot-btn:hover { background: var(--hover); color: var(--text); }
-  .foot-btn.active { color: var(--accent); }
+  /* The icon carries the pill (like a rail destination's indicator). */
+  .fi { display: grid; place-items: center; width: 56px; height: 32px; border-radius: 16px; transition: background var(--t-fast) var(--ease); }
+  .fi :global(svg) { width: 22px; height: 22px; }
+  .foot-btn:hover { color: var(--text); }
+  .foot-btn:hover .fi { background: var(--hover); }
+  .foot-btn.active { color: var(--on-sel); }
+  .foot-btn.active .fi { background: var(--sel); }
   .foot-btn:disabled { opacity: 0.6; }
-  .foot-btn.spin-ic :global(svg) { animation: spin 1s linear infinite; }
-  .rail .foot { flex-direction: column; gap: 2px; }
-  .rail .foot-btn span { display: none; }
+  .foot-btn.spin-ic .fi :global(svg) { animation: spin 1s linear infinite; }
+  .rail .foot { flex-direction: column; align-items: center; gap: 4px; border-top: none; padding-top: 4px; width: 100%; }
+  .rail .foot-btn { flex: none; padding: 2px 0; }
 
-  .empty { padding: 16px 8px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+  .empty { padding: 16px; color: var(--muted); font-size: 13px; line-height: 1.7; }
   .link { color: var(--accent); }
 </style>

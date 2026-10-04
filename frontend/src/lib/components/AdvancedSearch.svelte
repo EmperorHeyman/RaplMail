@@ -236,7 +236,7 @@
   .head b { flex: 1; }
   .modeseg { display: inline-flex; gap: 2px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
   .modeseg button { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; color: var(--muted); }
-  .modeseg button.on { background: var(--accent); color: #fff; }
+  .modeseg button.on { background: var(--sel); color: var(--on-sel); }
   .body.smart { gap: 8px; padding: 18px 16px 16px; }
   .smartbadge { align-self: flex-start; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
     padding: 2px 8px; border-radius: 999px; background: var(--accent-soft, color-mix(in srgb, var(--accent) 18%, transparent)); color: var(--accent); }
@@ -257,14 +257,14 @@
   .ac { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; list-style: none; margin: 0; padding: 4px;
     background: var(--surface-3); border: 1px solid var(--border); border-radius: var(--radius-sm); box-shadow: var(--shadow); max-height: 200px; overflow-y: auto; }
   .ac li { display: flex; align-items: baseline; gap: 8px; padding: 7px 9px; border-radius: 6px; cursor: pointer; }
-  .ac li.active { background: var(--accent); color: #fff; }
+  .ac li.active { background: var(--sel); color: var(--on-sel); }
   .ac .nm { font-weight: 550; }
   .ac .em { font-size: 12px; color: var(--muted); }
   .ac li.active .em { color: #e7eaf0; }
   .seg { display: inline-flex; flex-wrap: wrap; gap: 4px; }
   .seg button { font-size: 12px; padding: 5px 12px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
   .seg button:hover { background: var(--surface-3); color: var(--text); }
-  .seg button.on { background: var(--accent); color: #fff; }
+  .seg button.on { background: var(--sel); color: var(--on-sel); }
   .chk { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text); cursor: pointer; }
   .chk input { width: auto; }
   .presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-top: 2px; }
@@ -277,7 +277,7 @@
   .spacer { flex: 1; }
   .btn { padding: 8px 14px; border-radius: var(--radius-sm); background: var(--surface-3); font-size: 13px; font-weight: 550; }
   .btn:hover { background: color-mix(in srgb, var(--surface-3) 76%, var(--text) 10%); }
-  .btn.primary { background: var(--accent); color: #fff; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); display: inline-flex; align-items: center; gap: 6px; }
   .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
   .btn.primary :global(svg) { width: 15px; height: 15px; }
 </style>

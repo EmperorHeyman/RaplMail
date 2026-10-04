@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy import String, cast, func, text
+from sqlalchemy import String, and_ as sa_and, cast, func, or_ as sa_or, text
 from sqlalchemy.orm import defer
 from sqlmodel import Session, select
 from starlette.concurrency import run_in_threadpool
@@ -124,6 +124,7 @@ def list_messages(
     role: FolderRole | None = None,   # e.g. "inbox" -> unified inbox across accounts
     category: str | None = None,
     exclude_categories: str | None = None,   # comma list hidden from the main list (smart inbox)
+    keep_new_days: int | None = None,   # ...except unread mail from the last N days (new stays visible)
     include_done: bool = False,
     only_done: bool = False,
     unread_only: bool = False,
@@ -192,7 +193,18 @@ def list_messages(
     if exclude_categories:
         excl = [c.strip() for c in exclude_categories.split(",") if c.strip()]
         if excl:
-            stmt = stmt.where(Message.category.not_in(excl))
+            keep = Message.category.not_in(excl)
+            if keep_new_days:
+                # New mail from a grouped category stays in the main list until
+                # it's read - otherwise it vanished into a group card the moment
+                # it arrived and was easy to miss at a glance.
+                # (Own name: this function imports `timedelta` locally further
+                # down, which makes the bare name unbound up here.)
+                from datetime import timedelta as _span
+                cutoff = (datetime.now(timezone.utc) - _span(days=max(1, keep_new_days))).replace(tzinfo=None)
+                keep = sa_or(keep, sa_and(Message.is_seen == False,  # noqa: E712
+                                      Message.date != None, Message.date >= cutoff))  # noqa: E711
+            stmt = stmt.where(keep)
 
     # Snooze: hide messages snoozed into the future from normal views; the
     # Snoozed view shows only those. (Search ignores snooze.)

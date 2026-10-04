@@ -4,6 +4,8 @@
   import { calendar, openExternal } from "../api.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
+  import { currentLocale } from "../i18n.svelte.js";
 
   let cursor = $state(new Date());   // any day within the visible month/week
   let events = $state([]);
@@ -25,8 +27,17 @@
     return Array.from({ length: 7 }, (_, i) => { const d = new Date(ws); d.setDate(ws.getDate() + i); return d; });
   });
 
-  const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-  const DOW = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  const MONTHS_EN = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  const DOW_EN = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+  // Czech names come from Intl (standalone month form, "říjen"); English keeps
+  // the exact names it always showed.
+  const isCs = $derived(currentLocale() === "cs");
+  const MONTHS = $derived(isCs
+    ? Array.from({ length: 12 }, (_, m) => new Intl.DateTimeFormat("cs", { month: "long" }).format(new Date(2026, m, 1)))
+    : MONTHS_EN);
+  const DOW = $derived(isCs
+    ? Array.from({ length: 7 }, (_, i) => new Intl.DateTimeFormat("cs", { weekday: "short" }).format(new Date(2026, 0, 5 + i)))
+    : DOW_EN);
 
   let _loadGen = 0;   // latest-request-wins: clicking ‹ › quickly overlaps loads
   async function load() {
@@ -230,8 +241,8 @@
   }
   const dayEvents = $derived(selected ? eventsOn(selected) : []);
 
-  const fmtTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  const fmtDayHeader = (d) => d ? d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" }) : "";
+  const fmtTime = (iso) => new Date(iso).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit", hour12: false });
+  const fmtDayHeader = (d) => d ? d.toLocaleDateString(dateLocale(), { weekday: "long", month: "long", day: "numeric" }) : "";
 
   async function setRsvp(ev, status) {
     try { const u = await calendar.rsvp(ev.id, status); ev.status = u.status; events = [...events]; } catch {}
@@ -241,6 +252,13 @@
   const title = $derived.by(() => {
     if (view === "week") {
       const f = weekDays[0], l = weekDays[6];
+      if (isCs) {
+        // "5. - 11. 10. 2026", or across months "28. 9. - 4. 10. 2026"
+        const dm = (d) => `${d.getDate()}. ${d.getMonth() + 1}.`;
+        return f.getMonth() === l.getMonth()
+          ? `${f.getDate()}. - ${dm(l)} ${l.getFullYear()}`
+          : `${dm(f)} - ${dm(l)} ${l.getFullYear()}`;
+      }
       const mf = MONTHS[f.getMonth()].slice(0, 3), ml = MONTHS[l.getMonth()].slice(0, 3);
       return f.getMonth() === l.getMonth()
         ? `${mf} ${f.getDate()} - ${l.getDate()}, ${f.getFullYear()}`
@@ -452,12 +470,12 @@
 
 <style>
   .cal { display: flex; flex-direction: column; min-width: 0; height: 100%; background: var(--bg);
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
+    border-radius: var(--radius-lg); overflow: hidden; }
   .hbtns { display: flex; gap: 8px; align-items: center; }
   .seg { display: inline-flex; gap: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 3px; }
   .segbtn { font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; color: var(--muted); }
   .segbtn:hover { color: var(--text); }
-  .segbtn.on { background: var(--accent); color: #fff; }
+  .segbtn.on { background: var(--sel); color: var(--on-sel); }
   .cell.indrag, .wg-dhead.indrag, .wg-allcell.indrag { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 0 0 0 1px var(--accent); }
   .tgt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text); }
   .event .del { margin-left: auto; color: var(--faint); font-size: 12px; opacity: 0; transition: opacity 0.1s; }
@@ -474,7 +492,7 @@
   .wg-dhead.sel { box-shadow: inset 0 -2px 0 var(--accent); }
   .wdow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--faint); }
   .wnum { font-size: 17px; font-weight: 700; width: 28px; height: 28px; display: grid; place-items: center; }
-  .wnum.istoday { background: var(--accent); color: #fff; border-radius: 50%; }
+  .wnum.istoday { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
   .wg-scroll { flex: 1; overflow-y: auto; min-height: 0; }
   .wg-allday { display: grid; grid-template-columns: 56px repeat(7, 1fr); border-bottom: 1px solid var(--border); min-height: 26px; }
   .wg-rowlabel { font-size: 9px; color: var(--faint); text-align: right; padding: 4px 6px 0 0; text-transform: uppercase; }
@@ -520,7 +538,7 @@
   .cell:hover { background: var(--surface); }
   .cell.dim { color: var(--faint); background: transparent; }
   .cell.dim .num { opacity: 0.4; }
-  .cell.today .num { background: var(--accent); color: #fff; border-radius: 50%; }
+  .cell.today .num { background: var(--accent); color: var(--on-accent); border-radius: 50%; }
   .cell.sel { box-shadow: inset 0 0 0 2px var(--accent); }
   .num { font-size: 12px; width: 22px; height: 22px; display: grid; place-items: center; font-weight: 600; }
   .evs { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
@@ -546,5 +564,5 @@
   .rsvp { display: flex; gap: 6px; margin-top: 8px; }
   .rsvp button { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); color: var(--muted); display: inline-flex; align-items: center; gap: 4px; }
   .rsvp button:hover { border-color: var(--accent); color: var(--text); }
-  .rsvp button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .rsvp button.on { background: var(--sel); border-color: var(--sel); color: var(--on-sel); }
 </style>

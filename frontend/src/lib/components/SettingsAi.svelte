@@ -3,6 +3,7 @@
   import { app, saveSettings, notify } from "../store.svelte.js";
   import { ai, openExternal } from "../api.js";
   import { icons } from "../icons.js";
+  import { t } from "../i18n.svelte.js";
 
   const aiProv = $derived(app.settings.aiProvider || "anthropic");
   // AI actions are "on" once a key is set - or immediately for keyless local Ollama.
@@ -21,16 +22,16 @@
     starting = true;
     try {
       const r = await ai.ollamaStart(app.settings.aiBaseUrl || "");
-      notify(r.running ? "Ollama started" : "Couldn't start Ollama - is it installed?", r.running ? "info" : "error");
-    } catch (e) { notify(e.message || "Couldn't start Ollama", "error"); }
+      notify(r.running ? t("sAi.ollamaStarted") : t("sAi.startFailedInstalled"), r.running ? "info" : "error");
+    } catch (e) { notify(e.message || t("sAi.startFailed"), "error"); }
     finally { starting = false; refreshOllama(); }
   }
   async function restartOllama() {
     starting = true;
     try {
       const r = await ai.ollamaRestart(app.settings.aiBaseUrl || "");
-      notify(r.running ? "Ollama restarted" : "Restarted, but couldn't confirm it's up", r.running ? "info" : "error");
-    } catch (e) { notify(e.message || "Couldn't restart Ollama", "error"); }
+      notify(r.running ? t("sAi.ollamaRestarted") : t("sAi.restartUnconfirmed"), r.running ? "info" : "error");
+    } catch (e) { notify(e.message || t("sAi.restartFailed"), "error"); }
     finally { starting = false; refreshOllama(); }
   }
 
@@ -49,12 +50,12 @@
     } catch { ollama = { ...ollama, loading: false }; }
   }
   async function updateOllama() {
-    try { await ai.ollamaUpdate(); install = { active: true, status: "updating…" }; pollInstall(); }
-    catch (e) { notify((e.message || "Couldn't start update") + " - opening the download page", "error"); openExternal("https://ollama.com/download"); }
+    try { await ai.ollamaUpdate(); install = { active: true, status: t("sAi.statusUpdating") }; pollInstall(); }
+    catch (e) { notify(t("sAi.openingDownload", { error: e.message || t("sAi.updateStartFailed") }), "error"); openExternal("https://ollama.com/download"); }
   }
   async function freeGpu() {
     unloading = true;
-    try { const r = await ai.ollamaUnload(); notify(r.unloaded?.length ? `Freed GPU (unloaded ${r.unloaded.join(", ")})` : "No model was loaded"); }
+    try { const r = await ai.ollamaUnload(); notify(r.unloaded?.length ? t("sAi.freedGpu", { models: r.unloaded.join(", ") }) : t("sAi.noModelLoaded")); }
     catch (e) { notify(e.message, "error"); }
     finally { unloading = false; }
   }
@@ -66,10 +67,10 @@
         pull = await ai.ollamaPullStatus();
         if (pull?.done) {
           clearInterval(_pullTimer);
-          if (pull.error) { notify("Pull failed: " + pull.error, "error"); }
+          if (pull.error) { notify(t("sAi.pullFailed", { error: pull.error }), "error"); }
           else {
             if (_activateAfterPull) { saveSettings({ aiModel: _activateAfterPull }); _activateAfterPull = null; }
-            notify("Model ready");
+            notify(t("sAi.modelReady"));
           }
           refreshOllama();
         }
@@ -80,7 +81,7 @@
     const m = (model || pullName).trim();
     if (!m) return;
     _activateAfterPull = activate ? m : null;
-    try { await ai.ollamaPull(m, app.settings.aiBaseUrl || ""); pull = { active: true, model: m, status: "starting", percent: 0 }; pollPull(); }
+    try { await ai.ollamaPull(m, app.settings.aiBaseUrl || ""); pull = { active: true, model: m, status: t("sAi.statusStarting"), percent: 0 }; pollPull(); }
     catch (e) { notify(e.message, "error"); }
   }
 
@@ -90,7 +91,7 @@
   function quickSetup(model) {
     saveSettings({ aiProvider: "ollama", aiButtons: true, ollamaKeepAlive: "adaptive", ollamaManaged: true });
     ai.ollamaManaged(true).catch(() => {});   // bring the hidden serve up now
-    if (isInstalled(model)) { useModel(model, "chat"); notify("All set - " + model + " is ready."); }
+    if (isInstalled(model)) { useModel(model, "chat"); notify(t("sAi.allSet", { model })); }
     else startPull(model, true);
   }
 
@@ -118,16 +119,16 @@
         if (install?.done) {
           clearInterval(_installTimer);
           if (install.ok) {
-            notify(install.action === "upgrade" ? "Ollama updated (" + (install.status || "done") + ")" : "Ollama installed - start it, then refresh");
+            notify(install.action === "upgrade" ? t("sAi.ollamaUpdated", { status: install.status || t("sAi.statusDone") }) : t("sAi.ollamaInstalled"));
             refreshOllama();
-          } else notify(install.error || "Didn't complete - try the manual download", "error");
+          } else notify(install.error || t("sAi.installIncomplete"), "error");
         }
       } catch { clearInterval(_installTimer); }
     }, 1500);
   }
   async function startInstall() {
-    try { await ai.ollamaInstall(); install = { active: true, status: "starting" }; pollInstall(); }
-    catch (e) { notify((e.message || "Couldn't start install") + " - opening the download page", "error"); openExternal("https://ollama.com/download"); }
+    try { await ai.ollamaInstall(); install = { active: true, status: t("sAi.statusStarting") }; pollInstall(); }
+    catch (e) { notify(t("sAi.openingDownload", { error: e.message || t("sAi.installStartFailed") }), "error"); openExternal("https://ollama.com/download"); }
   }
 
   // --- Semantic search index ----------------------------------------------
@@ -145,7 +146,7 @@
     }, 2000);
   }
   async function buildIndex() {
-    try { await ai.embedReindex(); notify("Building semantic index in the background…"); await refreshEmbed(); pollEmbed(); }
+    try { await ai.embedReindex(); notify(t("sAi.buildingIndex")); await refreshEmbed(); pollEmbed(); }
     catch (e) { notify(e.message, "error"); }
   }
   function pullEmbedModel() {
@@ -154,42 +155,43 @@
   }
   function turnOffSemantic() {
     saveSettings({ semanticEnabled: false });
-    notify("Semantic search turned off.");
+    notify(t("sAi.semanticOff"));
   }
 
   // --- Curated model catalog (there's no official Ollama "list all models" API,
   // so this is a hand-picked, up-to-date-with-releases list; installed state comes
   // live from Ollama's /api/tags). Grouped by the GPU they realistically need. ---
-  const TIER_LABEL = {
-    low: "⚡ Runs on most machines (small / CPU-friendly)",
-    mid: "⚖ Mid-range GPU (~8 GB VRAM)",
-    high: "🚀 High-end GPU (12 GB+ VRAM)",
-  };
-  const CHAT_MODELS = [
-    { name: "llama3.2:3b", size: "2 GB", tier: "low", note: "Fast, great default" },
-    { name: "qwen2.5:3b", size: "1.9 GB", tier: "low", note: "Small, strong multilingual" },
-    { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: "Great multilingual - good for Czech" },
-    { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: "Fastest, but basic quality" },
-    { name: "llama3.1:8b", size: "4.9 GB", tier: "mid", note: "Well-rounded" },
-    { name: "mistral-nemo:12b", size: "7 GB", tier: "mid", note: "Fast + coherent, great Czech - big step up from mistral 7b" },
-    { name: "gemma3:12b", size: "8 GB", tier: "mid", note: "Google Gemma 3 (slower to load)" },
-    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: "Excellent all-round - fits a 16 GB GPU" },
-    { name: "phi4:14b", size: "9 GB", tier: "high", note: "Strong reasoning (Microsoft Phi-4)" },
-    { name: "gemma3:27b", size: "17 GB", tier: "high", note: "Top quality - needs 24 GB+ VRAM (spills / slow on 16 GB)" },
-    { name: "llama3.3:70b", size: "43 GB", tier: "high", note: "Best - needs lots of VRAM" },
-  ];
+  // $derived.by so the labels/notes re-translate on a language switch.
+  const TIER_LABEL = $derived.by(() => ({
+    low: t("sAi.tierLow"),
+    mid: t("sAi.tierMid"),
+    high: t("sAi.tierHigh"),
+  }));
+  const CHAT_MODELS = $derived.by(() => [
+    { name: "llama3.2:3b", size: "2 GB", tier: "low", note: t("sAi.noteLlama32") },
+    { name: "qwen2.5:3b", size: "1.9 GB", tier: "low", note: t("sAi.noteQwen3b") },
+    { name: "qwen2.5:7b", size: "4.7 GB", tier: "mid", note: t("sAi.noteQwen7b") },
+    { name: "mistral:7b", size: "4.1 GB", tier: "mid", note: t("sAi.noteMistral7b") },
+    { name: "llama3.1:8b", size: "4.9 GB", tier: "mid", note: t("sAi.noteLlama31") },
+    { name: "mistral-nemo:12b", size: "7 GB", tier: "mid", note: t("sAi.noteMistralNemo") },
+    { name: "gemma3:12b", size: "8 GB", tier: "mid", note: t("sAi.noteGemma12b") },
+    { name: "qwen2.5:14b", size: "9 GB", tier: "high", note: t("sAi.noteQwen14b") },
+    { name: "phi4:14b", size: "9 GB", tier: "high", note: t("sAi.notePhi4") },
+    { name: "gemma3:27b", size: "17 GB", tier: "high", note: t("sAi.noteGemma27b") },
+    { name: "llama3.3:70b", size: "43 GB", tier: "high", note: t("sAi.noteLlama33") },
+  ]);
   // Defaults the one-click quick-setup buttons pull for each GPU tier.
-  const QUICK_SETUP = [
-    { tier: "low", model: "llama3.2:3b", label: "⚡ Fast", sub: "Any PC · 2 GB" },
-    { tier: "mid", model: "mistral-nemo:12b", label: "⚖ Balanced", sub: "Good GPU · 7 GB · fast + coherent" },
-    { tier: "high", model: "qwen2.5:14b", label: "🚀 Best", sub: "16 GB GPU · 9 GB · fits, no spill" },
-  ];
-  const EMBED_MODELS = [
-    { name: "nomic-embed-text", size: "274 MB", tier: "low", note: "Default. Fast, good quality" },
-    { name: "all-minilm", size: "46 MB", tier: "low", note: "Tiny, very fast" },
-    { name: "bge-m3", size: "1.2 GB", tier: "mid", note: "Multilingual - great for Czech search" },
-    { name: "mxbai-embed-large", size: "670 MB", tier: "mid", note: "Higher-quality embeddings" },
-  ];
+  const QUICK_SETUP = $derived.by(() => [
+    { tier: "low", model: "llama3.2:3b", label: t("sAi.qsFast"), sub: t("sAi.qsFastSub") },
+    { tier: "mid", model: "mistral-nemo:12b", label: t("sAi.qsBalanced"), sub: t("sAi.qsBalancedSub") },
+    { tier: "high", model: "qwen2.5:14b", label: t("sAi.qsBest"), sub: t("sAi.qsBestSub") },
+  ]);
+  const EMBED_MODELS = $derived.by(() => [
+    { name: "nomic-embed-text", size: "274 MB", tier: "low", note: t("sAi.noteNomic") },
+    { name: "all-minilm", size: "46 MB", tier: "low", note: t("sAi.noteMinilm") },
+    { name: "bge-m3", size: "1.2 GB", tier: "mid", note: t("sAi.noteBgeM3") },
+    { name: "mxbai-embed-large", size: "670 MB", tier: "mid", note: t("sAi.noteMxbai") },
+  ]);
   const TIERS = ["low", "mid", "high"];
   // Model identity, tag-aware but tolerant of the default tag:
   //  - gemma3:12b vs gemma3:27b  -> DIFFERENT (both explicit sizes)
@@ -235,12 +237,12 @@
               <span class="mnote">{m.note}</span>
             </div>
             {#if isActive(m.name, kind)}
-              <span class="musing">{@html icons.done} Using</span>
+              <span class="musing">{@html icons.done} {t("sAi.using")}</span>
             {:else if isInstalled(m.name)}
-              <span class="minstalled">Installed</span>
-              <button class="btn sm" onclick={() => useModel(m.name, kind)}>Use</button>
+              <span class="minstalled">{t("sAi.installed")}</span>
+              <button class="btn sm" onclick={() => useModel(m.name, kind)}>{t("sAi.use")}</button>
             {:else}
-              <button class="btn sm ghost" onclick={() => startPull(m.name)} disabled={pull?.active}>↓ Pull</button>
+              <button class="btn sm ghost" onclick={() => startPull(m.name)} disabled={pull?.active}>↓ {t("sAi.pull")}</button>
             {/if}
           </div>
         {/each}
@@ -251,16 +253,14 @@
 
 <div class="wrap">
   <section class="card">
-    <h3>AI assistant <span class="tag">{aiProv === "ollama" ? "local · private" : "bring your own key"}</span></h3>
-    <p class="hint">Powers the AI assistant, “Catch me up”, AI reply, compose rewrites, and inbox triage. Calls go
-      straight from this app to the provider you choose - there's no RaplMail server in between. Pick <b>Ollama</b> for a
-      fully local, offline model (nothing leaves your machine).</p>
-    <label class="fieldrow"><span>Provider</span>
+    <h3>{t("sAi.title")} <span class="tag">{aiProv === "ollama" ? t("sAi.tagLocal") : t("sAi.tagByok")}</span></h3>
+    <p class="hint">{t("sAi.introA")} <b>Ollama</b> {t("sAi.introB")}</p>
+    <label class="fieldrow"><span>{t("sAi.provider")}</span>
       <select value={aiProv} onchange={(e) => saveSettings({ aiProvider: e.currentTarget.value })}>
-        <option value="ollama">Ollama (local, private)</option>
+        <option value="ollama">{t("sAi.provOllama")}</option>
         <option value="anthropic">Anthropic (Claude)</option>
         <option value="openai">OpenAI</option>
-        <option value="openai-compatible">OpenAI-compatible (Groq, OpenRouter, LM Studio, …)</option>
+        <option value="openai-compatible">{t("sAi.provCompatible")}</option>
       </select>
     </label>
 
@@ -268,32 +268,32 @@
       <div class="ollama">
         <div class="ollama-head">
           <span class="dot" class:on={ollama.running}></span>
-          <b>{ollama.running ? "Ollama is running" : ollama.installed ? "Ollama installed (not running)" : "Ollama not detected"}</b>
+          <b>{ollama.running ? t("sAi.running") : ollama.installed ? t("sAi.installedNotRunning") : t("sAi.notDetected")}</b>
           {#if ollama.version}<span class="ver">v{ollama.version}</span>{/if}
-          <button class="btn ghost sm" onclick={refreshOllama} disabled={ollama.loading}>{@html icons.sync} {ollama.loading ? "…" : "Refresh"}</button>
+          <button class="btn ghost sm" onclick={refreshOllama} disabled={ollama.loading}>{@html icons.sync} {ollama.loading ? "…" : t("sAi.refresh")}</button>
           {#if ollama.installed || ollama.running}
-            <button class="btn ghost sm" onclick={restartOllama} disabled={starting} title="Stop and start the Ollama server (fixes a stuck server)">{starting ? "…" : "Restart"}</button>
+            <button class="btn ghost sm" onclick={restartOllama} disabled={starting} title={t("sAi.restartTitle")}>{starting ? "…" : t("sAi.restart")}</button>
           {/if}
         </div>
         {#if ollama.installed || ollama.running}
           <label class="autostart">
             <input type="checkbox" checked={app.settings.ollamaAutostart === true}
               onchange={(e) => { saveSettings({ ollamaAutostart: e.currentTarget.checked }); if (e.currentTarget.checked && !ollama.running) startOllama(); }} />
-            <span>Start Ollama automatically when RaplMail launches</span>
+            <span>{t("sAi.autostart")}</span>
           </label>
         {/if}
         {#if !ollama.installed && !ollama.running}
-          <p class="hint">Ollama runs open models (Llama, Qwen, Mistral…) locally. Install it once, then pull a model.</p>
+          <p class="hint">{t("sAi.installHint")}</p>
           <div class="rowbtns">
             <button class="btn primary" onclick={startInstall} disabled={install?.active}>
-              {install?.active ? (install.status || "Installing…") : "Install Ollama (winget)"}
+              {install?.active ? (install.status || t("sAi.installing")) : t("sAi.install")}
             </button>
-            <button class="btn" onclick={() => openExternal("https://ollama.com/download")}>Download manually</button>
+            <button class="btn" onclick={() => openExternal("https://ollama.com/download")}>{t("sAi.downloadManually")}</button>
           </div>
           {#if install?.error}<p class="hint err">{install.error}</p>{/if}
         {:else if ollama.running}
           <div class="quicksetup">
-            <span class="lab2">✨ One-click setup - pick your hardware, RaplMail pulls the model &amp; switches everything on</span>
+            <span class="lab2">{t("sAi.quickSetup")}</span>
             <div class="qsrow">
               {#each QUICK_SETUP as qs}
                 <button class="qsbtn" class:on={isActive(qs.model, "chat")} onclick={() => quickSetup(qs.model)} disabled={pull?.active}>
@@ -302,7 +302,7 @@
               {/each}
             </div>
           </div>
-          <label class="fieldrow"><span>Active model</span>
+          <label class="fieldrow"><span>{t("sAi.activeModel")}</span>
             {#if ollama.models.length}
               <select value={app.settings.aiModel || ollama.models[0]} onchange={(e) => saveSettings({ aiModel: e.currentTarget.value })}>
                 {#each ollama.models as m}<option value={m}>{m}</option>{/each}
@@ -311,113 +311,113 @@
               <input placeholder="llama3.2" value={app.settings.aiModel || ""} onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
             {/if}
           </label>
-          {#if !ollama.models.length}<p class="hint">No models yet - use one-click setup above, or pick/search below.</p>{/if}
+          {#if !ollama.models.length}<p class="hint">{t("sAi.noModels")}</p>{/if}
           <div class="pullrow">
-            <span class="lab2">Recommended - “Use” to switch, “Pull” to download</span>
+            <span class="lab2">{t("sAi.recommended")}</span>
             {@render modelPicker(CHAT_MODELS, "chat")}
           </div>
           <div class="pullrow">
-            <span class="lab2">Search all Ollama models <span class="live">live</span></span>
-            <input class="msearch" placeholder="Search… e.g. gemma, qwen, deepseek, phi" bind:value={modelQuery} oninput={searchModels} />
+            <span class="lab2">{t("sAi.searchAll")} <span class="live">{t("sAi.live")}</span></span>
+            <input class="msearch" placeholder={t("sAi.searchPlaceholder")} bind:value={modelQuery} oninput={searchModels} />
             {#if searching}
-              <p class="hint">Searching ollama.com…</p>
+              <p class="hint">{t("sAi.searching")}</p>
             {:else if searchResults.length}
               <div class="mpick">
                 {#each searchResults as name}
                   <div class="mrow" class:active={isActive(name, "chat")}>
                     <div class="minfo"><span class="mname">{name}</span></div>
-                    {#if isActive(name, "chat")}<span class="musing">{@html icons.done} Using</span>
-                    {:else if isInstalled(name)}<span class="minstalled">Installed</span><button class="btn sm" onclick={() => useModel(name, "chat")}>Use</button>
-                    {:else}<button class="btn sm ghost" onclick={() => startPull(name)} disabled={pull?.active}>↓ Pull</button>{/if}
+                    {#if isActive(name, "chat")}<span class="musing">{@html icons.done} {t("sAi.using")}</span>
+                    {:else if isInstalled(name)}<span class="minstalled">{t("sAi.installed")}</span><button class="btn sm" onclick={() => useModel(name, "chat")}>{t("sAi.use")}</button>
+                    {:else}<button class="btn sm ghost" onclick={() => startPull(name)} disabled={pull?.active}>↓ {t("sAi.pull")}</button>{/if}
                   </div>
                 {/each}
               </div>
             {:else if modelQuery.trim().length >= 2}
-              <p class="hint">No matches - or couldn't reach ollama.com (you can still “Pull” a name directly below).</p>
+              <p class="hint">{t("sAi.noMatches")}</p>
             {/if}
             <div class="pullcustom">
-              <input placeholder="…or pull an exact name/tag (e.g. gemma3:12b)" bind:value={pullName} onkeydown={(e) => { if (e.key === "Enter") startPull(); }} />
-              <button class="btn" onclick={() => startPull()} disabled={pull?.active || !pullName.trim()}>Pull</button>
+              <input placeholder={t("sAi.pullPlaceholder")} bind:value={pullName} onkeydown={(e) => { if (e.key === "Enter") startPull(); }} />
+              <button class="btn" onclick={() => startPull()} disabled={pull?.active || !pullName.trim()}>{t("sAi.pull")}</button>
             </div>
           </div>
           {#if pull?.active || (pull && !pull.done)}
             <div class="prog"><div class="bar" style="width:{pull.percent || 0}%"></div></div>
             <p class="hint">{pull.model}: {pull.status} {pull.percent ? `(${pull.percent}%)` : ""}</p>
           {/if}
-          <label class="fieldrow" style="margin-top:10px"><span>Free GPU after</span>
+          <label class="fieldrow" style="margin-top:10px"><span>{t("sAi.freeAfter")}</span>
             <select value={app.settings.ollamaKeepAlive || "5m"} onchange={(e) => saveSettings({ ollamaKeepAlive: e.currentTarget.value })}>
-              <option value="adaptive">Adaptive - load when RaplMail is focused, free when it isn't</option>
-              <option value="0">Immediately (unload after each request)</option>
-              <option value="30s">30 seconds idle</option>
-              <option value="1m">1 minute idle</option>
-              <option value="5m">5 minutes idle (default)</option>
-              <option value="30m">30 minutes idle</option>
-              <option value="-1">Keep loaded (fastest, most GPU)</option>
+              <option value="adaptive">{t("sAi.keepAdaptive")}</option>
+              <option value="0">{t("sAi.keepNow")}</option>
+              <option value="30s">{t("sAi.keep30s")}</option>
+              <option value="1m">{t("sAi.keep1m")}</option>
+              <option value="5m">{t("sAi.keep5m")}</option>
+              <option value="30m">{t("sAi.keep30m")}</option>
+              <option value="-1">{t("sAi.keepForever")}</option>
             </select>
           </label>
           {#if (app.settings.ollamaKeepAlive || "5m") === "adaptive"}
-            <p class="hint" style="margin:0">Adaptive: the model loads into VRAM when the RaplMail window is focused and is freed a few seconds after you switch away - unless you're mid-question. Ready when you are, off when you're not.</p>
+            <p class="hint" style="margin:0">{t("sAi.adaptiveHint")}</p>
           {/if}
           <label class="check" style="margin-top:10px">
             <input type="checkbox" checked={app.settings.ollamaManaged !== false}
               onchange={(e) => { const v = e.currentTarget.checked; saveSettings({ ollamaManaged: v }); ai.ollamaManaged(v).catch(() => {}); refreshOllama(); }} />
-            <span>Hide Ollama's console windows <small>- RaplMail runs its own hidden Ollama server so the model loader never flashes black windows on load/unload (Windows). Your tray Ollama is left running but idle.</small></span>
+            <span>{t("sAi.hideConsole")} <small>- {t("sAi.hideConsoleHint")}</small></span>
           </label>
           <div class="rowbtns" style="margin-top:10px">
-            <button class="btn" onclick={freeGpu} disabled={unloading}>{@html icons.bolt} {unloading ? "Freeing…" : "Free GPU now"}</button>
-            <button class="btn ghost" onclick={updateOllama} disabled={install?.active}>{install?.active ? (install.status || "Updating…") : "Update Ollama"}</button>
+            <button class="btn" onclick={freeGpu} disabled={unloading}>{@html icons.bolt} {unloading ? t("sAi.freeing") : t("sAi.freeNow")}</button>
+            <button class="btn ghost" onclick={updateOllama} disabled={install?.active}>{install?.active ? (install.status || t("sAi.updating")) : t("sAi.update")}</button>
           </div>
-          <p class="hint" style="margin-top:8px">Ollama keeps the model in VRAM after each request for fast follow-ups - that's the idle GPU use. Lower “Free GPU after” frees it sooner (at the cost of a reload on the next request). RaplMail also unloads the model when you close the AI assistant or leave a message where you used AI.</p>
+          <p class="hint" style="margin-top:8px">{t("sAi.vramHint")}</p>
         {:else}
-          <p class="hint">Ollama is installed but the server isn't running. Start it here to use local AI.</p>
+          <p class="hint">{t("sAi.notRunningHint")}</p>
           <div class="rowbtns">
-            <button class="btn primary" onclick={startOllama} disabled={starting}>{@html icons.bolt} {starting ? "Starting…" : "Start Ollama"}</button>
-            <button class="btn" onclick={restartOllama} disabled={starting}>Restart</button>
+            <button class="btn primary" onclick={startOllama} disabled={starting}>{@html icons.bolt} {starting ? t("sAi.starting") : t("sAi.start")}</button>
+            <button class="btn" onclick={restartOllama} disabled={starting}>{t("sAi.restart")}</button>
           </div>
         {/if}
-        <details class="adv"><summary>Advanced</summary>
-          <label class="fieldrow"><span>Server URL</span>
+        <details class="adv"><summary>{t("sAi.advanced")}</summary>
+          <label class="fieldrow"><span>{t("sAi.serverUrl")}</span>
             <input placeholder="http://localhost:11434" value={app.settings.aiBaseUrl || ""}
               onchange={(e) => { saveSettings({ aiBaseUrl: e.currentTarget.value.trim() }); refreshOllama(); }} />
           </label>
         </details>
       </div>
     {:else}
-      <label class="fieldrow"><span>API key</span>
+      <label class="fieldrow"><span>{t("sAi.apiKey")}</span>
         <input type="password" placeholder={aiProv === "anthropic" ? "sk-ant-…" : "sk-…"}
           value={app.settings.aiApiKey || ""}
           onchange={(e) => saveSettings({ aiApiKey: e.currentTarget.value.trim() })} />
       </label>
       {#if aiProv === "openai-compatible"}
-        <label class="fieldrow"><span>API base URL</span>
+        <label class="fieldrow"><span>{t("sAi.apiBaseUrl")}</span>
           <input placeholder="https://api.groq.com/openai/v1" value={app.settings.aiBaseUrl || ""}
             onchange={(e) => saveSettings({ aiBaseUrl: e.currentTarget.value.trim() })} />
         </label>
       {/if}
-      <label class="fieldrow"><span>Model (optional)</span>
+      <label class="fieldrow"><span>{t("sAi.modelOptional")}</span>
         <input placeholder={aiProv === "anthropic" ? "claude-haiku-4-5-20251001" : "gpt-4o-mini"}
           value={app.settings.aiModel || ""}
           onchange={(e) => saveSettings({ aiModel: e.currentTarget.value.trim() })} />
       </label>
-      <p class="hint">{app.settings.aiApiKey ? "✓ Key set - AI actions are active." : "No key - AI buttons stay hidden until you add one."}</p>
+      <p class="hint">{app.settings.aiApiKey ? t("sAi.keySet") : t("sAi.noKey")}</p>
     {/if}
     {#if aiActive}
       <label class="check">
         <input type="checkbox" checked={app.settings.aiButtons !== false}
           onchange={(e) => saveSettings({ aiButtons: e.currentTarget.checked })} />
-        <div><b>Show AI buttons</b><span>“Catch me up” / “AI reply” in the reader, the composer AI menu, and the assistant. Turn off to hide them even when a provider is set.</span></div>
+        <div><b>{t("sAi.showButtons")}</b><span>{t("sAi.showButtonsHint")}</span></div>
       </label>
     {/if}
     <label class="check">
       <input type="checkbox" checked={!!app.settings.digestEnabled}
         onchange={(e) => saveSettings({ digestEnabled: e.currentTarget.checked })} />
       <div>
-        <b>Daily morning briefing</b>
-        <span>Once a day, deliver an AI digest of your unread inbox as a notification (needs a provider above).</span>
+        <b>{t("sAi.digest")}</b>
+        <span>{t("sAi.digestHint")}</span>
       </div>
     </label>
     {#if app.settings.digestEnabled}
-      <label class="fieldrow"><span>Deliver at</span>
+      <label class="fieldrow"><span>{t("sAi.deliverAt")}</span>
         <select value={app.settings.digestHour ?? 8} onchange={(e) => saveSettings({ digestHour: Number(e.currentTarget.value) })}>
           {#each Array(24) as _, h}<option value={h}>{String(h).padStart(2, "0")}:00</option>{/each}
         </select>
@@ -426,61 +426,59 @@
   </section>
 
   <section class="card">
-    <h3>Semantic search <span class="tag">local · offline</span></h3>
-    <p class="hint">Search your mail by <b>meaning</b>, not just exact words - “that quote about server migration costs”
-      finds the right message even if it never used those exact words. RaplMail builds a local vector index using an
-      embedding model; the vectors stay on this machine. Default source is <b>Ollama</b>, so nothing leaves your network.</p>
+    <h3>{t("sAi.semTitle")} <span class="tag">{t("sAi.semTag")}</span></h3>
+    <p class="hint">{t("sAi.semIntroA")} <b>{t("sAi.semIntroMeaning")}</b>{t("sAi.semIntroB")} <b>Ollama</b>{t("sAi.semIntroC")}</p>
     <label class="check">
       <input type="checkbox" checked={!!app.settings.semanticEnabled}
         onchange={(e) => { saveSettings({ semanticEnabled: e.currentTarget.checked }); if (e.currentTarget.checked) refreshEmbed(); }} />
-      <div><b>Enable semantic search</b><span>Adds a “Smart” mode to the advanced search modal. Indexing runs quietly in the background.</span></div>
+      <div><b>{t("sAi.semEnable")}</b><span>{t("sAi.semEnableHint")}</span></div>
     </label>
     {#if app.settings.semanticEnabled}
-      <label class="fieldrow"><span>Embeddings source</span>
+      <label class="fieldrow"><span>{t("sAi.embedSource")}</span>
         <select value={app.settings.embedProvider || "ollama"} onchange={(e) => { saveSettings({ embedProvider: e.currentTarget.value }); refreshEmbed(); }}>
-          <option value="ollama">Ollama (local)</option>
-          <option value="openai-compatible">OpenAI-compatible</option>
+          <option value="ollama">{t("sAi.embedOllama")}</option>
+          <option value="openai-compatible">{t("sAi.embedCompatible")}</option>
         </select>
       </label>
       {#if (app.settings.embedProvider || "ollama") === "openai-compatible"}
-        <label class="fieldrow"><span>Base URL</span>
+        <label class="fieldrow"><span>{t("sAi.baseUrl")}</span>
           <input placeholder="https://api.openai.com/v1" value={app.settings.embedBaseUrl || ""}
             onchange={(e) => { saveSettings({ embedBaseUrl: e.currentTarget.value.trim() }); refreshEmbed(); }} />
         </label>
-        <label class="fieldrow"><span>API key</span>
+        <label class="fieldrow"><span>{t("sAi.apiKey")}</span>
           <input type="password" placeholder="sk-…" value={app.settings.embedApiKey || ""}
             onchange={(e) => saveSettings({ embedApiKey: e.currentTarget.value.trim() })} />
         </label>
       {:else}
-        <label class="fieldrow"><span>Server URL</span>
+        <label class="fieldrow"><span>{t("sAi.serverUrl")}</span>
           <input placeholder="http://localhost:11434" value={app.settings.embedBaseUrl || ""}
             onchange={(e) => { saveSettings({ embedBaseUrl: e.currentTarget.value.trim() }); refreshEmbed(); }} />
         </label>
       {/if}
-      <label class="fieldrow"><span>Model</span>
+      <label class="fieldrow"><span>{t("sAi.model")}</span>
         <input placeholder={(app.settings.embedProvider || "ollama") === "ollama" ? "nomic-embed-text" : "text-embedding-3-small"}
           value={app.settings.embedModel || ""} onchange={(e) => { saveSettings({ embedModel: e.currentTarget.value.trim() }); refreshEmbed(); }} />
       </label>
       {#if (app.settings.embedProvider || "ollama") === "ollama"}
         {#if ollama.running}
           <div class="pullrow" style="margin-top:6px">
-            <span class="lab2">Recommended embedding models</span>
+            <span class="lab2">{t("sAi.embedRecommended")}</span>
             {@render modelPicker(EMBED_MODELS, "embed")}
           </div>
         {:else}
-          <p class="hint">Start Ollama (in the AI assistant tab above) to pick or pull an embedding model. Suggested: <code>nomic-embed-text</code>, <code>bge-m3</code> (multilingual).</p>
+          <p class="hint">{t("sAi.embedStartHint")} <code>nomic-embed-text</code>, <code>bge-m3</code> {t("sAi.embedMultilingual")}</p>
         {/if}
       {:else}
-        <p class="hint warn-note">⚠ A cloud embeddings endpoint will send every indexed message's subject &amp; snippet to that provider and may cost money. For true zero-cloud, use Ollama.</p>
+        <p class="hint warn-note">{t("sAi.cloudWarn")}</p>
       {/if}
 
       {#if embed && embed.enabled && embed.model_installed === false}
         <div class="embed-warn">
-          <b>⚠ Embedding model not installed</b>
-          <span>Semantic search is on, but <code>{embed.model}</code> isn't pulled in Ollama, so indexing can't run (the server returns 404). Pull it, or turn semantic search off.</span>
+          <b>{t("sAi.embedMissingTitle")}</b>
+          <span>{t("sAi.embedMissingA")} <code>{embed.model}</code> {t("sAi.embedMissingB")}</span>
           <div class="rowbtns">
-            <button class="btn primary sm" onclick={pullEmbedModel} disabled={pull?.active}>↓ Pull {embed.model}</button>
-            <button class="btn ghost sm" onclick={turnOffSemantic}>Turn off semantic search</button>
+            <button class="btn primary sm" onclick={pullEmbedModel} disabled={pull?.active}>↓ {t("sAi.pullModel", { model: embed.model })}</button>
+            <button class="btn ghost sm" onclick={turnOffSemantic}>{t("sAi.turnOffSemantic")}</button>
           </div>
         </div>
       {/if}
@@ -488,16 +486,16 @@
       <div class="embed-status">
         {#if embed}
           <span class="dot" class:on={embed.reachable}></span>
-          <span>{embed.reachable ? "Endpoint reachable" : "Endpoint unreachable"} · <b>{embed.indexed}</b> / {embed.total} indexed · {embed.backend}</span>
+          <span>{embed.reachable ? t("sAi.reachable") : t("sAi.unreachable")} · <b>{embed.indexed}</b> / {embed.total} {t("sAi.indexed")} · {embed.backend}</span>
         {:else}
-          <span class="hint">Checking…</span>
+          <span class="hint">{t("sAi.checking")}</span>
         {/if}
       </div>
       <div class="rowbtns">
         <button class="btn primary" onclick={buildIndex} disabled={embed?.indexing}>
-          {@html icons.sync} {embed?.indexing ? "Indexing…" : "Build / update index"}
+          {@html icons.sync} {embed?.indexing ? t("sAi.indexing") : t("sAi.buildIndex")}
         </button>
-        <button class="btn ghost sm" onclick={refreshEmbed}>Refresh status</button>
+        <button class="btn ghost sm" onclick={refreshEmbed}>{t("sAi.refreshStatus")}</button>
       </div>
     {/if}
   </section>

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge, startComposeBridge, refreshWindowsAccent, watchSystemScheme } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -22,6 +22,7 @@
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
+  import SubscriptionsView from "./lib/components/SubscriptionsView.svelte";
   import CalendarView from "./lib/components/CalendarView.svelte";
   import TicketsView from "./lib/components/TicketsView.svelte";
   import Dashboard from "./lib/components/Dashboard.svelte";
@@ -55,8 +56,11 @@
   let lastX = 0;
   let dragW = $state({ sidebar: null, list: null });
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-  // Effective sidebar width - collapsed rail is a fixed 60px regardless of the stored width.
-  const effSidebarW = () => (app.settings.sidebarCollapsed ? 60 : (dragW.sidebar ?? app.settings.sidebarWidth));
+  // Effective sidebar width - collapsed it's a navigation rail, a fixed width
+  // regardless of the stored drawer width.
+  const RAIL_W = 80;
+  const PANE_GAP = 8;   // app.css --pane-gap
+  const effSidebarW = () => (app.settings.sidebarCollapsed ? RAIL_W : (dragW.sidebar ?? app.settings.sidebarWidth));
   function startResize(which, e) {
     resizing = which; e.preventDefault();
     window.addEventListener("pointermove", onResize);
@@ -67,8 +71,11 @@
     if (rafId) return;
     rafId = requestAnimationFrame(() => {
       rafId = 0;
-      if (resizing === "sidebar") dragW.sidebar = clamp(lastX, 150, 460);
-      else if (resizing === "list") dragW.list = clamp(lastX - effSidebarW(), 280, 760);
+      // The divider sits mid-gap (see the .resizer left offsets), so a pane's
+      // new edge is the pointer minus half a gap - otherwise the first move
+      // jumped the column by that much.
+      if (resizing === "sidebar") dragW.sidebar = clamp(lastX - PANE_GAP / 2, 150, 460);
+      else if (resizing === "list") dragW.list = clamp(lastX - effSidebarW() - PANE_GAP * 1.5, 280, 760);
     });
   }
   function endResize() {
@@ -103,6 +110,7 @@
 
   onMount(() => {
     applyTheme();
+    watchSystemScheme();   // "System" light/dark follows Windows live, in every window
     // A separate #compose / #reminder / #sandbox window must NOT run the app
     // services (events, calendar, pending-send recovery) - that duplicated
     // notifications and could redeliver a send the main window was still
@@ -112,10 +120,16 @@
     if (childWindow) { initSettings(); return; }
     initSettings();  // pull persisted settings from the backend file
     startSandboxBridge();  // act on "trust & open"/"save" requests from a sandbox
+    startComposeBridge();  // take over sends from detached compose windows (undo bar lives here)
     boot();
-    // Re-evaluate auto day/night theme periodically.
-    const t = setInterval(() => { if (app.settings.themeMode === "auto") applyTheme(); }, 600000);
-    return () => clearInterval(t);
+    // Re-evaluate auto day/night theme periodically; pick up a changed Windows
+    // accent on the same beat and whenever the window comes back to the front.
+    const t = setInterval(() => {
+      if (app.settings.themeMode === "auto") applyTheme();
+      refreshWindowsAccent();
+    }, 600000);
+    window.addEventListener("focus", refreshWindowsAccent);
+    return () => { clearInterval(t); window.removeEventListener("focus", refreshWindowsAccent); };
   });
 
   function onGlobalKey(e) {
@@ -184,7 +198,7 @@
   $effect(() => {
     if (app.vault.unlocked && !_booted && !childWindow) {
       _booted = true;
-      (async () => { await initSettings(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); })();
+      (async () => { await initSettings(); refreshWindowsAccent(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); })();
       startEvents();
       recategorizeOnce();
       recoverPendingSend();  // redeliver a send interrupted by a quit mid-undo-countdown
@@ -223,7 +237,7 @@
   <VaultGate />
 {:else}
   <div class="app" class:customizing={app.customizing} class:resizing={!!resizing}
-       style="--sidebar-w: {app.settings.sidebarCollapsed ? '60px' : (dragW.sidebar ?? app.settings.sidebarWidth) + 'px'}; --list-w: {(dragW.list ?? app.settings.listWidth)}px">
+       style="--sidebar-w: {app.settings.sidebarCollapsed ? RAIL_W + 'px' : (dragW.sidebar ?? app.settings.sidebarWidth) + 'px'}; --list-w: {(dragW.list ?? app.settings.listWidth)}px">
     <Sidebar />
     {#if app.view === "settings"}
       <Settings />
@@ -231,6 +245,8 @@
       <ScheduledView />
     {:else if app.view === "newsfeed"}
       <NewsletterFeed />
+    {:else if app.view === "subscriptions"}
+      <SubscriptionsView />
     {:else if app.view === "calendar"}
       <CalendarView />
     {:else if app.view === "tickets"}
@@ -244,11 +260,11 @@
 
     {#if app.customizing}
       {#if !app.settings.sidebarCollapsed}
-        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--pane-gap) * 1.5)" title="Drag to resize the sidebar"
+        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--pane-gap) * 0.5)" title="Drag to resize the sidebar"
              onpointerdown={(e) => startResize("sidebar", e)}></div>
       {/if}
       {#if app.view === "mail"}
-        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--list-w) + var(--pane-gap) * 2.5)" title="Drag to resize the message list"
+        <div class="resizer" style="left: calc(var(--sidebar-w) + var(--list-w) + var(--pane-gap) * 1.5)" title="Drag to resize the message list"
              onpointerdown={(e) => startResize("list", e)}></div>
       {/if}
       <div class="customize-banner">
@@ -296,7 +312,9 @@
     display: grid;
     grid-template-columns: var(--sidebar-w) var(--list-w) 1fr;
     gap: var(--pane-gap);
-    padding: var(--pane-gap);
+    /* No left padding: the navigation sits flush on the ground (its own padding
+       spaces it), the way an Android navigation drawer / rail does. */
+    padding: var(--pane-gap) var(--pane-gap) var(--pane-gap) 0;
     height: 100%;
     position: relative;
     /* No background of its own: the body paints the ground (--app-bg, or its

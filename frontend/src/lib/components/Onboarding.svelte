@@ -1,8 +1,8 @@
 <script>
-  import { app, saveSettings, applyTheme, setLanguage, selectSmartInbox,
+  import { app, saveSettings, setLanguage, selectSmartInbox,
            setAutostart, enableNotifications, isTauri, notify } from "../store.svelte.js";
   import { t, LANGUAGES } from "../i18n.svelte.js";
-  import { ONBOARDING_PRESETS } from "../themes.js";
+  import ColorPicker from "./ColorPicker.svelte";
   import { icons } from "../icons.js";
 
   // Full-screen first-run experience: a brand rail with the step list on the
@@ -25,14 +25,6 @@
   // Re-run (from debug): everything is optional, so any visited step is jumpable.
   let maxVisited = $state(0);
   $effect(() => { if (i > maxVisited) maxVisited = i; });
-
-  // Live-preview the theme as the user clicks a preset, then persist it.
-  let pickedTheme = $state(app.settings.theme && Object.keys(app.settings.theme).length ? null : "Dark");
-  function pickTheme(p) {
-    pickedTheme = p.name;
-    saveSettings({ theme: { ...p.theme }, themeMode: "manual" });
-    applyTheme();
-  }
 
   // Option toggles mirror the real settings and apply immediately.
   function setLang(id) { setLanguage(id); }
@@ -60,11 +52,11 @@
     { tab: "accounts", icon: icons.accounts, title: t("settingsNav.accounts"), body: t("onboarding.setAccounts") },
     { tab: "appearance", icon: icons.palette, title: t("settingsNav.appearance"), body: t("onboarding.setAppearance") },
     { tab: "rules", icon: icons.rules, title: t("settingsNav.rules"), body: t("onboarding.setRules") },
-    { tab: "signature", icon: icons.signature, title: t("settingsNav.signature"), body: t("onboarding.setSignature") },
+    { tab: "compose", icon: icons.compose, title: t("settingsNav.compose"), body: t("onboarding.setCompose") },
     { tab: "ai", icon: icons.bolt, title: t("settingsNav.ai"), body: t("onboarding.setAi") },
-    { tab: "sync", icon: icons.sync, title: t("settingsNav.sync"), body: t("onboarding.setSync") },
+    { tab: "backup", icon: icons.sync, title: t("settingsNav.backup"), body: t("onboarding.setBackup") },
     { tab: "shortcuts", icon: icons.keyboard, title: t("settingsNav.shortcuts"), body: t("onboarding.setShortcuts") },
-    { tab: "general", icon: icons.general, title: t("settingsNav.general"), body: t("onboarding.setGeneral") },
+    { tab: "inbox", icon: icons.inbox, title: t("settingsNav.inbox"), body: t("onboarding.setInbox") },
   ]);
 
   function next() { if (i < total - 1) i += 1; }
@@ -171,20 +163,9 @@
       {:else if step === "theme"}
         <h1>{t("onboarding.themeTitle")}</h1>
         <p class="lead">{t("onboarding.themeBody")}</p>
-        <div class="themes">
-          {#each ONBOARDING_PRESETS as p}
-            <button class="theme" class:sel={pickedTheme === p.name} onclick={() => pickTheme(p)}
-              style="--sw:{p.theme['--accent'] || '#5e8bff'}; --bgp:{p.theme['--bg'] || '#0b0d12'}; --sfp:{p.theme['--surface'] || '#12151d'}">
-              <span class="chip">
-                <i class="win">
-                  <i class="bar"></i>
-                  <i class="row"></i><i class="row short"></i><i class="row"></i>
-                </i>
-              </span>
-              <span class="tn">{p.name}</span>
-            </button>
-          {/each}
-        </div>
+        <!-- The same dynamic-colour controls as Settings → Appearance; every
+             pick previews live behind the wizard. -->
+        <div class="colors"><ColorPicker /></div>
 
       {:else if step === "options"}
         <h1>{t("onboarding.optionsTitle")}</h1>
@@ -258,7 +239,7 @@
     background: color-mix(in srgb, var(--surface) 62%, transparent); backdrop-filter: blur(10px); }
   .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 34px; }
   .mark { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; flex: none;
-    background: var(--accent); color: #fff;
+    background: var(--accent); color: var(--on-accent);
     box-shadow: 0 8px 24px color-mix(in srgb, var(--accent) 40%, transparent); }
   .mark :global(svg) { width: 22px; height: 22px; }
   .bt b { display: block; font-size: 17px; letter-spacing: -0.02em; color: var(--text); }
@@ -277,7 +258,7 @@
   .stp.done .dot { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent);
     border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
   .stp.cur { color: var(--text); }
-  .stp.cur .dot { background: var(--accent); color: #fff; border-color: var(--accent);
+  .stp.cur .dot { background: var(--accent); color: var(--on-accent); border-color: var(--accent);
     box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
   .sl { font-size: 13.5px; font-weight: 550; }
 
@@ -330,22 +311,8 @@
   .ft b { display: block; font-size: 13.5px; color: var(--text); }
   .ft span { display: block; font-size: 12px; color: var(--muted); line-height: 1.55; margin-top: 3px; }
 
-  /* theme grid - each preset renders a tiny fake app window in its palette */
-  .themes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; max-width: 700px; }
-  .theme { display: flex; flex-direction: column; align-items: stretch; gap: 9px; padding: 11px; cursor: pointer;
-    border-radius: var(--radius); border: 1px solid var(--border); background: var(--surface-2);
-    transition: border-color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease-spring); }
-  .theme:hover { transform: translateY(-2px); }
-  .theme.sel { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
-  .theme .chip { display: block; height: 74px; border-radius: 9px; overflow: hidden;
-    border: 1px solid var(--border); background: var(--bgp); padding: 8px; }
-  .theme .win { display: flex; flex-direction: column; gap: 5px; height: 100%; border-radius: 6px;
-    background: var(--sfp); padding: 7px; }
-  .theme .bar { display: block; height: 7px; width: 46%; border-radius: 4px; background: var(--sw); }
-  .theme .row { display: block; height: 5px; width: 88%; border-radius: 3px;
-    background: color-mix(in srgb, var(--sw) 16%, transparent); }
-  .theme .row.short { width: 62%; }
-  .theme .tn { font-size: 12.5px; color: var(--muted); font-weight: 550; text-align: center; }
+  /* colour step: the shared picker on a card */
+  .colors { max-width: 640px; padding: 8px 24px 12px; border-radius: var(--radius-lg); background: var(--surface); }
 
   /* option toggles */
   .opts { display: flex; flex-direction: column; gap: 12px; max-width: 560px; }
@@ -371,7 +338,7 @@
 
   /* "Add an account" CTA on the final step */
   .cta { display: inline-flex; align-items: center; gap: 9px; margin: 4px auto 0; padding: 12px 24px;
-    border-radius: 999px; background: var(--accent); color: #fff; font-size: 15px; font-weight: 600;
+    border-radius: 999px; background: var(--accent); color: var(--on-accent); font-size: 15px; font-weight: 600;
     box-shadow: 0 8px 26px color-mix(in srgb, var(--accent) 32%, transparent); cursor: pointer;
     transition: filter var(--t-fast) var(--ease), transform var(--t-fast) var(--ease-spring); }
   .cta:hover { filter: brightness(1.06); transform: translateY(-1px); }

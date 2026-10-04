@@ -7,6 +7,7 @@
   import { sanitizeTrackers, escapeHtml, emailDoc, splitQuoted, plainBody } from "../email.js";
   import { fileExt, fileKind, isImageName } from "../attachments.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
   import { fade } from "svelte/transition";
   import ThreadView from "./ThreadView.svelte";
   import SuspiciousModal from "./SuspiciousModal.svelte";
@@ -77,8 +78,14 @@
     else if (rc.cmd === "forward") forward();
   });
 
+  // For the quote / forward headers we write into a reply ("On ..., X wrote:",
+  // "Date:") - English text, so the date keeps the format it always had.
   function fmtDate(iso) {
     return iso ? new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" }) : "";
+  }
+  // The date shown in the header follows the app's language.
+  function fmtShown(iso) {
+    return iso ? new Date(iso).toLocaleString(dateLocale(), { dateStyle: "medium", timeStyle: "short" }) : "";
   }
 
   // AI actions only appear once a key is configured (and not explicitly disabled).
@@ -716,7 +723,7 @@
     {#key app.selectedMessageId}
     <div class="msgfade" in:fade={{ duration: 120 }}>
     <div class="reader-scroll">
-    <header oncontextmenu={openReaderCtx} style={multiAcct && readerAcctColor ? `border-left:3px solid ${readerAcctColor}` : ""}>
+    <header oncontextmenu={openReaderCtx} class:acct={multiAcct && readerAcctColor} style={multiAcct && readerAcctColor ? `--acct:${readerAcctColor}` : ""}>
       <div class="subject">{detail.subject || t("reader.noSubject")}</div>
       {#if detail.is_reply_to_me}
         <div class="replied" title={t("reader.replyToYouTitle")}>
@@ -741,7 +748,7 @@
             </div>
           {/if}
         </span>
-        <span class="date">{fmtDate(detail.date)}</span>
+        <span class="date">{fmtShown(detail.date)}</span>
       </div>
       <div class="to">
         {#if toAddrs.length || ccAddrs.length}
@@ -1020,7 +1027,7 @@
             <div class="snz-menu" class:up={actionsBottom} onclick={(e) => e.stopPropagation()}>
               {#each snoozePresets() as p}
                 <button onclick={() => { snoozeMenu = false; snoozeMessage(detail, p.iso, p.presence); }}>
-                  {p.label}{#if p.at} · <span class="when">{presetWhen(p.at)}</span>{/if}
+                  {p.label}{#if p.at}{" · "}<span class="when">{presetWhen(p.at)}</span>{/if}
                 </button>
               {/each}
             </div>
@@ -1042,13 +1049,14 @@
 {/snippet}
 
 <style>
-  /* The reader is a clipped card; the SCROLLING happens one level down in
-     .reader-scroll. If the reader itself scrolled, its own scrollbar was drawn in
-     its (rectangular) border box - poking past the rounded corners and running
-     alongside the bottom action bar. As a descendant, the scrollbar is clipped by
-     the card's radius and stops above the footer. */
-  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--bg);
-    border: 1px solid var(--border); border-radius: var(--radius-lg); }
+  /* The reading pane: one raised, rounded container (Material's surface
+     container). The SCROLLING happens one level down in .reader-scroll - if the
+     reader itself scrolled, its scrollbar was drawn in its (rectangular) border
+     box, poking past the rounded corners and running alongside the bottom
+     action bar. As a descendant, the scrollbar is clipped by the radius and
+     stops above the footer. */
+  .reader { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: var(--surface);
+    border-radius: var(--radius-lg); }
   /* Wraps the single message so it cross-fades in when you switch mails (keyed on
      the selected id) instead of hard-popping. */
   .msgfade { flex: 1; min-height: 0; display: flex; flex-direction: column; min-width: 0; }
@@ -1056,177 +1064,181 @@
      pinned while only the iframe scrolled, which ate half the pane on tall
      headers). The body iframe sizes itself to content. */
   .reader-scroll { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; }
-  .placeholder { flex: 1; display: flex; flex-direction: column; gap: 12px; align-items: center; justify-content: center; color: var(--muted); animation: rise-in var(--t-slow) var(--ease); }
-  .placeholder .big { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 22px;
-    background: var(--accent-soft); color: var(--accent); font-size: 32px;
-    box-shadow: inset 0 0 0 1px var(--accent-soft-2); }
-  .placeholder .big :global(svg) { width: 34px; height: 34px; }
+  .placeholder { flex: 1; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; color: var(--muted); font-size: 15px; animation: rise-in var(--t-slow) var(--ease); }
+  .placeholder .big { display: grid; place-items: center; width: 80px; height: 80px; border-radius: 50%;
+    background: var(--sel); color: var(--on-sel); }
+  .placeholder .big :global(svg) { width: 40px; height: 40px; }
   .placeholder.err { color: var(--danger); }
   .placeholder .rapl-link { margin-top: 2px; font-size: 12px; color: var(--accent); text-decoration: none; opacity: 0.8; }
   .placeholder .rapl-link:hover { opacity: 1; text-decoration: underline; }
-  /* Rounded "message header" card - mirrors the thread's per-message cards for a
-     unified feel (was a flat full-width bar with a bottom border). */
-  header { margin: 14px 16px 8px; padding: 15px 18px; background: var(--surface); border: 1px solid var(--border);
-    border-radius: var(--radius-lg); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); display: flex; flex-direction: column; gap: 6px; }
-  .subject { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.3; }
-  .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 13px; align-items: flex-start; }
-  .to { color: var(--faint); font-size: 12px; }
+  /* Message header: flat on the pane - subject large and light, the people
+     under it, the actions as pill buttons. */
+  header { position: relative; padding: 24px 28px 14px; display: flex; flex-direction: column; gap: 8px; }
+  /* Which account the message came to (several accounts): a short mark beside
+     the subject. */
+  header.acct::before { content: ""; position: absolute; left: 12px; top: 28px; width: 4px; height: 24px; border-radius: 2px; background: var(--acct); }
+  .subject { font-size: 24px; font-weight: 400; line-height: 32px; letter-spacing: 0; overflow-wrap: anywhere; }
+  .meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 14px; align-items: flex-start; }
+  .meta .addr.from b { color: var(--text); font-weight: 600; }
+  .date { flex: none; font-size: 13px; }
+  .to { color: var(--muted); font-size: 13px; }
   .replied {
-    align-self: flex-start; display: inline-flex; align-items: center; gap: 4px;
-    font-size: 11px; font-weight: 700; line-height: 1; padding: 3px 8px;
-    border-radius: 999px; color: var(--accent); background: var(--accent-soft);
+    align-self: flex-start; display: inline-flex; align-items: center; gap: 5px;
+    font-size: 12px; font-weight: 600; line-height: 1; padding: 5px 10px;
+    border-radius: 8px; color: var(--on-accent-cont); background: var(--accent-cont);
   }
-  .replied :global(svg) { width: 11px; height: 11px; }
+  .replied :global(svg) { width: 14px; height: 14px; }
   .rcpt-label { margin-left: 6px; }
   .rcpt-label.lead { margin-left: 0; }
   .undisclosed { font-style: italic; opacity: .7; margin-left: 4px; }
-  .more-to { color: var(--accent); font-size: 12px; font-weight: 600; padding: 1px 5px; border-radius: 5px; }
-  .more-to:hover { background: var(--surface-2); }
+  .more-to { color: var(--accent); font-size: 13px; font-weight: 600; padding: 1px 6px; border-radius: 6px; }
+  .more-to:hover { background: var(--hover); }
   .addr-wrap { position: relative; display: inline-block; }
-  .addr { color: inherit; text-align: left; border-radius: 5px; padding: 1px 4px; cursor: pointer; }
-  .addr:hover { background: var(--surface-2); color: var(--accent); }
-  .addr.small { color: var(--faint); }
+  .addr { color: inherit; text-align: left; border-radius: 6px; padding: 1px 4px; cursor: pointer; }
+  .addr:hover { background: var(--hover); color: var(--accent); }
+  .addr.small { color: var(--muted); }
   .menu {
-    position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; min-width: 240px;
-    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    position: absolute; top: 100%; left: 0; z-index: 20; margin-top: 4px; min-width: 250px;
+    background: var(--surface-2); border-radius: var(--radius-menu);
+    box-shadow: var(--shadow-lg); padding: 6px 0; display: flex; flex-direction: column;
     animation: pop-in var(--t) var(--ease); transform-origin: top left;
   }
-  .menu button { text-align: left; padding: 8px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
-  .menu button:hover { background: var(--accent); color: #fff; }
+  .menu button { display: flex; align-items: center; gap: 12px; text-align: left; padding: 9px 16px; border-radius: 0; color: var(--text); font-size: 14px; }
+  .menu button :global(svg) { width: 20px; height: 20px; color: var(--muted); flex: none; }
+  .menu button:hover { background: var(--hover); }
   .actions { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
   /* Bottom mode: a real footer OUTSIDE the scroll area (rendered after
      .reader-scroll), right-aligned - so the scrollbar ends above it instead of
      running past it. */
   .actions.bottom { margin-top: 0; flex: none; justify-content: flex-end;
-    padding: 10px 18px; background: var(--bg);
+    padding: 12px 20px; background: var(--surface);
     border-top: 1px solid var(--hairline); }
   .btn.ai { color: var(--accent); }
-  .ai-summary { margin: 0 22px 4px; padding: 12px 14px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border)); border-radius: var(--radius); }
-  .ai-head { display: flex; align-items: center; gap: 7px; font-size: 13px; color: var(--accent); margin-bottom: 6px; }
-  .ai-close { margin-left: auto; color: var(--muted); display: inline-flex; }
-  .ai-close:hover { color: var(--text); }
-  .ai-summary pre { white-space: pre-wrap; font: 13px/1.55 system-ui, sans-serif; color: var(--text); margin: 0; }
-  .ai-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
-  .ai-chip { padding: 4px 12px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: 12px; color: var(--text); }
-  .ai-chip:hover { border-color: var(--accent); color: var(--accent); }
-  .ai-actions { display: flex; align-items: center; gap: 12px; margin-top: 10px; }
-  .ai-note { font-size: 11px; color: var(--muted); }
+  .ai-summary { margin: 0 24px 8px; padding: 14px 16px; background: color-mix(in srgb, var(--accent) 9%, var(--surface)); border-radius: var(--radius); }
+  .ai-head { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--accent); margin-bottom: 6px; }
+  .ai-head :global(svg) { width: 18px; height: 18px; }
+  .ai-close { margin-left: auto; color: var(--muted); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; }
+  .ai-close:hover { color: var(--text); background: var(--hover); }
+  .ai-summary pre { white-space: pre-wrap; font: 14px/1.6 var(--font); color: var(--text); margin: 0; }
+  .ai-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .ai-chip { height: 32px; padding: 0 14px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--outline); font-size: 13px; color: var(--text); }
+  .ai-chip:hover { background: var(--hover); }
+  .ai-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+  .ai-note { font-size: 12px; color: var(--muted); }
   .actions .btn.on { color: var(--warning); border-color: var(--warning); }
   .actions .btn.del:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
   .snz-wrap { position: relative; display: inline-block; }
   .snz-menu {
-    position: absolute; top: calc(100% + 4px); left: 0; z-index: 25; min-width: 170px;
-    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+    position: absolute; top: calc(100% + 4px); left: 0; z-index: 25; min-width: 200px;
+    background: var(--surface-2); border-radius: var(--radius-menu);
+    box-shadow: var(--shadow-lg); padding: 6px 0; display: flex; flex-direction: column;
     animation: pop-in var(--t) var(--ease); transform-origin: top left;
   }
   .snz-menu.up { top: auto; bottom: calc(100% + 4px); transform-origin: bottom left; }
-  .snz-menu button { text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--text); font-size: 13px; }
-  .snz-menu button:hover { background: var(--accent); color: #fff; }
-  .snz-menu .when { color: var(--faint); font-size: 11px; }
-  .snz-menu button:hover .when { color: #e7e9ff; }
+  .snz-menu button { text-align: left; padding: 9px 16px; border-radius: 0; color: var(--text); font-size: 14px; }
+  .snz-menu button:hover { background: var(--hover); }
+  .snz-menu .when { color: var(--muted); font-size: 12px; }
   /* Security pills: trust / auth / PGP / S/MIME + screener / mailing-list /
-     trackers, all collapsed into one compact badge row. Click a badge to reveal
+     trackers, all collapsed into one compact chip row. Click a chip to reveal
      its detail + actions below. */
-  .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 2px 18px 8px; }
-  .sec-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600;
-    padding: 3px 10px; border-radius: 999px; border: 1px solid; cursor: pointer; line-height: 1.4;
+  .sec-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 28px 10px; }
+  .sec-pill { display: inline-flex; align-items: center; gap: 6px; height: 30px; font-size: 13px; font-weight: 500;
+    padding: 0 12px 0 10px; border-radius: 8px; border: none; cursor: pointer; line-height: 1.4;
     transition: filter var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease); }
-  .sec-pill :global(svg) { width: 13px; height: 13px; }
-  .sec-pill.ok { color: var(--done); background: var(--done-soft); border-color: color-mix(in srgb, var(--done) 32%, transparent); }
-  .sec-pill.bad { color: var(--danger); background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 32%, transparent); }
-  .sec-pill.warn { color: var(--warning); background: color-mix(in srgb, var(--warning) 13%, transparent); border-color: color-mix(in srgb, var(--warning) 32%, transparent); }
-  .sec-pill.neutral { color: var(--muted); background: var(--surface-2); border-color: var(--border); }
-  .sec-pill:hover { filter: brightness(1.06); }
-  .sec-pill.open { box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 28%, transparent); }
+  .sec-pill :global(svg) { width: 16px; height: 16px; }
+  .sec-pill.ok { color: var(--done); background: var(--done-soft); }
+  .sec-pill.bad { color: var(--danger); background: var(--danger-soft); }
+  .sec-pill.warn { color: var(--warning); background: var(--warning-soft); }
+  .sec-pill.neutral { color: var(--muted); background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
+  .sec-pill:hover { filter: brightness(1.08); }
+  .sec-pill.open { box-shadow: inset 0 0 0 1.5px currentColor; }
   .sp-caret { font-size: 9px; opacity: 0.65; transition: transform var(--t-fast) var(--ease); }
   .sp-caret.up { transform: rotate(180deg); }
-  .sec-detail { display: flex; align-items: center; gap: 10px; margin: 0 16px 8px; padding: 8px 14px; font-size: 12px;
-    border: 1px solid var(--hairline); border-radius: var(--radius);
+  .sec-detail { display: flex; align-items: center; gap: 10px; margin: 0 24px 10px; padding: 10px 16px; font-size: 13px;
+    border-radius: var(--radius-sm);
     animation: pop-in var(--t) var(--ease); }
   .sec-detail.ok { background: var(--done-soft); color: var(--done); }
   .sec-detail.bad { background: var(--danger-soft); color: var(--danger); }
-  .sec-detail.warn { background: color-mix(in srgb, var(--warning) 13%, transparent); color: var(--warning); }
-  .sec-detail.neutral { background: var(--surface); color: var(--muted); }
+  .sec-detail.warn { background: var(--warning-soft); color: var(--warning); }
+  .sec-detail.neutral { background: var(--surface-2); color: var(--muted); }
   .sec-detail.trackers { flex-wrap: wrap; }
   .sd-text { flex: 1; min-width: 0; }
-  .sd-act { flex: none; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
-    border: 1px solid currentColor; color: inherit; display: inline-flex; align-items: center; gap: 5px; }
+  .sd-act { flex: none; font-size: 13px; font-weight: 600; height: 30px; padding: 0 12px; border-radius: 999px;
+    border: 1px solid currentColor; color: inherit; display: inline-flex; align-items: center; gap: 6px; }
   .sd-act:first-of-type { margin-left: auto; }
   .sd-act.danger { color: var(--danger); }
-  .sd-act :global(svg) { width: 13px; height: 13px; }
-  .sd-act:hover { background: var(--surface-2); }
+  .sd-act :global(svg) { width: 16px; height: 16px; }
+  .sd-act:hover { background: var(--hover); }
   .tracker-list { flex-basis: 100%; margin: 4px 0 0; padding: 0 0 0 18px; max-height: 120px; overflow-y: auto; }
   .tracker-list li { color: var(--faint); font-size: 11px; font-family: ui-monospace, monospace; word-break: break-all; line-height: 1.6; }
   .sec-detail.aiverdict { flex-wrap: wrap; }
-  .ai-disclaimer { flex-basis: 100%; font-size: 11px; opacity: 0.75; margin-top: 2px; }
+  .ai-disclaimer { flex-basis: 100%; font-size: 11.5px; opacity: 0.75; margin-top: 2px; }
   .ai-spin { display: inline-flex; animation: ai-pulse 1s var(--ease) infinite; }
   @keyframes ai-pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
   /* Reader right-click menu. */
-  .reader-ctx { position: fixed; z-index: 60; min-width: 210px; max-width: 280px;
-    background: var(--surface-2); border: 1px solid var(--hairline); border-radius: var(--radius-sm);
-    box-shadow: var(--shadow-lg); padding: 4px; display: flex; flex-direction: column;
+  .reader-ctx { position: fixed; z-index: 60; min-width: 230px; max-width: 300px;
+    background: var(--surface-2); border-radius: var(--radius-menu);
+    box-shadow: var(--shadow-lg); padding: 6px 0; display: flex; flex-direction: column;
     animation: pop-in var(--t) var(--ease); transform-origin: top left; }
-  .rc-item { display: flex; align-items: center; gap: 9px; text-align: left; padding: 8px 10px;
-    border-radius: 6px; color: var(--text); font-size: 13px; }
-  .rc-item:hover { background: var(--accent); color: #fff; }
-  .rc-item :global(svg) { width: 15px; height: 15px; flex: none; }
-  .rc-sep { height: 1px; background: var(--hairline); margin: 4px 6px; }
-  .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 16px 10px; padding: 10px 14px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
-  .att-label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); margin-right: 4px; }
-  .att { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2); max-width: 300px; overflow: hidden; }
-  .att:hover { border-color: var(--accent); }
+  .rc-item { display: flex; align-items: center; gap: 12px; text-align: left; padding: 9px 16px;
+    border-radius: 0; color: var(--text); font-size: 14px; }
+  .rc-item:hover { background: var(--hover); }
+  .rc-item :global(svg) { width: 20px; height: 20px; flex: none; color: var(--muted); }
+  .rc-sep { height: 1px; background: var(--hairline); margin: 6px 0; }
+  /* Attachments: outlined cards. */
+  .attachments { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 24px 12px; }
+  .att-label { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; color: var(--muted); margin-right: 4px; flex-basis: 100%; }
+  .att-label :global(svg) { width: 18px; height: 18px; }
+  .att { display: inline-flex; align-items: stretch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: transparent; max-width: 320px; overflow: hidden;
+    transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); }
+  .att:hover { border-color: var(--outline); background: var(--hover); }
   .att.busy { opacity: 0.6; }
-  .att-open { display: inline-flex; align-items: center; gap: 9px; padding: 5px 10px 5px 6px; min-width: 0; }
-  .att-save { display: inline-flex; align-items: center; padding: 0 9px; border-left: 1px solid var(--border); color: var(--muted); }
-  .att-save:hover { background: var(--surface-3); color: var(--accent); }
-  .att-sandbox { display: inline-flex; align-items: center; padding: 0 9px; border-left: 1px solid var(--border); color: var(--muted); }
-  .att-sandbox:hover { background: var(--surface-3); color: var(--accent); }
-  .att-sandbox :global(svg) { width: 14px; height: 14px; }
+  .att-open { display: inline-flex; align-items: center; gap: 10px; padding: 8px 12px 8px 8px; min-width: 0; border-radius: 0; }
+  .att-save, .att-sandbox { display: inline-flex; align-items: center; padding: 0 10px; border-radius: 0; border-left: 1px solid var(--border); color: var(--muted); }
+  .att-save :global(svg), .att-sandbox :global(svg) { width: 18px; height: 18px; }
+  .att-save:hover, .att-sandbox:hover { background: var(--hover-2); color: var(--accent); }
   .att.risky { border-color: color-mix(in srgb, var(--danger, #e5484d) 45%, var(--border)); }
   .att-badge.risk { background: var(--danger, #e5484d); }
   .att-warn { display: inline-flex; vertical-align: -2px; margin-right: 3px; color: var(--danger, #e5484d); }
-  .att-warn :global(svg) { width: 12px; height: 12px; }
+  .att-warn :global(svg) { width: 13px; height: 13px; }
   .att-sub { display: flex; align-items: center; gap: 8px; }
-  .scan { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; }
-  .scan :global(svg) { width: 11px; height: 11px; }
+  .scan { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; font-weight: 600; }
+  .scan :global(svg) { width: 12px; height: 12px; }
   .scan.v-none, .scan.v-low { color: var(--ok, #30a46c); }
   .scan.v-medium { color: #b8801f; }
   .scan.v-high { color: var(--danger, #e5484d); }
   .scan.v-scanning { color: var(--muted); font-weight: 500; }
-  .att-thumb { width: 28px; height: 28px; border-radius: 5px; object-fit: cover; flex: none; background: var(--surface-3); }
-  .att-badge { flex: none; display: grid; place-items: center; width: 30px; height: 24px; border-radius: 5px;
-    font-size: 9px; font-weight: 800; letter-spacing: 0.02em; color: #fff; background: var(--muted); }
+  .att-thumb { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; flex: none; background: var(--surface-3); }
+  .att-badge { flex: none; display: grid; place-items: center; width: 34px; height: 28px; border-radius: 8px;
+    font-size: 9.5px; font-weight: 800; letter-spacing: 0.02em; color: #fff; background: var(--muted); }
   .att-badge.pdf { background: #d84a4a; } .att-badge.image { background: #2ba36b; }
   .att-badge.doc { background: #3e6fe6; } .att-badge.sheet { background: #1a9d5c; }
   .att-badge.slide { background: #e07b2e; } .att-badge.archive { background: #c9922b; }
   .att-badge.code { background: #6d5bd0; } .att-badge.audio { background: #b2478f; }
   .att-badge.video { background: #c0453f; }
   .att-meta { display: flex; flex-direction: column; min-width: 0; align-items: flex-start; }
-  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; max-width: 200px; }
-  .att-size { font-size: 11px; color: var(--faint); flex: none; }
+  .att-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; max-width: 210px; }
+  .att-size { font-size: 12px; color: var(--muted); flex: none; }
   .att-dl { color: var(--accent); }
-  .att-all { font-size: 12px; padding: 6px 12px; border-radius: var(--radius-sm); border: 1px solid var(--accent); color: var(--accent); background: transparent; }
-  .att-all:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
-  .unfurl { display: flex; gap: 12px; margin: 10px 16px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); text-decoration: none; color: inherit; max-height: 110px; overflow: hidden; }
-  .unfurl:hover { border-color: var(--accent); }
+  .att-all { font-size: 13px; font-weight: 500; height: 34px; padding: 0 14px; border-radius: 999px; color: var(--accent); background: transparent; }
+  .att-all:hover { background: var(--accent-soft); }
+  .unfurl { display: flex; gap: 12px; margin: 10px 24px; padding: 10px; border: 1px solid var(--border); border-radius: var(--radius); background: transparent; text-decoration: none; color: inherit; max-height: 110px; overflow: hidden; }
+  .unfurl:hover { border-color: var(--outline); background: var(--hover); }
   .unfurl img { width: 96px; height: 88px; object-fit: cover; border-radius: var(--radius-sm); flex: none; }
   .unfurl .uf-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-  .unfurl .uf-site { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+  .unfurl .uf-site { font-size: 11.5px; color: var(--muted); }
   .unfurl .uf-title { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .unfurl .uf-desc { font-size: 12px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .viewbar { display: flex; justify-content: flex-end; gap: 8px; padding: 0 18px 6px; }
-  .vtoggle { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--muted); padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border); }
-  .vtoggle:hover { color: var(--text); border-color: var(--accent); }
-  .vtoggle.on { color: var(--accent); border-color: var(--accent); background: var(--surface-2); }
-  /* The message body sits in its own framed card (border + shadow + rounded)
-     instead of a bare full-bleed div, so it reads as "the email" - matching the
-     header card and the conversation cards. */
-  .body-card { display: flex; flex-direction: column; margin: 0 16px 14px;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; background: var(--surface);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06); }
+  .unfurl .uf-desc { font-size: 12.5px; color: var(--muted); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .viewbar { display: flex; justify-content: flex-end; gap: 8px; padding: 0 24px 6px; }
+  .vtoggle { display: inline-flex; align-items: center; gap: 6px; height: 28px; font-size: 12px; font-weight: 500; color: var(--muted); padding: 0 10px; border-radius: 8px; box-shadow: inset 0 0 0 1px var(--border); }
+  .vtoggle :global(svg) { width: 15px; height: 15px; }
+  .vtoggle:hover { color: var(--text); background: var(--hover); }
+  .vtoggle.on { color: var(--on-sel); background: var(--sel); box-shadow: none; }
+  /* The message body sits straight on the pane - the email's own page colour is
+     the pane's (see email.js currentBg), so plain mail flows on seamlessly and a
+     branded (white) newsletter shows as its own rounded sheet. */
+  .body-card { display: flex; flex-direction: column; margin: 0 12px 16px;
+    border-radius: var(--radius); overflow: hidden; background: var(--surface); }
   /* Height is set inline from the measured content height (see measureFrame) so
      the whole message scrolls in the reader rather than inside the frame. */
   iframe { display: block; border: none; width: 100%; background: var(--surface); }

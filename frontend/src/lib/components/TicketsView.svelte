@@ -222,7 +222,7 @@
     <div class="empty">
       <div class="big">{@html icons.receipt || ""}</div>
       <p>No RAPL Desk connected.</p>
-      <button class="btn primary" onclick={() => { app.view = "settings"; app.settingsTab = "rapldesk"; }}>Connect in Settings → RAPL Desk</button>
+      <button class="btn primary" onclick={() => { app.view = "settings"; app.settingsTab = "integrations"; }}>Connect in Settings → RAPL Desk</button>
     </div>
   {:else if err && tab === "list" && tickets.length === 0}
     <div class="empty"><div class="big">⚠</div><p>{err}</p></div>
@@ -330,8 +330,8 @@
 
 <style>
   .tickets { flex: 1; display: flex; flex-direction: column; min-width: 0; background: var(--bg);
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  header { padding: 14px 18px 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 11px; }
+    border-radius: var(--radius-lg); overflow: hidden; }
+  header { padding: 14px 18px 12px; border-bottom: 1px solid var(--hairline); display: flex; flex-direction: column; gap: 11px; }
   .htop { display: flex; align-items: center; gap: 10px; }
   .htop h2 { margin: 0; font-size: 17px; display: flex; align-items: center; gap: 7px; }
   .hspace { flex: 1; }
@@ -342,9 +342,9 @@
   .tabbar { display: flex; align-items: center; gap: 4px; }
   .tab { font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; color: var(--muted); }
   .tab:hover { color: var(--text); background: var(--surface-2); }
-  .tab.on { background: var(--accent); color: #fff; }
+  .tab.on { background: var(--sel); color: var(--on-sel); }
   .tab .cnt { margin-left: 6px; font-size: 11px; background: var(--surface-3); color: var(--muted); border-radius: 999px; padding: 0 6px; }
-  .tab.on .cnt { background: rgba(255,255,255,0.25); color: #fff; }
+  .tab.on .cnt { background: color-mix(in srgb, var(--on-sel) 14%, transparent); color: var(--on-sel); }
   .who { font-size: 12px; color: var(--faint); margin-left: 6px; }
   .udot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
   .trow.unread .ttitle { font-weight: 800; }

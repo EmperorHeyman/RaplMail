@@ -178,14 +178,12 @@
   /* The join link is the one thing you actually want at 09:59, so it outranks
      "show in calendar" visually instead of sitting in the same grey row. */
   .mact.join {
-    color: #fff; font-weight: 600;
-    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff), var(--accent));
-    border-color: color-mix(in srgb, var(--accent) 70%, #000 8%);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--shadow-sm);
+    color: var(--on-accent); font-weight: 600;
+    background: var(--accent); border-color: transparent;
   }
   .mact.join:hover {
-    background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 94%, #fff), var(--accent-hover));
-    border-color: color-mix(in srgb, var(--accent) 70%, #000 8%);
+    background: color-mix(in srgb, var(--accent) 90%, var(--on-accent));
+    border-color: transparent; box-shadow: var(--shadow-sm);
   }
   .mact :global(svg) { width: 14px; height: 14px; }
 

@@ -7,6 +7,7 @@
   import { icons } from "./../icons.js";
   import { openExternal } from "./../api.js";
   import { t } from "./../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
 
   const SNOOZE = [5, 10, 15];
 
@@ -31,7 +32,7 @@
   });
   const startText = $derived.by(() => {
     if (!ev?.start) return "";
-    try { return new Date(ev.start).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); }
+    try { return new Date(ev.start).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" }); }
     catch { return ""; }
   });
 
@@ -113,7 +114,7 @@
   .acts { display: flex; align-items: center; gap: 8px; margin-top: 10px; flex-wrap: wrap; justify-content: center; }
   .ghost { padding: 8px 14px; border-radius: 999px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
   .ghost:hover { color: var(--text); background: var(--hover, rgba(127,127,127,0.12)); }
-  .dismiss { padding: 8px 22px; border-radius: 999px; background: var(--accent); color: #fff; font-weight: 600; font-size: 13px; }
+  .dismiss { padding: 8px 22px; border-radius: 999px; background: var(--accent); color: var(--on-accent); font-weight: 600; font-size: 13px; }
   .dismiss:hover { filter: brightness(1.06); }
   /* With a meeting to join, Join is the primary action and Dismiss steps down -
      two accent-filled pills side by side would make you read to pick one. */
@@ -122,7 +123,7 @@
   .join {
     display: inline-flex; align-items: center; gap: 7px;
     padding: 8px 18px; border-radius: 999px; background: var(--accent);
-    color: #fff; font-weight: 700; font-size: 13px; max-width: 100%;
+    color: var(--on-accent); font-weight: 700; font-size: 13px; max-width: 100%;
   }
   .join:hover { filter: brightness(1.06); }
   .join :global(svg) { width: 15px; height: 15px; flex: none; }

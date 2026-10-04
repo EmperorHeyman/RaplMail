@@ -4,6 +4,7 @@
   import { notify } from "../store.svelte.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
+  import { dateLocale } from "../time.svelte.js";
 
   let list = $state([]);
   let loading = $state(true);
@@ -19,7 +20,7 @@
     notify("Scheduled send cancelled");
     await load();
   }
-  const fmt = (iso) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+  const fmt = (iso) => new Date(iso).toLocaleString(dateLocale(), { dateStyle: "medium", timeStyle: "short" });
 </script>
 
 <section class="sched">
@@ -46,8 +47,8 @@
 
 <style>
   .sched { display: flex; flex-direction: column; min-width: 0; background: var(--bg); grid-column: 2 / -1;
-    border: 1px solid var(--border); border-radius: var(--radius-lg); overflow: hidden; }
-  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border); }
+    border-radius: var(--radius-lg); overflow: hidden; }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--hairline); }
   h2 { margin: 0; font-size: 18px; }
   .body { padding: 20px 24px; overflow-y: auto; max-width: 760px; }
   .local-note { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 16px; padding: 11px 13px;

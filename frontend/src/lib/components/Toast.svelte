@@ -27,6 +27,6 @@
   .toast.error { background: color-mix(in srgb, var(--danger) 16%, var(--surface-3)); border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: color-mix(in srgb, var(--danger) 45%, var(--text)); }
   .undo { color: var(--accent); font-weight: 700; padding: 2px 8px; border-radius: 999px; transition: background var(--t-fast) var(--ease); }
   .undo:hover { background: var(--accent-soft-2); }
-  .act { color: #fff; background: var(--accent); font-weight: 700; padding: 4px 12px; border-radius: 999px; }
+  .act { color: var(--on-accent); background: var(--accent); font-weight: 700; padding: 4px 12px; border-radius: 999px; }
   .act:hover { filter: brightness(1.08); }
 </style>

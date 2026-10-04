@@ -476,7 +476,7 @@
   .hb:hover { color: var(--text); background: var(--surface-3); }
   .modeseg { display: inline-flex; gap: 2px; background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
   .modeseg button { font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; color: var(--muted); }
-  .modeseg button.on { background: var(--accent); color: #fff; }
+  .modeseg button.on { background: var(--sel); color: var(--on-sel); }
 
   /* The query field - a real, styled input surface (chips + text inside it). */
   .field { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 12px 14px 0;
@@ -487,10 +487,10 @@
   .field .ic :global(svg) { width: 16px; height: 16px; }
   .qinput { flex: 1; min-width: 160px; border: none; background: transparent; padding: 3px 2px; outline: none;
     font-size: 15px; color: var(--text); }
-  .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent); color: #fff; border-radius: 7px;
+  .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent); color: var(--on-accent); border-radius: 7px;
     padding: 3px 4px 3px 8px; font-size: 12.5px; max-width: 280px; }
   .chip .op { opacity: 0.82; } .chip .val { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .chip .x { color: #fff; opacity: 0.85; display: inline-flex; padding: 1px; }
+  .chip .x { color: var(--on-accent); opacity: 0.85; display: inline-flex; padding: 1px; }
   .chip .x:hover { opacity: 1; }
   .chip.pending { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); color: var(--accent);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent); padding: 3px 9px; }
@@ -514,7 +514,7 @@
   .pills { display: flex; flex-wrap: wrap; gap: 5px; padding: 2px 4px; }
   .pill { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: var(--surface-2); color: var(--muted); border: 1px solid transparent; }
   .pill:hover { color: var(--text); }
-  .pill.on { background: var(--accent); color: #fff; }
+  .pill.on { background: var(--sel); color: var(--on-sel); }
   .help ul { margin: 0; padding: 0 4px; list-style: none; display: flex; flex-direction: column; gap: 5px; }
   .help li { font-size: 12px; color: var(--muted); }
   .help code { font-family: ui-monospace, monospace; font-size: 11.5px; background: var(--surface-2); padding: 1px 5px; border-radius: 4px; }
@@ -544,7 +544,7 @@
     padding: 4px 9px; border-radius: 6px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .spacer { flex: 1; }
   .kbd-hint { font-size: 11.5px; color: var(--faint); }
-  .btn.primary { padding: 8px 14px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; font-size: 13px; font-weight: 550; display: inline-flex; align-items: center; gap: 6px; }
+  .btn.primary { padding: 8px 14px; border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font-size: 13px; font-weight: 550; display: inline-flex; align-items: center; gap: 6px; }
   .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
   .btn.primary :global(svg) { width: 15px; height: 15px; }
 

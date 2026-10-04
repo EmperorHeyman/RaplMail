@@ -5,15 +5,19 @@
   // button or by right-clicking a group card. Settings → General keeps the
   // rarer options (order, placement).
   import { onMount } from "svelte";
-  import { app, setGroupEnabled, createCustomGroup, openGroupRuleModal } from "../store.svelte.js";
-  import { smartGroupList } from "../groups.js";
+  import { app, setGroupEnabled, createCustomGroup, openGroupRuleModal, setSmartNewInline, smartGroupOrder } from "../store.svelte.js";
+  import { smartGroupMeta } from "../groups.js";
   import { dismiss } from "../dismiss.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
   let { x = 0, y = 0, anchor = null, onclose } = $props();
 
-  const groups = $derived(smartGroupList());
+  // Same order as the strip (smartGroupOrder), so the two never disagree.
+  const groups = $derived.by(() => {
+    const meta = smartGroupMeta();
+    return smartGroupOrder().map((id) => meta[id]).filter(Boolean);
+  });
   const count = (id) => app.smartGroupData?.[id]?.count || 0;
 
   let el = $state();
@@ -35,7 +39,7 @@
     openGroupRuleModal(id);   // a new group is empty until a rule fills it
   }
   function addRule(id) { onclose?.(); openGroupRuleModal(id); }
-  function moreOptions() { onclose?.(); app.settingsTab = "general"; app.view = "settings"; }
+  function moreOptions() { onclose?.(); app.settingsTab = "inbox"; app.view = "settings"; }
 </script>
 
 <div bind:this={el} class="sgm" role="menu" tabindex="-1" style="left:{pos.left}px; top:{pos.top}px"
@@ -43,6 +47,11 @@
      oncontextmenu={(e) => e.preventDefault()}>
   <div class="head">{t("groups.menuTitle")}</div>
   <p class="hint">{t("groups.menuHint")}</p>
+  <label class="newinline">
+    <input type="checkbox" checked={app.settings.smartNewInline !== false}
+      onchange={(e) => setSmartNewInline(e.currentTarget.checked)} />
+    <span>{t("groups.newInline")}</span>
+  </label>
   <div class="rows">
     {#each groups as g (g.id)}
       <div class="row">
@@ -80,6 +89,9 @@
     box-shadow: var(--shadow-lg); animation: pop-in var(--t) var(--ease); }
   .head { font-weight: 650; font-size: 13px; padding: 2px 4px 0; }
   .hint { margin: 0 4px 2px; font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .newinline { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 4px; padding: 7px 6px 8px;
+    border-bottom: 1px solid var(--hairline); font-size: 12.5px; cursor: pointer; }
+  .newinline input { margin-top: 2px; }
   .rows { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
   .row { display: flex; align-items: center; gap: 4px; border-radius: var(--radius-sm); }
   .row:hover { background: var(--surface-3); }

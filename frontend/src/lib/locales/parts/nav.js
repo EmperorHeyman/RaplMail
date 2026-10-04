@@ -15,6 +15,7 @@ export default {
     "nav.calendar": "Calendar",
     "nav.tickets": "Tickets",
     "nav.scheduled": "Scheduled",
+    "nav.subscriptions": "Subscriptions",
     "nav.newsletterFeed": "Newsletter Feed",
 
     // Section headings.
@@ -105,6 +106,7 @@ export default {
     "nav.calendar": "Kalendář",
     "nav.tickets": "Tikety",
     "nav.scheduled": "Naplánované",
+    "nav.subscriptions": "Odběry",
     "nav.newsletterFeed": "Kanál newsletterů",
 
     // Nadpisy sekcí.

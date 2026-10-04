@@ -37,7 +37,7 @@
     // Catch an invalid regex before it silently never-matches (or errors per-message).
     if (draft.match_op === "regex") {
       try { new RegExp(draft.match_value); }
-      catch (e) { notify(`Invalid regex: ${e.message}`, "error"); return; }
+      catch (e) { notify(t("sRules.invalidRegex", { error: e.message }), "error"); return; }
     }
     // Destructive rules (delete/archive/block) get a blast-radius confirm so a
     // catch-all like `from_domain ends_with ".com"` can't quietly nuke the inbox.
@@ -46,7 +46,7 @@
       try { const p = await api.preview(draft); preview = p; count = p.match_count; } catch {}
       const verb = t("rules.action." + draft.action).toLowerCase();
       if (count != null &&
-          !confirm(`This rule will ${verb} ${count} existing message${count === 1 ? "" : "s"} and keep applying to future mail. Continue?`)) {
+          !confirm(t("sRules.confirmDestructive", { verb, n: count }))) {
         return;
       }
     }
@@ -55,7 +55,7 @@
       // Also apply to mail already in the box (rules otherwise only run on new mail).
       let applied = 0;
       try { applied = (await api.apply(draft)).applied || 0; } catch {}
-      notify(applied ? `Rule saved · applied to ${applied} existing email${applied === 1 ? "" : "s"}` : "Rule saved");
+      notify(applied ? t("sRules.savedApplied", { n: applied }) : t("sRules.saved"));
       if (applied) refreshMessages({ background: true });
       draft = newDraft(); lastAction = draft.action; preview = null; await load();
     }
@@ -74,39 +74,39 @@
     draft.action === "webhook" ? t("rules.webhookHint")
       : draft.action === "run_script" ? t("rules.scriptHint")
       : draft.action === "save_attachments" ? t("rules.saveDirHint")
-      : "folder, e.g. Archive"
+      : t("sRules.folderPh")
   );
 </script>
 
 <div class="wrap">
   <section>
-    <h3>Your rules</h3>
-    {#if list.length === 0}<p class="muted">No rules yet. Mail flows straight to the inbox.</p>{/if}
+    <h3>{t("sRules.yourRules")}</h3>
+    {#if list.length === 0}<p class="muted">{t("sRules.empty")}</p>{/if}
     <div class="rules">
       {#each list as r (r.id)}
         <div class="rule" class:off={!r.enabled}>
-          <button class="toggle" class:on={r.enabled} onclick={() => toggle(r)} title="Enable/disable" aria-label={r.enabled ? "Enabled" : "Disabled"}><span class="dot"></span></button>
+          <button class="toggle" class:on={r.enabled} onclick={() => toggle(r)} title={t("sRules.toggleTip")} aria-label={r.enabled ? t("common.enabled") : t("common.disabled")}><span class="dot"></span></button>
           <div class="desc">
-            <b>{r.name || "Rule"}</b>
-            <span>If {t("rules.field." + r.match_field)} {t("rules.op." + r.match_op)} “{r.match_value}” → {t("rules.action." + r.action)}{argLabel(r)}</span>
+            <b>{r.name || t("sRules.untitled")}</b>
+            <span>{t("sRules.summary", { field: t("rules.field." + r.match_field), op: t("rules.op." + r.match_op), action: t("rules.action." + r.action), arg: argLabel(r), value: r.match_value })}</span>
           </div>
-          <button class="btn ghost danger" onclick={() => remove(r)}>Delete</button>
+          <button class="btn ghost danger" onclick={() => remove(r)}>{t("common.delete")}</button>
         </div>
       {/each}
     </div>
   </section>
 
   <section class="builder">
-    <h3>New rule</h3>
-    <input class="name" bind:value={draft.name} placeholder="Rule name (optional)" />
+    <h3>{t("sRules.newRule")}</h3>
+    <input class="name" bind:value={draft.name} placeholder={t("sRules.namePh")} />
     <div class="cond">
-      <span>If</span>
+      <span>{t("sRules.if")}</span>
       <select bind:value={draft.match_field}>{#each FIELDS as f}<option value={f}>{t("rules.field." + f)}</option>{/each}</select>
       <select bind:value={draft.match_op}>{#each OPS as o}<option value={o}>{t("rules.op." + o)}</option>{/each}</select>
-      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : "value, e.g. newsletters.com"} oninput={runPreview} />
+      <input bind:value={draft.match_value} placeholder={draft.match_field === "category" ? t("rules.categoryHint") : t("sRules.valuePhExample")} oninput={runPreview} />
     </div>
     <div class="cond">
-      <span>then</span>
+      <span>{t("sRules.then")}</span>
       <select bind:value={draft.action} onchange={onActionChange}>{#each ACTIONS as a}<option value={a}>{t("rules.action." + a)}</option>{/each}</select>
       {#if draft.action === "set_group"}<GroupPicker bind:value={draft.action_arg} />
       {:else if needsArg}<input bind:value={draft.action_arg} placeholder={argPlaceholder} />{/if}
@@ -114,15 +114,15 @@
     {#if draft.action === "set_group"}<p class="note">{t("groups.ruleNote")}</p>{/if}
 
     <div class="actions">
-      <button class="btn" onclick={runPreview}>Preview matches</button>
-      <button class="btn primary" onclick={create} disabled={!draft.match_value}>Save rule</button>
+      <button class="btn" onclick={runPreview}>{t("sRules.previewMatches")}</button>
+      <button class="btn primary" onclick={create} disabled={!draft.match_value}>{t("sRules.saveRule")}</button>
     </div>
 
     {#if preview}
       <div class="preview">
-        <b>{preview.match_count}</b> existing message{preview.match_count === 1 ? "" : "s"} would match.
+        {t("sRules.matchCount")} <b>{preview.match_count}</b>
         {#if preview.sample_subjects.length}
-          <ul>{#each preview.sample_subjects as s}<li>{s || "(no subject)"}</li>{/each}</ul>
+          <ul>{#each preview.sample_subjects as s}<li>{s || t("sRules.noSubject")}</li>{/each}</ul>
         {/if}
       </div>
     {/if}

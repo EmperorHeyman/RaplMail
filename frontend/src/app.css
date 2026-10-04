@@ -1,5 +1,29 @@
+/* Google Sans Flex (SIL OFL 1.1, see assets/fonts/OFL.txt) - the Pixel/Android
+   typeface. Bundled so the app looks the same offline; latin-ext carries the
+   Czech letters. Variable: weight 1-1000 and an optical-size axis. */
+@font-face {
+  font-family: "Google Sans Flex";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  src: url("./assets/fonts/gsf-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: "Google Sans Flex";
+  font-style: normal;
+  font-weight: 1 1000;
+  font-display: swap;
+  src: url("./assets/fonts/gsf-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
 :root {
-  /* ── Core palette (user-themeable via Settings → Appearance; see THEME_TOKENS) ── */
+  /* ── Core palette (user-themeable via Settings → Appearance; see THEME_TOKENS) ──
+     The dynamic (Material You) palette sets all of these from one seed colour -
+     see lib/palette.js. These values are the classic default dark theme. */
   --bg: #0f1116;
   --surface: #171a21;
   --surface-2: #1f232b;
@@ -12,44 +36,61 @@
   --danger: #f26d79;
   --warning: #f5b83d;
 
+  /* ── Material roles ── The dynamic palette sets these directly; for classic
+     themes they are derived from the palette above, so every preset still has
+     a selected-row tint, a Compose container, text that reads on the accent... */
+  --on-accent: #fff;                  /* text/icons on a filled accent */
+  --accent-cont: color-mix(in srgb, var(--accent) 26%, var(--surface));   /* Compose, filled chips */
+  --on-accent-cont: var(--text);
+  --sel: color-mix(in srgb, var(--accent) 20%, var(--surface-2));       /* selected row / nav pill */
+  --on-sel: var(--text);
+  --tert: var(--accent);
+  --tert-cont: color-mix(in srgb, var(--accent) 18%, var(--surface));
+  --on-tert-cont: var(--text);
+  --outline: color-mix(in srgb, var(--border) 50%, var(--muted));      /* field borders */
+  --on-done: #06231a;                 /* text/icons on the done green */
+
   /* ── Derived tones - computed from the palette so custom themes propagate ── */
-  /* The window's own ground, one step BELOW --bg. Panes sit on it as inset cards
-     with a gap, so the app reads as separate layered panels instead of one flat
-     sheet. Derived rather than declared so every preset - including the light and
-     editor ones - gets the extra depth step for free. */
+  /* The window's own ground, one step BELOW --bg (classic themes). The nav and
+     the message list sit on it; the reading pane is a raised container. The
+     dynamic palette pins it to the same tone as --bg so the list blends in. */
   --app-bg: color-mix(in srgb, var(--bg) 88%, #000);
   --faint: color-mix(in srgb, var(--muted) 64%, var(--bg));
-  --accent-hover: color-mix(in srgb, var(--accent) 84%, #ffffff);
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, var(--text));
   --accent-soft: color-mix(in srgb, var(--accent) 14%, transparent);
   --accent-soft-2: color-mix(in srgb, var(--accent) 22%, transparent);
   --danger-soft: color-mix(in srgb, var(--danger) 14%, transparent);
   --done-soft: color-mix(in srgb, var(--done) 14%, transparent);
   --warning-soft: color-mix(in srgb, var(--warning) 14%, transparent);
   --hairline: color-mix(in srgb, var(--border) 62%, transparent);
-  --hover: color-mix(in srgb, var(--text) 5%, transparent);
-  --hover-2: color-mix(in srgb, var(--text) 9%, transparent);
+  /* Material state layers: the content colour at 8% (hover) / 12% (pressed). */
+  --hover: color-mix(in srgb, var(--text) 8%, transparent);
+  --hover-2: color-mix(in srgb, var(--text) 12%, transparent);
 
   /* ── Elevation ── */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
-  --shadow: 0 4px 16px rgba(0, 0, 0, 0.26), 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.45), 0 6px 20px rgba(0, 0, 0, 0.28);
-  --ring: 0 0 0 3px var(--accent-soft-2);
+  --shadow: 0 2px 6px 2px rgba(0, 0, 0, 0.15), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 8px 24px 4px rgba(0, 0, 0, 0.22), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --ring: 0 0 0 2px var(--accent);
 
-  /* ── Shape ── */
-  --radius: 11px;
-  --radius-sm: 7px;
-  --radius-lg: 15px;   /* pane cards */
-  --pane-gap: 8px;     /* the ground showing between panes */
+  /* ── Shape ── (radius / -sm / -lg follow Settings → Appearance → Corner roundness) */
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-lg: 24px;     /* panes: the reading pane, settings cards */
+  --radius-field: 10px;  /* text fields, selects */
+  --radius-menu: 12px;   /* menus and popovers */
+  --pane-gap: 8px;       /* the ground showing between panes */
 
-  /* ── Motion - fast, decisive, never floaty ── */
+  /* ── Motion - Material's standard easing; quick, never floaty ── */
   --ease: cubic-bezier(0.2, 0, 0, 1);
   --ease-spring: cubic-bezier(0.3, 1.25, 0.4, 1);
   --t-fast: 90ms;
-  --t: 140ms;
-  --t-slow: 200ms;
+  --t: 150ms;
+  --t-slow: 220ms;
 
-  font-family: "Segoe UI Variable Text", "Segoe UI Variable", Inter, system-ui,
+  --font: "Google Sans Flex", "Segoe UI Variable Text", "Segoe UI Variable", Inter, system-ui,
     -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font);
   font-optical-sizing: auto;
 }
 
@@ -73,6 +114,7 @@ body {
   color: var(--text);
   font-size: 14px;
   line-height: 1.45;
+  letter-spacing: 0.1px;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -80,19 +122,20 @@ body {
 /* Translucent window ground (Settings → Appearance → Translucent window). The
    main window is created transparent with a Mica/blur backdrop behind it (see
    tauri.conf.json windowEffects); this lets that backdrop show through the
-   ground the panes sit on. Panes themselves stay fully opaque - only the gaps
-   between the cards go glassy - so text contrast and scroll performance are
-   untouched. The alpha is high on purpose: on a system where no backdrop effect
-   applied, the ground still reads near-solid instead of see-through. */
+   ground the nav and panes sit on. The list and reading panes stay opaque, so
+   text contrast and scroll performance are untouched. The alpha is high on
+   purpose: on a system where no backdrop effect applied, the ground still
+   reads near-solid instead of see-through. */
 :root.glass body { background: color-mix(in srgb, var(--app-bg) 70%, transparent); }
 
 ::selection { background: var(--accent-soft-2); }
 
-h1, h2, h3, h4 { letter-spacing: -0.01em; }
+h1, h2, h3, h4 { letter-spacing: 0; font-weight: 500; }
 
 button {
   font: inherit;
   color: inherit;
+  letter-spacing: inherit;
   cursor: pointer;
   border: none;
   background: none;
@@ -107,18 +150,19 @@ button {
 
 input, textarea, select {
   font: inherit;
+  letter-spacing: inherit;
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 11px;
+  border-radius: var(--radius-field);
+  padding: 8px 12px;
   outline: none;
   transition: border-color var(--t) var(--ease), box-shadow var(--t) var(--ease);
 }
-input:hover, textarea:hover, select:hover { border-color: color-mix(in srgb, var(--border) 55%, var(--muted)); }
+input:hover, textarea:hover, select:hover { border-color: var(--outline); }
 input:focus, textarea:focus, select:focus {
   border-color: var(--accent);
-  box-shadow: var(--ring);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 /* The native dropdown popup uses these (fixes black-on-dark option text). */
 select option { background: var(--surface-2); color: var(--text); }
@@ -132,49 +176,76 @@ input[type="checkbox"], input[type="radio"] {
 }
 input[type="checkbox"]:hover, input[type="radio"]:hover,
 input[type="checkbox"]:focus, input[type="radio"]:focus { border: none; box-shadow: none; }
+input[type="range"] { accent-color: var(--accent); }
 
-::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--muted) 26%, transparent);
+  background: color-mix(in srgb, var(--muted) 24%, transparent);
   border-radius: 8px;
   background-clip: padding-box;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
 }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 42%, transparent); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--muted) 42%, transparent); border: 3px solid transparent; background-clip: padding-box; }
 ::-webkit-scrollbar-corner { background: transparent; }
 
+/* ── Buttons (Material 3) ──
+   .btn          outlined - the everyday button
+   .btn.tonal    filled with the selection tint (secondary container)
+   .btn.primary  filled with the accent - one per screen, the main action
+   .btn.ghost    text button - no container until hovered
+   .btn.danger   destructive, in the error colour                          */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  padding: 8px 15px;
-  border-radius: var(--radius-sm);
-  background: var(--surface-3);
-  border: 1px solid var(--hairline);
-  font-weight: 550;
+  gap: 8px;
+  padding: 8px 18px;
+  min-height: 36px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--outline);
+  color: var(--text);
+  font-weight: 500;
   line-height: 1.3;
   transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease),
     color var(--t-fast) var(--ease), transform var(--t-fast) var(--ease),
     box-shadow var(--t-fast) var(--ease);
 }
-.btn:hover { background: color-mix(in srgb, var(--surface-3) 76%, var(--text) 10%); }
-.btn:active { transform: scale(0.98); }
+.btn :where(svg) { width: 18px; height: 18px; flex: none; }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: scale(0.98); background: var(--hover-2); }
+.btn.tonal { background: var(--sel); color: var(--on-sel); border-color: transparent; }
+.btn.tonal:hover { background: color-mix(in srgb, var(--sel) 88%, var(--on-sel)); }
 .btn.primary {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 92%, #fff), var(--accent));
-  border-color: color-mix(in srgb, var(--accent) 70%, #000 8%);
-  color: #fff;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), var(--shadow-sm);
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--on-accent);
 }
 .btn.primary:hover {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--accent-hover) 94%, #fff), var(--accent-hover));
+  background: color-mix(in srgb, var(--accent) 90%, var(--on-accent));
+  box-shadow: var(--shadow-sm);
 }
 .btn.ghost { background: transparent; border-color: transparent; }
 .btn.ghost:hover { background: var(--hover); }
 .btn.danger { color: var(--danger); }
 .btn.danger:hover { background: var(--danger-soft); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
-.btn:disabled { opacity: 0.55; cursor: default; transform: none; }
+.btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.btn:disabled:hover { background: transparent; }
+.btn.primary:disabled:hover { background: var(--accent); box-shadow: none; }
+.btn.sm { padding: 5px 14px; min-height: 30px; font-size: 13px; }
+
+/* Round icon button (toolbars, dialogs). */
+.icon-btn {
+  display: inline-grid; place-items: center; flex: none;
+  width: 40px; height: 40px; border-radius: 50%;
+  color: var(--muted);
+  transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
+}
+.icon-btn :where(svg) { width: 22px; height: 22px; }
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+.icon-btn:active { background: var(--hover-2); }
+.icon-btn.on { color: var(--accent); }
 
 .pill {
   font-size: 11px;

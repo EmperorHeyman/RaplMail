@@ -2,6 +2,8 @@
 import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi } from "./api.js";
 import { playSound, setCustomSounds } from "./sound.js";
 import { setLocale, t } from "./i18n.svelte.js";
+import { materialTokens, isLightHex } from "./palette.js";
+import { dateLocale } from "./time.svelte.js";
 
 // Distinct, legible colors auto-assigned to calendar feeds by order.
 export const CAL_PALETTE = ["#7c6cf0", "#e0556e", "#37a169", "#dd8a17", "#2f86d6", "#b052c9", "#0fa3a3", "#c2603a"];
@@ -18,10 +20,32 @@ export function normalizeFeeds(feeds) {
 const SETTINGS_KEY = "raplmail.settings";
 function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") };
+    const raw = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}") || {};
+    return { ...DEFAULT_SETTINGS, ...migrateDesign(raw) };
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
+}
+
+// 0.9.17 redesign: settings saved before it have no `colorStyle`. Move them
+// onto the dynamic (Material You) palette, seeded from the accent they already
+// used and kept as dark / light / true-black as their theme was - the old theme
+// itself stays in `theme`, one click away under Classic themes. Returns the
+// same object; a fresh install (empty) is left to the defaults.
+function migrateDesign(s) {
+  if (!s || !Object.keys(s).length || "colorStyle" in s) return s;
+  const th = s.theme || {};
+  const bg = th["--bg"] || "#0f1116";
+  const light = isLightHex(bg);
+  s.colorStyle = "dynamic";
+  if (th["--accent"]) s.seedColor = th["--accent"];
+  s.colorScheme = s.themeMode === "auto" ? "system" : light ? "light" : "dark";
+  // True Black / OLED-style themes keep a black ground.
+  s.pureBlack = !light && /^#0{6}$|^#000$/i.test(th["--app-bg"] || "");
+  // The old default corner roundness (11) becomes Material's (16); a radius
+  // the user picked stays.
+  if ((s.radius ?? 11) === 11) s.radius = 16;
+  return s;
 }
 const DEFAULT_SETTINGS = {
   composeMode: "panel",          // "panel" | "window"
@@ -39,8 +63,14 @@ const DEFAULT_SETTINGS = {
     { shortcut: ";intro", body: "Hi {{first}},<br><br>" },
     { shortcut: ";thanks", body: "Thanks so much,<br>" },
   ],
-  theme: {},                     // CSS custom-property overrides: { "--accent": "#..." }
-  radius: 11,                    // corner roundness (px)
+  colorStyle: "dynamic",         // "dynamic" = Material You palette from one colour | "classic" = presets / hand-picked tokens (`theme`)
+  seedColor: "#5e8bff",          // the one colour the dynamic palette is built from
+  seedFromWindows: false,        // dynamic: use the Windows accent colour as the seed (Android's "wallpaper colours")
+  windowsAccent: null,           // last Windows accent read (cached, so child windows and the boot screen match)
+  colorScheme: "dark",           // dynamic: "dark" | "light" | "system" (follow Windows' app mode)
+  pureBlack: false,              // dynamic dark: a true-black ground (OLED)
+  theme: {},                     // classic: CSS custom-property overrides: { "--accent": "#..." }
+  radius: 16,                    // corner roundness (px)
   glassBg: true,                 // translucent window ground (Mica/blur shows through the pane gaps)
   uiScale: 1,                    // overall UI/font scale (0.85-1.3) via CSS zoom
   customCss: "",                 // user CSS injected app-wide
@@ -50,8 +80,6 @@ const DEFAULT_SETTINGS = {
   emailAdaptColors: true,        // invert light-authored email HTML to match a dark theme
   alwaysOriginalHtml: false,     // always render emails in their original HTML (no theming)
   customCssInEmails: false,      // also apply custom CSS inside email bodies (off = emails untouched)
-  smartGroupPlacement: "dateSections", // "dateSections" (Spark-style) | "top" | "afterN" | "timeline" | "bottom"
-  smartGroupsAfter: 3,           // for "afterN": how many classic messages show before the groups
   senderAvatars: true,           // fetch + cache the sender domain's favicon as the avatar
   relativeTime: false,           // list rows show "3 hours ago" instead of a date
   collapseQuotes: true,          // hide quoted reply history behind a toggle in the reader
@@ -127,7 +155,6 @@ const DEFAULT_SETTINGS = {
   savedSearches: [],            // [{ id, name, query }] pinned smart folders
   autoBcc: [],                  // [{ domain, bcc }] auto-BCC outgoing mail by recipient domain
   threading: false,             // group the list into conversations
-  bundles: false,               // collapse notification senders into one card
   keybinds: { next: "ArrowDown", prev: "ArrowUp", open: "Enter", done: "e",
               reply: "r", forward: "f", archive: "a", delete: "Delete", read: "u",
               compose: "Ctrl+n", search: "/", palette: "Ctrl+k", help: "?" },
@@ -136,10 +163,10 @@ const DEFAULT_SETTINGS = {
   onboarded: false,             // has the first-run onboarding wizard been completed?
   smartInbox: true,             // Spark-style smart inbox: group chosen categories (default view)
   smartGroups: { newsletters: true, social: true, updates: true, promotions: true, invitations: false, invitation_responses: true },
-  smartPreviewCount: 4,         // sender chips shown per group card
   smartNewDays: 3,              // "new" = unread AND received within this many days
-  smartOrderMode: "recency",    // "recency" | "custom"
-  smartOrder: [],               // category ids, top→bottom, when custom
+  smartNewInline: true,         // new mail from a group shows in the main list until read
+  listHints: false,             // keyboard-hint bar under the mail list (the ? overlay lists them all)
+  smartOrder: [],               // group ids top→bottom (Settings drag list); empty = the default order
   customGroups: [],             // user-made Smart Inbox groups: [{ id, name, tone, icon }], filled by rules
   density: "comfortable",       // message-list row density: comfortable | compact | cozy
   emailMaxWidth: 820,           // reading-width cap for email bodies (px; 0 = full width)
@@ -287,8 +314,32 @@ export const LIGHT_THEME = {
   "--danger": "#d84557", "--warning": "#b57d05",
 };
 
+// The Material roles the redesign added (see app.css). The dynamic palette sets
+// them; classic themes leave them to app.css, which derives them from the
+// classic tokens above.
+export const ROLE_TOKENS = ["--on-accent", "--accent-cont", "--on-accent-cont", "--sel", "--on-sel",
+  "--tert", "--tert-cont", "--on-tert-cont", "--outline", "--on-done"];
+
+/** The colour the dynamic palette is built from right now. */
+export function effectiveSeed() {
+  const s = app.settings;
+  return (s.seedFromWindows && s.windowsAccent) || s.seedColor || "#5e8bff";
+}
+/** Is the dynamic palette dark right now ("system" follows Windows' app mode)? */
+export function dynamicIsDark() {
+  const m = app.settings.colorScheme;
+  if (m === "system") {
+    try { return window.matchMedia("(prefers-color-scheme: dark)").matches; } catch { return true; }
+  }
+  return m !== "light";
+}
+
 function effectiveTheme() {
   const s = app.settings;
+  if (s.colorStyle !== "classic") {
+    const dark = dynamicIsDark();
+    return materialTokens(effectiveSeed(), { dark, black: dark && !!s.pureBlack });
+  }
   if (s.themeMode === "auto") {
     const h = new Date().getHours();
     const dayStart = s.dayStart ?? 7, nightStart = s.nightStart ?? 19;
@@ -306,6 +357,31 @@ export function setLanguage(lang) {
   setLocale(lang);
 }
 
+/** Re-read the Windows accent when the dynamic palette is seeded from it.
+ *  Cached in settings, so the compose/reminder windows match without asking. */
+export async function refreshWindowsAccent() {
+  if (!app.settings.seedFromWindows) return;
+  try {
+    const { color } = await appSettings.systemAccent();
+    if (color && color !== app.settings.windowsAccent) {
+      saveSettings({ windowsAccent: color });
+      applyTheme();
+    }
+  } catch {}
+}
+
+/** Follow Windows' light/dark app mode live when the palette is set to System. */
+export function watchSystemScheme() {
+  try {
+    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (app.settings.colorStyle !== "classic" && app.settings.colorScheme === "system") applyTheme();
+    });
+  } catch {}
+}
+
+// Message-row density: [vertical padding, gap, avatar size] in px.
+export const LIST_DENSITY = { comfortable: [12, 14, 40], compact: [6, 12, 32], cozy: [16, 16, 44] };
+
 /** Apply the active theme to CSS custom properties (clears unset ones). */
 export function applyTheme() {
   if (typeof document === "undefined") return;
@@ -315,10 +391,15 @@ export function applyTheme() {
   setCustomSounds(app.settings.customSounds);
   const root = document.documentElement;
   const t = effectiveTheme();
-  for (const [k] of THEME_TOKENS) {
+  for (const k of [...THEME_TOKENS.map(([k]) => k), ...ROLE_TOKENS]) {
     if (t[k]) root.style.setProperty(k, t[k]);
     else root.style.removeProperty(k);
   }
+  // Native controls (scrollbars, date pickers, select popups) follow the
+  // palette's brightness instead of the OS.
+  const light = isLightHex(t["--bg"] || "#0f1116");
+  root.style.setProperty("color-scheme", light ? "light" : "dark");
+  root.classList.toggle("light", light);
   // Translucent window ground: the .glass class lets the OS backdrop (Mica on
   // Win11, blur on Win10 - see tauri.conf.json windowEffects) show through the
   // body background. Main window only - the compose/reminder/sandbox child
@@ -327,11 +408,14 @@ export function applyTheme() {
   const isChildWin = typeof location !== "undefined" &&
     ["#compose", "#reminder", "#sandbox"].includes(location.hash);
   root.classList.toggle("glass", app.settings.glassBg !== false && !isChildWin);
-  // Corner roundness.
-  const r = app.settings.radius ?? 11;
+  // Corner roundness: cards/rows get the chosen radius, panes a step rounder,
+  // fields and menus a step tighter (Material's large / extra-large / small).
+  const r = app.settings.radius ?? 16;
   root.style.setProperty("--radius", `${r}px`);
   root.style.setProperty("--radius-sm", `${Math.max(3, r - 4)}px`);
-  root.style.setProperty("--radius-lg", `${r + 4}px`);
+  root.style.setProperty("--radius-lg", `${r + 8}px`);
+  root.style.setProperty("--radius-field", `${Math.min(12, Math.max(3, r - 6))}px`);
+  root.style.setProperty("--radius-menu", `${Math.min(16, Math.max(3, r - 4))}px`);
   // UI scale (font/zoom). WebView2/Chromium honors `zoom`, which scales the whole
   // px-based UI cleanly.
   const scale = app.settings.uiScale ?? 1;
@@ -342,7 +426,7 @@ export function applyTheme() {
   else root.style.removeProperty("zoom");
   // List density → row vertical padding / gap / avatar size, consumed by the
   // message rows (var fallbacks keep the "comfortable" look if unset).
-  const D = ({ comfortable: [11, 11, 34], compact: [6, 9, 28], cozy: [15, 13, 36] }[app.settings.density] || [11, 11, 34]);
+  const D = (LIST_DENSITY[app.settings.density] || LIST_DENSITY.comfortable);
   root.style.setProperty("--row-pad-y", `${D[0]}px`);
   root.style.setProperty("--row-gap", `${D[1]}px`);
   root.style.setProperty("--row-av", `${D[2]}px`);
@@ -393,6 +477,80 @@ export function queueSend(payload, seed) {
     if (ps) doSend(ps.payload);
   }, delay * 1000);
   app.pendingSend = { payload, seed, delay, timer, label: payload.subject || "(no subject)" };
+}
+
+// --- sending from a detached compose window ---------------------------------
+// The undo-send countdown can't run in a separate compose window: closing the
+// window kills the timer, and the mail with it - so the window used to stay
+// open after Send. It hands the send to the main window instead (which shows
+// the usual undo bar) and closes once that's acknowledged. One storage key per
+// request, so two windows sending at once can't overwrite each other; the key
+// doubles as the lock that stops both sides from sending it.
+const HANDOFF_SEND = "raplmail.compose.send.";
+const HANDOFF_ACK = "raplmail.compose.ack.";
+
+/** Detached compose: give a send to the main window. Resolves true when the
+ *  main window took it, false when this window has to send it itself. */
+export function handOffSend(payload, seed, timeoutMs = 3000) {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const key = HANDOFF_SEND + id;
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      window.removeEventListener("storage", onAck);
+      clearTimeout(timer);
+      try { localStorage.removeItem(HANDOFF_ACK + id); } catch {}
+      resolve(ok);
+    };
+    const onAck = (ev) => { if (ev.key === HANDOFF_ACK + id && ev.newValue) finish(true); };
+    window.addEventListener("storage", onAck);
+    const timer = setTimeout(() => {
+      // No answer (main window gone or stuck): take the request back so it
+      // can't ALSO be sent from there. If it's already gone, main has it.
+      let ours = false;
+      try { ours = localStorage.getItem(key) != null; if (ours) localStorage.removeItem(key); } catch {}
+      finish(!ours);
+    }, timeoutMs);
+    try { localStorage.setItem(key, JSON.stringify({ payload, seed })); }
+    catch { finish(false); }   // too big for storage (large attachments): send from here
+  });
+}
+
+/** Main window: pick up sends handed over by detached compose windows. */
+let _composeBridge = false;
+export function startComposeBridge() {
+  if (_composeBridge) return;
+  _composeBridge = true;
+  window.addEventListener("storage", (ev) => {
+    if (!ev.key?.startsWith(HANDOFF_SEND) || !ev.newValue) return;
+    let req = null;
+    try {
+      const raw = localStorage.getItem(ev.key);   // gone = the compose window took it back
+      if (raw) { req = JSON.parse(raw); localStorage.removeItem(ev.key); }
+    } catch {}
+    if (!req?.payload) return;
+    queueSend(req.payload, req.seed);
+    try { localStorage.setItem(HANDOFF_ACK + ev.key.slice(HANDOFF_SEND.length), "1"); } catch {}
+  });
+}
+
+/** Send right away, no undo window (a detached compose's fallback). */
+export function sendNow(payload) { return doSend(payload); }
+
+// Close this child window for good. A webview the app opened isn't reliably
+// script-closable with window.close(), so use Tauri's own close (as the
+// reminder and analysis windows do); browser dev falls back.
+export async function closeThisWindow() {
+  if (isTauri()) {
+    try {
+      const { getCurrentWindow } = await import("@tauri-apps/api/window");
+      await getCurrentWindow().close();
+      return;
+    } catch {}
+  }
+  try { window.close(); } catch {}
 }
 
 export function cancelSend() {
@@ -465,25 +623,22 @@ export async function initSettings() {
   try {
     const server = await appSettings.get();
     if (server && Object.keys(server).length) {
-      const merged = { ...DEFAULT_SETTINGS, ...local, ...server };
+      // A server copy from before the redesign gets the same one-time move
+      // onto the dynamic palette (healed back to the server just below).
+      const fromServer = migrateDesign({ ...server });
+      const migrated = !("colorStyle" in server);
+      const merged = { ...DEFAULT_SETTINGS, ...local, ...fromServer };
       app.settings = merged;
       try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged)); } catch {}
       applyTheme();
       // If local had keys the server lost, heal the server copy.
-      if (Object.keys(local).some((k) => !(k in server))) {
+      if (migrated || Object.keys(local).some((k) => !(k in server))) {
         appSettings.put(merged).catch(() => {});
       }
     } else {
       appSettings.put(app.settings).catch(() => {});
     }
   } catch { /* offline / not ready - localStorage value stands */ }
-  // One-time migration: move the old default "afterN" to the new Spark-style
-  // date sections. Guarded so it runs once and never overrides a later choice.
-  if (!app.settings._placementMigrated) {
-    const patch = { _placementMigrated: true };
-    if ((app.settings.smartGroupPlacement || "afterN") === "afterN") patch.smartGroupPlacement = "dateSections";
-    saveSettings(patch);
-  }
 }
 
 export async function exportConfig() {
@@ -852,6 +1007,14 @@ export const GROUP_TONES = ["#ef4444", "#ec4899", "#8b5cf6", "#6366f1", "#06b6d4
 export function customGroup(id) {
   return (app.settings.customGroups || []).find((g) => g.id === id) || null;
 }
+// Every group in one stable order - yours if you've dragged one (Settings →
+// Smart Inbox), else built-ins then your own groups. The strip, the groups menu
+// and Settings all read this, so a group never changes place on its own.
+export function smartGroupOrder() {
+  const canon = [...BUILTIN_GROUPS, ...(app.settings.customGroups || []).map((g) => g.id)];
+  const saved = (app.settings.smartOrder || []).filter((id) => canon.includes(id));
+  return [...saved, ...canon.filter((id) => !saved.includes(id))];
+}
 export function categoryLabel(id) {
   if (_BUILTIN_LABEL[id]) return t(_BUILTIN_LABEL[id]);
   return customGroup(id)?.name || id;
@@ -864,10 +1027,15 @@ export function createCustomGroup(name, { tone, icon } = {}) {
                   tone: tone || GROUP_TONES.find((c) => !used.has(c)) || GROUP_TONES[groups.length % GROUP_TONES.length],
                   icon: icon || "folder" };
   const patch = { customGroups: [...groups, group], smartGroups: { ...app.settings.smartGroups, [id]: true } };
-  if (app.settings.smartOrderMode === "custom") patch.smartOrder = [...(app.settings.smartOrder || []), id];
+  if ((app.settings.smartOrder || []).length) patch.smartOrder = [...app.settings.smartOrder, id];
   saveSettings(patch);
   return id;
 }
+export function setSmartNewInline(on) {
+  saveSettings({ smartNewInline: on });
+  if (smartActive()) refreshMessages({ background: true });
+}
+
 // Group (true) or show inline (false) one Smart Inbox category / custom group.
 export function setGroupEnabled(id, on) {
   saveSettings({ smartGroups: { ...app.settings.smartGroups, [id]: on } });
@@ -1134,12 +1302,12 @@ export function snoozePresets() {
   const sat = new Date(now); sat.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7)); sat.setHours(morning, 0, 0, 0);
   const mon = new Date(now); mon.setDate(now.getDate() + ((1 - now.getDay() + 7) % 7 || 7)); mon.setHours(morning, 0, 0, 0);
   return [
-    { label: "Later today", at: laterToday, iso: laterToday.toISOString() },
-    { label: "This evening", at: eveningOut, iso: eveningOut.toISOString() },
-    { label: "Tomorrow", at: tomorrow, iso: tomorrow.toISOString() },
-    { label: "This weekend", at: sat, iso: sat.toISOString() },
-    { label: "Next week", at: mon, iso: mon.toISOString() },
-    { label: "Until I'm back", presence: true },
+    { label: t("snooze.laterToday"), at: laterToday, iso: laterToday.toISOString() },
+    { label: t("snooze.thisEvening"), at: eveningOut, iso: eveningOut.toISOString() },
+    { label: t("snooze.tomorrow"), at: tomorrow, iso: tomorrow.toISOString() },
+    { label: t("snooze.thisWeekend"), at: sat, iso: sat.toISOString() },
+    { label: t("snooze.nextWeek"), at: mon, iso: mon.toISOString() },
+    { label: t("snooze.untilBack"), presence: true },
   ];
 }
 
@@ -1147,12 +1315,13 @@ export function snoozePresets() {
 export function presetWhen(at) {
   if (!at) return "";
   const now = new Date();
-  const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const loc = dateLocale();
+  const time = at.toLocaleTimeString(loc, { hour: "numeric", minute: "2-digit" });
   if (at.toDateString() === now.toDateString()) return time;
   const tom = new Date(now.getTime() + 86400000);
-  if (at.toDateString() === tom.toDateString()) return `tomorrow ${time}`;
-  if (at - now < 7 * 86400000) return `${at.toLocaleDateString([], { weekday: "short" })} ${time}`;
-  return `${at.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+  if (at.toDateString() === tom.toDateString()) return t("snooze.tomorrowAt", { time });
+  if (at - now < 7 * 86400000) return `${at.toLocaleDateString(loc, { weekday: "short" })} ${time}`;
+  return `${at.toLocaleDateString(loc, { month: "short", day: "numeric" })} ${time}`;
 }
 
 // True if the view the user is looking at is still the one an undo closure was
@@ -1703,6 +1872,22 @@ export function mergeById(prev, next) {
 }
 const mergeMessages = (next) => mergeById(app.messages, next);
 
+// Opening a new grouped mail marks it read, which folds it into its group on
+// the next refresh - pulling the row out from under you while you read it.
+// The open one stays put; it folds away once you move on.
+function keepOpenRow(list, grouped) {
+  const id = app.selectedMessageId;
+  if (id == null || list.some((m) => m.id === id)) return list;
+  const cur = app.messages.find((m) => m.id === id);
+  if (!cur || !grouped.includes(cur.category) || cur.is_done) return list;
+  const out = [...list];
+  let i = 0;
+  while (i < out.length && out[i].pinned) i++;   // pinned rows head the list
+  while (i < out.length && (out[i].date || "") > (cur.date || "")) i++;
+  out.splice(i, 0, cur);
+  return out;
+}
+
 // Latest-request-wins: overlapping loads (fast navigation, background refresh
 // racing a user click) must not let an OLDER response clobber a newer view.
 let _msgGen = 0;
@@ -1726,12 +1911,17 @@ export async function refreshMessages({ background = false } = {}) {
       const scope = app.selectedKind === "smart" ? { role: "inbox" } : { folder_id: app.selectedFolderId };
       const grouped = groupedCategories();
       try {
-        let list = await messages.list({ ...scope, exclude_categories: grouped.join(","), include_done: app.showDone });
+        // New grouped mail stays in the timeline until read (tagged with its
+        // group), so a fresh newsletter isn't hidden in a card at first glance.
+        const keepNew = app.settings.smartNewInline !== false ? (app.settings.smartNewDays ?? 3) : undefined;
+        let list = await messages.list({ ...scope, exclude_categories: grouped.join(","),
+                                         keep_new_days: keepNew, include_done: app.showDone });
         if (!fresh()) return;
         if (app.selectedKind === "smart") {
           const ws = workspaceAccountIds();
           if (ws) list = list.filter((m) => ws.includes(m.account_id));
         }
+        list = keepOpenRow(list, grouped);
         app.messages = mergeMessages(list);
         messages.smartGroups({ ...scope, new_days: app.settings.smartNewDays ?? 3 })
           .then((d) => { if (fresh()) app.smartGroupData = d; }).catch(() => {});

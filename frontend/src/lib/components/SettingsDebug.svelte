@@ -12,6 +12,9 @@
   let paused = $state(false);
   let autoscroll = $state(true);
   let appVersion = $state("");
+  // Recent message-body loads and where their time went (app.core.loadtrace).
+  let loads = $state([]);
+  let slowMs = $state(3000);
   let logEl;
   let timer;
 
@@ -28,6 +31,7 @@
       }
     } catch {}
     try { health = await debug.health(); } catch {}
+    try { const d = await debug.loads(); loads = d.loads || []; slowMs = d.slow_ms || 3000; } catch {}
   }
 
   async function reload() {
@@ -51,6 +55,21 @@
   const fmtTs = (ts) => { try { return new Date(ts).toLocaleTimeString(dateLocale()); } catch { return ts; } };
   const fmtWhen = (iso) => { if (!iso) return "-"; try { return new Date(iso).toLocaleString(dateLocale()); } catch { return iso; } };
   const lvlClass = (l) => `lvl-${(l || "").toLowerCase()}`;
+  const secs = (ms) => `${(ms / 1000).toFixed(ms < 10000 ? 1 : 0)} s`;
+  // "waiting 3.1 s · downloading 1.2 s · 1.4 MB" - the phases worth naming.
+  function phaseSummary(l) {
+    const parts = (l.phases || []).filter((p) => p.ms >= 50).map((p) => `${t("sDebug.ph_" + p.name)} ${secs(p.ms)}`);
+    if (!l.done && l.phase) parts.push(`${t("sDebug.ph_" + l.phase)} ${secs(l.phase_ms)}…`);
+    if (l.info?.bytes) parts.push(`${(l.info.bytes / 1_000_000).toFixed(1)} MB`);
+    if (l.info?.first_error && !l.error) parts.push(t("sDebug.retriedAfter", { err: l.info.first_error }));
+    return parts.join(" · ") || "-";
+  }
+  function copyLoads() {
+    const text = loads.map((l) => `${l.at} ${l.why} #${l.message_id} ${secs(l.elapsed_ms)} [${phaseSummary(l)}]${l.error ? " ERROR " + l.error : ""}`).join("\n");
+    navigator.clipboard?.writeText(text).then(
+      () => notify(t("sDebug.logsCopied")),
+      () => notify(t("sDebug.copyFailed"), "error"));
+  }
 
   onMount(async () => {
     try { const { getVersion } = await import("@tauri-apps/api/app"); appVersion = await getVersion(); }
@@ -126,6 +145,37 @@
     {/if}
   </section>
 
+  <section class="card">
+    <div class="loghead">
+      <h3>{t("sDebug.loadsTitle")}</h3>
+      <div class="spacer"></div>
+      {#if loads.length}<button class="btn ghost" onclick={copyLoads}>{t("sDebug.copy")}</button>{/if}
+    </div>
+    <p class="hint">{t("sDebug.loadsHint")}</p>
+    {#if loads.length}
+      <div class="loads">
+        {#each loads.slice(0, 30) as l (l.message_id + "|" + l.at)}
+          <div class="load" class:slow={l.elapsed_ms >= slowMs} class:failed={!!l.error} class:running={!l.done}>
+            <div class="l-top">
+              <span class="l-when tnum">{fmtTs(l.at)}</span>
+              <span class="l-why">{t("sDebug.why_" + l.why)}</span>
+              <span class="l-subj" title={l.subject}>{l.subject || "#" + l.message_id}</span>
+              <span class="l-total tnum">{secs(l.elapsed_ms)}</span>
+            </div>
+            <div class="l-bar" aria-hidden="true">
+              {#each l.phases as p}<i class="ph-{p.name}" style="flex:{Math.max(p.ms, 1)}" title="{t('sDebug.ph_' + p.name)} {secs(p.ms)}"></i>{/each}
+              {#if !l.done && l.phase}<i class="ph-{l.phase} live" style="flex:{Math.max(l.phase_ms, 1)}"></i>{/if}
+            </div>
+            <span class="l-detail">{phaseSummary(l)}</span>
+            {#if l.error}<span class="l-err">{l.error}</span>{/if}
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p class="hint" style="margin:0">{t("sDebug.noLoads")}</p>
+    {/if}
+  </section>
+
   <section class="card logs">
     <div class="loghead">
       <h3>{t("sDebug.logTitle")}</h3>
@@ -196,4 +246,26 @@
   .line.lvl-warning { background: color-mix(in srgb, #e0a83b 8%, transparent); }
   .line.lvl-error .lv, .line.lvl-error .msg { color: var(--danger); }
   .line.lvl-error { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+  /* Opening messages: one row per load, a bar split by phase. */
+  .loads { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; }
+  .load { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; background: var(--surface-2); }
+  .load.slow { box-shadow: inset 3px 0 0 var(--warning); }
+  .load.failed { box-shadow: inset 3px 0 0 var(--danger); }
+  .l-top { display: flex; align-items: baseline; gap: 10px; font-size: 13px; min-width: 0; }
+  .l-when { color: var(--muted); font-size: 12px; flex: none; }
+  .l-why { font-size: 11.5px; font-weight: 600; color: var(--on-sel); background: var(--sel); padding: 1px 7px; border-radius: 6px; flex: none; }
+  .l-subj { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .l-total { flex: none; font-weight: 600; }
+  .load.slow .l-total { color: var(--warning); }
+  .load.failed .l-total { color: var(--danger); }
+  .l-bar { display: flex; gap: 2px; height: 6px; border-radius: 3px; overflow: hidden; }
+  .l-bar i { display: block; min-width: 2px; background: var(--outline); }
+  .l-bar .ph-waiting { background: var(--warning); }
+  .l-bar .ph-connecting, .l-bar .ph-retrying { background: var(--tert); }
+  .l-bar .ph-downloading { background: var(--accent); }
+  .l-bar .ph-parsing, .l-bar .ph-attachments { background: var(--done); }
+  .l-bar .live { animation: pulse 1s ease-in-out infinite; }
+  .l-detail { font-size: 12px; color: var(--muted); }
+  .l-err { font-size: 12px; color: var(--danger); overflow-wrap: anywhere; }
 </style>

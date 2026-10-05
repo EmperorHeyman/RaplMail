@@ -54,7 +54,7 @@ class _EmptyPool:
     """Stands in for a server that has no such UID any more."""
 
     @staticmethod
-    def fetch_raw(account, folder_path, uid):
+    def fetch_raw(account, folder_path, uid, trace=None):
         return b""
 
 
@@ -133,7 +133,7 @@ def test_bodystructure_guess_overreports_attachments():
 def test_repair_pass_runs_once_even_when_it_cannot_clear_its_trigger(monkeypatch, client):
     calls = []
 
-    def _counting_fetch(account, folder, uid):
+    def _counting_fetch(account, folder, uid, trace=None):
         calls.append(uid)
         # A mail with an inline logo only: has_attachments was guessed true at
         # sync, the parse finds no real attachment, and no re-fetch can change

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import datetime, timedelta, timezone
@@ -53,6 +54,7 @@ class MessageOut(BaseModel):
     is_reply_to_me: bool = False   # answers a message you sent - drives the "Reply" badge
     suspicious: bool = False       # flagged by the anti-phishing heuristic screen
     ai_verdict: str = ""           # cached AI screening verdict: ""|safe|suspicious|dangerous
+    otp_code: str = ""             # a sign-in code found in the mail (app.sync.otp)
 
 
 class MessageDetail(MessageOut):
@@ -73,6 +75,10 @@ class MessageDetail(MessageOut):
     first_time_sender: bool = False  # inbox mail from an unknown sender (inline screener prompt)
     ai_reason: str = ""           # cached AI screening rationale (verdict is on MessageOut)
     meeting: dict | None = None   # the meeting this mail is about, and when (app.sync.meeting)
+    # Set when the body couldn't be fetched: what went wrong, and in which phase
+    # of the load (app.core.loadtrace) - the reader shows it with a retry.
+    load_error: str = ""
+    load_phase: str = ""
 
 
 def _to_out(m: Message) -> MessageOut:
@@ -87,10 +93,12 @@ def _to_out(m: Message) -> MessageOut:
         thread_id=m.thread_id, brand_domain=m.brand_domain or "", auth_status=m.auth_status or "",
         pinned=bool(m.pinned), is_reply_to_me=bool(m.is_reply_to_me),
         suspicious=bool(m.suspicious), ai_verdict=m.ai_verdict or "",
+        otp_code=m.otp_code or "",
     )
 
 
-# Typed search operators: from:  to:  subject:  has:attachment  is:unread|read|done|flagged
+# Typed search operators: from:  to:  cc:  subject:  has:attachment  is:unread|read|done|flagged
+# (a space after the colon is fine: "from: lpeterek")
 _TOKEN_RE = re.compile(r'(\w+):\s*(?:"([^"]*)"|(\S+))')
 
 
@@ -103,6 +111,7 @@ def _parse_query(q: str):
         v = val.lower()
         if key == "from": filters["from"] = val
         elif key == "to": filters["to"] = val
+        elif key == "cc": filters["cc"] = val
         elif key == "subject": filters["subject"] = val
         elif key == "has" and v in ("attachment", "attachments", "file"): filters["has_attachment"] = True
         elif key == "is":
@@ -236,6 +245,8 @@ def list_messages(
         stmt = stmt.where(func.lower(Message.from_addr).like(like) | func.lower(Message.from_name).like(like))
     if op_filters.get("to"):
         stmt = stmt.where(func.lower(cast(Message.to_addrs, String)).like(f"%{op_filters['to'].lower()}%"))
+    if op_filters.get("cc"):
+        stmt = stmt.where(func.lower(cast(Message.cc_addrs, String)).like(f"%{op_filters['cc'].lower()}%"))
     if op_filters.get("subject"):
         stmt = stmt.where(func.lower(Message.subject).like(f"%{op_filters['subject'].lower()}%"))
 
@@ -607,11 +618,60 @@ def _held_by_group_rule(session: Session, msg: Message) -> bool:
     return bool(rules) and group_for(rules, MessageFields.from_message(msg)) is not None
 
 
+@router.get("/{message_id}/load-status")
+def load_status(message_id: int) -> dict:
+    """What a slow open is doing right now (or how the last load went), for the
+    reader's "still loading" line. While it waits for the account's connection,
+    `busy` says what holds it (a preload, a flag update, ...) and for how long."""
+    from app.core.loadtrace import tracker
+    from app.providers.pool import pool
+    snap = tracker.status(message_id)
+    if snap and snap.get("phase") == "waiting":
+        snap["busy"] = pool.busy(snap.get("account_id"))
+    return snap or {}
+
+
+class ConnectionResetIn(BaseModel):
+    message_id: int
+
+
+@router.post("/connection-reset")
+def connection_reset(body: ConnectionResetIn, session: Session = Depends(get_session)) -> dict:
+    """Cut the mail connection a stuck open is waiting on (the reader's "Try
+    again"). The next open builds a fresh one."""
+    from app.providers.pool import pool
+    msg = session.get(Message, body.message_id)
+    if msg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    cut = pool.reset(msg.account_id)
+    log.info("connection reset for account %s (requested from message %s): %s",
+             msg.account_id, msg.id, "cut" if cut else "none open")
+    return {"reset": cut}
+
+
+# Body downloads in flight, by message id (see get_message).
+_inflight: dict[int, "asyncio.Future"] = {}
+
+
 @router.get("/{message_id}", response_model=MessageDetail)
-async def get_message(message_id: int, session: Session = Depends(get_session)) -> MessageDetail:
+async def get_message(message_id: int, why: str = "open", session: Session = Depends(get_session)) -> MessageDetail:
+    from app.core.loadtrace import tracker
     msg = session.get(Message, message_id)
     if msg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
+    why = why if why in ("open", "prefetch", "thread") else "open"
+
+    # The hover preload usually starts downloading this very message a moment
+    # before the click. Wait for that download instead of queueing behind it on
+    # the account's connection and then downloading the message a second time.
+    pending = _inflight.get(message_id)
+    if pending is not None and not msg.body_fetched:
+        try:
+            await asyncio.wait_for(asyncio.shield(pending), timeout=300)
+        except Exception:
+            pass
+        session.commit()        # end this session's read snapshot...
+        session.refresh(msg)    # ...so the body the other request cached is visible
 
     auth = {"status": msg.auth_status or "none"}
     if msg.body_fetched:
@@ -637,8 +697,11 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
                                  or not msg.auth_status or stale_inline or no_recipients):
             account = session.get(Account, msg.account_id)
             folder = session.get(Folder, msg.folder_id)
+            trace = tracker.start(msg.id, why, msg.account_id, msg.subject or "")
+            trace.note(repair=True)
             try:
-                _h, _t, _u, _e, atts, a, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
+                _h, _t, _u, _e, atts, a, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid, trace)
+                trace.mark("saving")
                 _heal_recipients(msg, recipients)
                 # The full parse is ground truth about attachments; the sync-time
                 # flag is a guess off BODYSTRUCTURE that reads "mixed" as "has an
@@ -674,63 +737,94 @@ async def get_message(message_id: int, session: Session = Depends(get_session)) 
                         pass
                 session.commit()
                 session.refresh(msg)
-            except Exception:
-                pass
+                tracker.end(trace)
+            except Exception as exc:
+                # The cached body still shows; the repair is retried next open.
+                tracker.end(trace, error=f"{type(exc).__name__}: {exc}"[:300])
     else:
         account = session.get(Account, msg.account_id)
         folder = session.get(Folder, msg.folder_id)
+        trace = tracker.start(msg.id, why, msg.account_id, msg.subject or "")
+        fut = asyncio.get_running_loop().create_future()
+        _inflight[message_id] = fut
         try:
-            html, text_body, unsub, events, atts, auth, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid)
-            _heal_recipients(msg, recipients)
-        except Exception as exc:
-            # Don't let one malformed/huge message break the whole open - return a
-            # readable placeholder instead of failing the fetch.
-            log.warning("body fetch failed for message %s: %s", msg.id, exc)
-            base = _to_out(msg)
-            return MessageDetail(**base.model_dump(),
-                                 html=f'<p style="color:#888">Couldn\'t load this message body ({type(exc).__name__}). It\'s still on the server - try again or open it in webmail.</p>',
-                                 text="", cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe or "",
-                                 attachments=[], auth={"status": msg.auth_status or "none"}, warnings=[])
-        # Cache so re-opening is instant. Optionally seal the bodies at rest
-        # (FTS is indexed below from the in-memory plaintext, so search still works).
-        from app.core.atrest import encrypt_field
-        msg.body_html, msg.body_text = encrypt_field(html), encrypt_field(text_body)
-        msg.body_fetched, msg.unsubscribe = True, unsub
-        msg.attachments = atts or []
-        if atts is not None:
-            msg.has_attachments = bool(atts)   # ground truth, vs the BODYSTRUCTURE guess
-        msg.auth_status = auth.get("status", "none")
-        # This fetch already applied every repair the backfill pass does, so it
-        # never needs to run for this message.
-        msg.repaired = True
-        if events:
-            from app.api.calendar import upsert_events
-            try: upsert_events(session, msg.account_id, msg.id, events)
-            except Exception: pass
-            # A real calendar event in the body proves this is an invite/response,
-            # even if the subject didn't look like one.
-            # A "put in group" rule outranks that proof, as it does every heuristic.
-            methods = {(e.get("method") or "").upper() for e in events}
-            if not _held_by_group_rule(session, msg):
-                if "REPLY" in methods:
-                    msg.category = "invitation_responses"
-                elif methods & {"REQUEST", "CANCEL"}:
-                    msg.category = "invitations"
-        session.add(msg)
-        # Index the body + any extracted attachment text for full-text search.
-        try:
-            fts_body = (text_body[:20000] + " " + att_text) if att_text else text_body[:20000]
-            index_message_fts(session, msg.id, subject=msg.subject, from_addr=msg.from_addr,
-                              from_name=msg.from_name, snippet=msg.snippet, body=fts_body)
-        except Exception:
-            pass
-        session.commit()
-        session.refresh(msg)
+            try:
+                html, text_body, unsub, events, atts, auth, att_text, recipients = await run_in_threadpool(_fetch_body, account, folder, msg.uid, trace)
+                trace.mark("saving")
+                _heal_recipients(msg, recipients)
+            except Exception as exc:
+                # Don't let one malformed/huge message break the whole open - return a
+                # readable placeholder instead of failing the fetch.
+                phase = trace.phase
+                err = f"{type(exc).__name__}: {exc}"[:300]
+                tracker.end(trace, error=err)
+                base = _to_out(msg)
+                return MessageDetail(**base.model_dump(),
+                                     html=f'<p style="color:#888">Couldn\'t load this message body ({type(exc).__name__}). It\'s still on the server - try again or open it in webmail.</p>',
+                                     text="", cc_addrs=list(msg.cc_addrs or []), unsubscribe=msg.unsubscribe or "",
+                                     attachments=[], auth={"status": msg.auth_status or "none"}, warnings=[],
+                                     load_error=err, load_phase=phase)
+            # Cache so re-opening is instant. Optionally seal the bodies at rest
+            # (FTS is indexed below from the in-memory plaintext, so search still works).
+            from app.core.atrest import encrypt_field
+            msg.body_html, msg.body_text = encrypt_field(html), encrypt_field(text_body)
+            msg.body_fetched, msg.unsubscribe = True, unsub
+            msg.attachments = atts or []
+            if atts is not None:
+                msg.has_attachments = bool(atts)   # ground truth, vs the BODYSTRUCTURE guess
+            msg.auth_status = auth.get("status", "none")
+            # This fetch already applied every repair the backfill pass does, so it
+            # never needs to run for this message.
+            msg.repaired = True
+            if events:
+                from app.api.calendar import upsert_events
+                try: upsert_events(session, msg.account_id, msg.id, events)
+                except Exception: pass
+                # A real calendar event in the body proves this is an invite/response,
+                # even if the subject didn't look like one.
+                # A "put in group" rule outranks that proof, as it does every heuristic.
+                methods = {(e.get("method") or "").upper() for e in events}
+                if not _held_by_group_rule(session, msg):
+                    if "REPLY" in methods:
+                        msg.category = "invitation_responses"
+                    elif methods & {"REQUEST", "CANCEL"}:
+                        msg.category = "invitations"
+            session.add(msg)
+            # Index the body + any extracted attachment text for full-text search.
+            try:
+                fts_body = (text_body[:20000] + " " + att_text) if att_text else text_body[:20000]
+                index_message_fts(session, msg.id, subject=msg.subject, from_addr=msg.from_addr,
+                                  from_name=msg.from_name, snippet=msg.snippet, body=fts_body)
+            except Exception:
+                pass
+            session.commit()
+            session.refresh(msg)
+            tracker.end(trace)
+        finally:
+            if _inflight.get(message_id) is fut:
+                del _inflight[message_id]
+            if not fut.done():
+                fut.set_result(None)
 
     # Never fire our own read-receipt pixel: the Sent copy carries it, and the
     # reader loading it from this very backend would count as a recipient open.
     if html and "/track/o/" in html:
         html = _RECEIPT_IMG_RE.sub("", html)
+
+    # A sign-in code in the mail (app.sync.otp): found once, kept on the row so
+    # the list can offer it for copying too. The finder gates on sign-in wording
+    # itself, so ordinary mail costs one regex.
+    if not msg.otp_code and (html or text_body):
+        try:
+            from app.sync.otp import find_code
+            code = find_code(msg.subject or "", text_body or "", html or "")
+        except Exception:
+            code = None
+        if code:
+            msg.otp_code = code
+            session.add(msg)
+            session.commit()
+            session.refresh(msg)
 
     # Derive a "brand" domain from the body's links so the avatar can fall back
     # to it when the sender's own domain has no favicon (computed from cached
@@ -1018,15 +1112,16 @@ def _mime_recipients(parsed) -> dict:
     return {"to": to, "cc": cc, "delivered_to": delivered}
 
 
-def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, str, list, list, dict, str, dict]:
-    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth, attachment_text, recipients)."""
+def _fetch_body(account: Account, folder: Folder, uid: int, trace=None) -> tuple[str, str, str, list, list, dict, str, dict]:
+    """Fetch + parse raw into (html, text, list_unsubscribe, ics_events, attachments, auth, attachment_text, recipients).
+    `trace` (app.core.loadtrace) records how long each step takes."""
     import mailparser
 
     from app.providers.pool import pool
     from app.sync.authcheck import check_auth
     from app.sync.ics import extract_ics
 
-    raw = pool.fetch_raw(account, folder.path, uid)
+    raw = pool.fetch_raw(account, folder.path, uid, trace=trace)
     if not raw:
         # The server had nothing for this UID - it was moved or deleted elsewhere,
         # or the mailbox reassigned UIDs. Raise instead of returning an empty body:
@@ -1034,6 +1129,8 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
         # with no retry. A raise shows the "couldn't load" placeholder and leaves
         # the next open free to try again.
         raise BodyUnavailable(f"server returned no message for uid {uid} in {folder.path}")
+    if trace is not None:
+        trace.mark("parsing")
     parsed = mailparser.parse_from_bytes(raw)
     html = "\n".join(parsed.text_html) if parsed.text_html else ""
     text_body = "\n".join(parsed.text_plain) if parsed.text_plain else ""
@@ -1052,6 +1149,8 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
         events = extract_ics(raw)
     except Exception:
         events = []
+    if trace is not None:
+        trace.mark("attachments")
     try:
         atts = _attachment_meta(parsed)
     except Exception:
@@ -1062,6 +1161,8 @@ def _fetch_body(account: Account, folder: Folder, uid: int) -> tuple[str, str, s
     # Pull searchable text out of supported attachments (docs, code, text) so a
     # full-text search can match words that only appear inside a file.
     att_text = _extract_attachment_text(parsed)
+    if trace is not None:
+        trace.mark("checking")
     try:
         from_addr = parsed.from_[0][1] if parsed.from_ else ""
         auth = check_auth(raw, from_addr)

@@ -444,7 +444,8 @@
   .rail .scroll { width: 100%; padding: 0 0 8px; align-items: center; }
 
   .sec-label { font-size: 13px; font-weight: 500; color: var(--muted); padding: 14px 16px 6px; user-select: none; }
-  .sec-rule { height: 1px; width: 40px; background: var(--hairline); margin: 8px auto; flex: none; }
+  /* Rail: sections and accounts are set apart by space alone - no divider lines. */
+  .sec-rule { height: 14px; flex: none; }
 
   .nav-it {
     position: relative; flex: 0 0 auto;
@@ -481,7 +482,7 @@
   .chev :global(svg) { width: 20px; height: 20px; }
   .chev.open { transform: none; }
   .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-  .rail-sep { display: block; height: 1px; width: 40px; margin: 10px auto 2px; background: var(--hairline); border-radius: 1px; }
+  .rail-sep { display: block; height: 10px; }
   .email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .addbtn {
     flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;

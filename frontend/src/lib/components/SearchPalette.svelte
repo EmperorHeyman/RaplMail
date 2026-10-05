@@ -28,6 +28,7 @@
   let chips = $state([]);        // completed operator chips: from:x, is:unread …
   let pendingOp = $state("");    // a value operator being filled: "from:" / ""
   let text = $state("");         // input contents: the pending value, or free text
+  let lead = $state("");         // free text typed BEFORE a pending operator ("invoice" in "invoice from:")
   let smart = $state(false);
   let inputEl;
 
@@ -48,9 +49,9 @@
     ? pendingOp + (/\s/.test(text.trim()) ? `"${text.trim().replace(/"/g, "")}"` : text.trim())
     : "");
   const query = $derived(pendingOp
-    ? buildQuery([...chips, pendingChip].filter(Boolean), "")
+    ? buildQuery([...chips, pendingChip].filter(Boolean), lead)
     : buildQuery(chips, text));
-  const hasDraft = () => !!(chips.length || pendingOp || text.trim());
+  const hasDraft = () => !!(chips.length || pendingOp || text.trim() || lead.trim());
 
   function loadRecent() {
     try { recent = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]") || []; } catch { recent = []; }
@@ -76,7 +77,7 @@
       untrack(() => {
         if (!hasDraft() && (init || "").trim()) {
           const p = parseQuery(init);
-          chips = p.chips; text = p.text; pendingOp = ""; smart = false;
+          chips = p.chips; text = p.text; pendingOp = ""; lead = ""; smart = false;
         }
         loadRecent();
         recompute();
@@ -109,16 +110,26 @@
 
   // --- input handling -------------------------------------------------------
   function onInput(e) {
-    let v = e.currentTarget.value;
-    // Starting a value operator ("from:", "to: apa", …) opens a pending chip.
-    if (!pendingOp) {
-      const m = /^\s*(from|to|cc|subject):(.*)$/i.exec(v);
-      if (m) {
-        pendingOp = m[1].toLowerCase() + ":";
-        text = m[2].replace(/^\s+/, "");
-        recompute(); if (!smart) scheduleFetch();
-        return;
-      }
+    const el = e.currentTarget;
+    let v = el.value;
+    if (pendingOp) {
+      // "from: lpeterek" - the space after the colon is habit, and the chip has
+      // already closed the operator, so leading spaces never reach the value.
+      const trimmed = v.replace(/^\s+/, "");
+      if (trimmed !== v) { el.value = trimmed; v = trimmed; }
+      text = v;
+      recompute(); if (!smart) scheduleFetch();
+      return;
+    }
+    // Typing a value operator ("from:", "to: apa", "invoice from:") opens a
+    // pending chip. Words typed before it stay in the query as free text.
+    const m = /^(.*?)(?:^|\s)(from|to|cc|subject):\s*(.*)$/i.exec(v);
+    if (m) {
+      openPending(m[2].toLowerCase() + ":", m[1]);
+      text = m[3];
+      el.value = text;
+      recompute(); if (!smart) scheduleFetch();
+      return;
     }
     text = v;
     // A completed operator typed inline + space becomes a chip (e.g. "is:unread ").
@@ -135,21 +146,51 @@
     if (!smart) scheduleFetch();
   }
 
+  // Enter "waiting for a value" mode for `op`. Whatever was typed before it
+  // keeps its place: completed operators become chips, the rest is free text.
+  function openPending(op, before) {
+    const p = parseQuery(before || "");
+    if (p.chips.length) chips = normalizeChips([...chips, ...p.chips]);
+    lead = p.text.trim();
+    pendingOp = op;
+    text = "";
+  }
+  // Leave pending mode; the free text typed before the operator comes back
+  // into the box.
+  function closePending() {
+    pendingOp = "";
+    text = lead ? lead + " " : "";
+    lead = "";
+  }
+
   function commitPending(value) {
     if (!pendingOp) return false;
     const v = (value ?? text).trim();
-    if (!v) { pendingOp = ""; text = ""; recompute(); return true; }
+    if (!v) { closePending(); recompute(); return true; }
     const val = /\s/.test(v) ? `"${v.replace(/"/g, "")}"` : v;
     chips = normalizeChips([...chips, pendingOp + val]);
-    pendingOp = ""; text = "";
+    closePending();
     recompute(); if (!smart) scheduleFetch();
     return true;
   }
 
+  // The words in the box minus a half-typed operator ("fr" when you picked from:).
+  function textWithoutPartial(token) {
+    const words = text.trim().split(/\s+/).filter(Boolean);
+    const last = (words[words.length - 1] || "").toLowerCase();
+    if (last && token.toLowerCase().startsWith(last)) words.pop();
+    return words.join(" ");
+  }
+
   function applySugg(s) {
     if (s.kind === "contact") commitPending(s.value);
-    else if (s.value) { pendingOp = s.token; text = ""; recompute(); }
-    else { chips = normalizeChips([...chips, s.token]); text = ""; recompute(); if (!smart) scheduleFetch(); }
+    else if (s.value) { openPending(s.token, textWithoutPartial(s.token)); recompute(); }
+    else {
+      const rest = textWithoutPartial(s.token);
+      chips = normalizeChips([...chips, s.token]);
+      text = rest ? rest + " " : "";
+      recompute(); if (!smart) scheduleFetch();
+    }
     inputEl?.focus();
   }
 
@@ -161,7 +202,7 @@
     if (!smart) scheduleFetch();
   }
   function removeChip(i) { chips = chips.filter((_, j) => j !== i); if (!smart) scheduleFetch(); }
-  function clearAll() { chips = []; text = ""; pendingOp = ""; results = []; recompute(); inputEl?.focus(); }
+  function clearAll() { chips = []; text = ""; lead = ""; pendingOp = ""; results = []; recompute(); inputEl?.focus(); }
   const chipActive = (token) => chips.some((c) => c.toLowerCase() === token.toLowerCase());
 
   // --- live results ---------------------------------------------------------
@@ -226,7 +267,7 @@
   }
   function pickRecent(q) {
     const p = parseQuery(q);
-    chips = p.chips; text = p.text; pendingOp = ""; smart = false;
+    chips = p.chips; text = p.text; pendingOp = ""; lead = ""; smart = false;
     recompute(); fetchResults(); inputEl?.focus();
   }
   function openResult(msg) {
@@ -250,7 +291,7 @@
   function onKey(e) {
     if (e.key === "Escape") { e.preventDefault(); close(); return; }
     if (e.key === "Backspace" && text === "" && document.activeElement === inputEl) {
-      if (pendingOp) { pendingOp = ""; recompute(); e.preventDefault(); return; }
+      if (pendingOp) { closePending(); recompute(); e.preventDefault(); return; }
       if (chips.length) {
         const last = chips[chips.length - 1];
         chips = chips.slice(0, -1);
@@ -356,6 +397,7 @@
         </span>
       {/each}
       {#if pendingOp}
+        {#if lead}<span class="lead" title={lead}>{lead}</span>{/if}
         <span class="chip pending"><span class="op">{pendingOp}</span></span>
       {/if}
       <!-- svelte-ignore a11y_autofocus -->
@@ -489,7 +531,8 @@
     font-size: 15px; color: var(--text); }
   .chip { display: inline-flex; align-items: center; gap: 2px; background: var(--accent); color: var(--on-accent); border-radius: 7px;
     padding: 3px 4px 3px 8px; font-size: 12.5px; max-width: 280px; }
-  .chip .op { opacity: 0.82; } .chip .val { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chip .op { opacity: 0.82; margin-right: 3px; } .chip .val { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lead { font-size: 15px; color: var(--text); white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
   .chip .x { color: var(--on-accent); opacity: 0.85; display: inline-flex; padding: 1px; }
   .chip .x:hover { opacity: 1; }
   .chip.pending { background: color-mix(in srgb, var(--accent) 22%, var(--surface)); color: var(--accent);

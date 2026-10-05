@@ -1,5 +1,5 @@
 // Central reactive app state using Svelte 5 runes.
-import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi } from "./api.js";
+import { vault, accounts, folders, messages, compose, contacts, rules, connectEvents, appSettings, system as systemApi, avatarUrlDomain, calendar as calendarApi, ai, openExternal, fetchAttachmentB64, openAttachmentBytes, saveAttachmentBytes, sandbox as sandboxApi } from "./api.js";
 import { playSound, setCustomSounds } from "./sound.js";
 import { setLocale, t } from "./i18n.svelte.js";
 import { materialTokens, isLightHex } from "./palette.js";
@@ -138,6 +138,7 @@ const DEFAULT_SETTINGS = {
   scheduleMorningHour: 9,        // hour used for Tomorrow / weekend / next week
   scheduleEveningHour: 18,       // hour used for "This evening"
   notifyNewMail: true,           // desktop notification when new mail arrives
+  autoCopyCodes: true,           // a sign-in / verification code that arrives goes straight to the clipboard
   notifySound: "ding",           // sound on new mail: "none"|"ding"|"chime"|"pop"|"marimba"|"glass"|"custom:<id>"
   notifyCalendarSound: "chime",  // sound for calendar event reminders (separate from mail)
   customSounds: [],              // user clips: [{ id, name, data }] (data = WAV data URL, ~3s)
@@ -2017,7 +2018,7 @@ async function drainPrefetch() {
       if (prefetched.size > 5000) prefetched.clear();
       prefetched.add(id);
       try {
-        const detail = await messages.get(id);
+        const detail = await messages.get(id, "prefetch");
         // Upgrade the list row with body-derived info (brand avatar, auth shield).
         if (detail) {
           const m = app.messages.find((x) => x.id === id);
@@ -2275,7 +2276,28 @@ export function inQuietHours() {
   const e = app.settings.quietEnd ?? 7;
   return s <= e ? (h >= s && h < e) : (h >= s || h < e);
 }
-function desktopNotify(payload, count) {
+/** Copy text. The webview's clipboard works only while the window has focus;
+ *  otherwise the backend writes the system clipboard (app.core.clipboard). */
+export async function copyText(text) {
+  if (!text) return false;
+  try {
+    if (typeof document !== "undefined" && document.hasFocus() && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {}
+  try { return !!(await systemApi.clipboard(text))?.ok; } catch { return false; }
+}
+
+/** Copy a sign-in code and say so. `auto` = copied on arrival, not by a click. */
+export async function copyCode(code, { auto = false } = {}) {
+  const ok = await copyText(code);
+  if (ok) notify(t(auto ? "otp.autoCopied" : "otp.copied", { code }));
+  else if (!auto) notify(t("otp.copyFailed"), "error");
+  return ok;
+}
+
+function desktopNotify(payload, count, code = null) {
   if (app.settings.notifyNewMail === false) return;
   // Never fire without a real message preview - a notification with no sender/
   // subject is the "empty notification" bug. Genuine new inbox mail always has
@@ -2293,7 +2315,11 @@ function desktopNotify(payload, count) {
   }
   const p = payload || {};
   let title, body;
-  if (count > 1) {
+  if (code) {
+    // The code is what you're waiting for - lead with it.
+    title = t("otp.notifTitle", { code: code.code });
+    body = [code.from, code.subject].filter(Boolean).join(": ");
+  } else if (count > 1) {
     title = `${count} new messages`;
     body = p.from ? `Latest: ${p.from} - ${p.subject || ""}` : "";
   } else {
@@ -2365,9 +2391,15 @@ export function startEvents() {
       // rules, not notification-muted). Older payloads without it fall back to
       // `new` only when a preview exists, so we never fire an empty popup.
       const n = ev.payload?.notify ?? (ev.payload?.preview ? ev.payload?.new : 0);
+      // A sign-in code just arrived: copy it straight away (Settings -> Notifications).
+      const codes = ev.payload?.codes || [];
+      const code = codes.length && app.settings.autoCopyCodes !== false
+        ? [...codes].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0]
+        : null;
+      if (code) copyCode(code.code, { auto: true });
       if (n > 0) {
-        notify(`${n} new message(s)`);
-        desktopNotify(ev.payload.preview, n);
+        if (!code) notify(`${n} new message(s)`);
+        desktopNotify(ev.payload.preview, n, code);
       }
     } else if (ev.event === "sync:error") {
       settleSync(ev.payload?.account_id ?? null);

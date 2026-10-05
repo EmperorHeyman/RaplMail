@@ -110,6 +110,17 @@ class ImapSmtpProvider:
                 pass
             self._client = None
 
+    def abort(self) -> None:
+        """Cut the connection at once, without a LOGOUT. Unlike close(), this
+        doesn't talk to the server, so it can be called from another thread to
+        unblock one that's stuck reading from a dead connection."""
+        client, self._client = self._client, None
+        if client is not None:
+            try:
+                client.shutdown()
+            except Exception:
+                pass
+
     # --- reads --------------------------------------------------------------
     def list_folders(self) -> list[FolderInfo]:
         out: list[FolderInfo] = []

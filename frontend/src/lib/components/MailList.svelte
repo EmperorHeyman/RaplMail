@@ -2,7 +2,7 @@
   import { untrack } from "svelte";
   import { fly, slide } from "svelte/transition";
   import { cubicOut } from "svelte/easing";
-  import { app, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, smartGroupOrder, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, openRuleModal, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
+  import { app, copyCode, refreshMessages, markDone, toggleShowDone, prefetchBody, setCategory, snoozePresets, presetWhen, notify, saveCurrentSearch, openThread, refreshQueue, smartActive, groupedCategories, smartGroupOrder, searchAddress, snoozeMessage, muteSender, muteThread, muteNotificationsFromSender, pinMessage, isVip, isOutgoingView, toggleVip, isTrustedSender, toggleTrusted, blockSender, createRuleFromSender, openRuleModal, setSenderCategory, setMessageSeen, archiveMessage, deleteMessage, readerCommand, kbAll, approveSender, mergeById, runSemanticSearch, aiEnabled, openAiAssistant, addToAiChat, markAllRead, moveMessages, sendToLab } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi } from "../api.js";
   import MessageRow from "./MessageRow.svelte";
@@ -425,6 +425,7 @@
     return [
       // -1: the right-clicked row isn't necessarily the keyboard-focused one.
       { label: t("list.open"), run: () => open(m, -1) },
+      ...(m.otp_code ? [{ label: t("otp.ctxCopy", { code: m.otp_code }), icon: icons.copy, kw: "2fa otp sign in code clipboard", run: () => copyCode(m.otp_code) }] : []),
       ...(aiEnabled() ? [{ label: t("list.addToAiChat"), icon: icons.bolt, kw: "ai assistant chat context", run: () => addToAiChat(m) }] : []),
       { sep: "" },
       { label: m.is_done ? t("list.markNotDone") : t("list.markDone"), icon: icons.done, kw: "complete e", run: () => markDone(m, !m.is_done) },

@@ -257,6 +257,12 @@ export function backendBase() {
   try { return `${location.origin}${base}`; } catch { return base; }
 }
 
+// Desktop bridges the webview can't do itself.
+export const system = {
+  // Works while the window isn't focused (a sign-in code copied as it arrives).
+  clipboard: (text) => api.post("/system/clipboard", { text }),
+};
+
 export const appSettings = {
   get: () => api.get("/settings"),
   put: (data, opts) => api.put("/settings", { data }, opts),
@@ -368,7 +374,10 @@ export const messages = {
     ).toString();
     return api.get(`/messages${q ? `?${q}` : ""}`);
   },
-  get: (id) => api.get(`/messages/${id}`),
+  // `why` labels the load for diagnostics: open (default) / prefetch / thread.
+  get: (id, why) => api.get(`/messages/${id}${why ? `?why=${why}` : ""}`),
+  loadStatus: (id) => api.get(`/messages/${id}/load-status`),
+  connectionReset: (id) => api.post("/messages/connection-reset", { message_id: id }),
   setDone: (id, value) => api.post(`/messages/${id}/done`, { value }),
   setFlag: (id, value) => api.post(`/messages/${id}/flag`, { value }),
   setSeen: (id, value) => api.post(`/messages/${id}/seen`, { value }),
@@ -447,6 +456,7 @@ export const debug = {
     api.get(`/debug/logs?since=${since}${level ? `&level=${encodeURIComponent(level)}` : ""}`),
   clearLogs: () => api.del("/debug/logs"),
   health: () => api.get("/debug/health"),
+  loads: () => api.get("/debug/loads"),
 };
 
 /**

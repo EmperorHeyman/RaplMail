@@ -20,6 +20,7 @@ import setLook from "./parts/setLook.js";
 import setAccounts from "./parts/setAccounts.js";
 import setMisc from "./parts/setMisc.js";
 import color from "./parts/color.js";
+import otp from "./parts/otp.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -220,5 +221,5 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
-  ...calendar.cs, ...groups.cs, ...reauth.cs, ...settingsPanels.cs, ...setAi.cs, ...setLook.cs, ...setAccounts.cs, ...setMisc.cs, ...color.cs,
+  ...calendar.cs, ...groups.cs, ...reauth.cs, ...settingsPanels.cs, ...setAi.cs, ...setLook.cs, ...setAccounts.cs, ...setMisc.cs, ...color.cs, ...otp.cs,
 };

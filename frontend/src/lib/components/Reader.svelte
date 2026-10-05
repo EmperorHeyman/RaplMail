@@ -1,5 +1,5 @@
 <script>
-  import { app, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, sendToLab, sandboxAttachment, deepScanAttachment, markUnsubscribed } from "../store.svelte.js";
+  import { app, copyCode, markDone, openCompose, searchAddress, approveSender, blockSender, muteSender, muteThread, notify, isVip, toggleVip, trustSender, untrustSender, isTrustedSender, archiveMessage, deleteMessage, snoozeMessage, snoozePresets, presetWhen, createRuleFromSender, threadPrefetch, aiEnabled, sendToLab, sandboxAttachment, deepScanAttachment, markUnsubscribed } from "../store.svelte.js";
   import { untrack } from "svelte";
   import { messages as messagesApi, openAttachment, saveAttachment, saveAttachmentAs, saveEml, revealPath, openExternal, unfurl, ai, fetchAttachmentForCompose, fetchAttachment, subscriptions } from "../api.js";
   import { icons } from "../icons.js";
@@ -25,22 +25,58 @@
   let loadImages = $state(false); // user override to show blocked images
   let ctxMenu = $state(null);  // reader right-click menu { x, y, sel, link }
 
+  // A slow open explains itself: after a moment the reader asks the backend
+  // what the load is doing (waiting for the mail connection, connecting,
+  // downloading... - app.core.loadtrace) and says so; "Try again" cuts a stuck
+  // connection first, so the retry doesn't queue behind it.
+  let loadInfo = $state(null);
+  let reloadTick = $state(0);
+  let loadSeq = 0;
+
   $effect(() => {
     const id = app.selectedMessageId;
+    void reloadTick;
     detail = null;
     error = "";
     menuAddr = null;
     loadImages = false;
+    loadInfo = null;
     if (id == null || app.threadKey) return;
     loading = true;
-    // Only apply the response if this is still the selected message - a slow
-    // fetch for a previous click must not overwrite the one now on screen.
+    // Only apply the response if this is still the current load - a slow fetch
+    // for a previous click (or the attempt a retry replaced) must not overwrite
+    // the one now on screen.
+    const seq = ++loadSeq;
+    const live = () => seq === loadSeq && app.selectedMessageId === id;
+    let pollTimer = setTimeout(function poll() {
+      if (!live() || !loading) return;
+      messagesApi.loadStatus(id).then((st) => { if (live() && loading && st?.phase) loadInfo = st; }).catch(() => {});
+      pollTimer = setTimeout(poll, 800);
+    }, 1200);
     messagesApi
-      .get(id)
-      .then((d) => { if (app.selectedMessageId === id) detail = d; })
-      .catch((e) => { if (app.selectedMessageId === id) error = e.message; })
-      .finally(() => { if (app.selectedMessageId === id) loading = false; });
+      .get(id, "open")
+      .then((d) => { if (live()) detail = d; })
+      .catch((e) => { if (live()) error = e.message; })
+      .finally(() => { if (live()) loading = false; });
+    return () => clearTimeout(pollTimer);
   });
+
+  async function retryLoad() {
+    const id = app.selectedMessageId;
+    if (id == null) return;
+    try { await messagesApi.connectionReset(id); } catch {}
+    reloadTick += 1;
+  }
+  // "Downloading the message…" while it happens; "downloading" where it stopped.
+  function phaseText(info) {
+    if (info?.phase === "waiting") {
+      const b = info.busy;
+      return b?.what ? t("reader.ldWaitBusy", { what: t("reader.ldBusy_" + b.what), s: Math.round(b.ms / 1000) })
+                     : t("reader.ldWaiting");
+    }
+    return t("reader.ld_" + (info?.phase || "checking"));
+  }
+  const phaseLabel = (p) => t("reader.lp_" + (p || "checking"));
 
   // Conversations open AS conversations - when the open message turns out to
   // have thread siblings (they may live in other folders/pages, so the list
@@ -716,9 +752,22 @@
       <a class="rapl-link" href="https://rapl-group.eu/" target="_blank" rel="noreferrer">rapl-group.eu</a>
     </div>
   {:else if loading}
-    <div class="placeholder">{t("reader.loading")}</div>
+    <div class="placeholder loadwait" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <p class="ld-text">{loadInfo?.phase ? phaseText(loadInfo) : t("reader.loading")}</p>
+      {#if loadInfo?.phase}<p class="ld-time tnum">{Math.round(loadInfo.elapsed_ms / 1000)} s</p>{/if}
+      {#if loadInfo && loadInfo.elapsed_ms >= 8000}
+        <p class="ld-slow">{t("reader.ldSlow")}</p>
+        <button class="btn tonal" title={t("reader.ldRetryHint")} onclick={retryLoad}>{@html icons.refresh} {t("reader.ldRetry")}</button>
+        <p class="ld-hint">{t("reader.ldDebugHint", { tab: t("settingsNav.debug") })}</p>
+      {/if}
+    </div>
   {:else if error}
-    <div class="placeholder err">{error}</div>
+    <div class="placeholder err">
+      <p class="ld-text">{t("reader.ldFailed")}</p>
+      <code class="ld-err">{error}</code>
+      <button class="btn tonal" title={t("reader.ldRetryHint")} onclick={retryLoad}>{@html icons.refresh} {t("reader.ldRetry")}</button>
+    </div>
   {:else if detail}
     {#key app.selectedMessageId}
     <div class="msgfade" in:fade={{ duration: 120 }}>
@@ -790,6 +839,20 @@
       </div>
       {#if !actionsBottom}{@render actionsBar()}{/if}
     </header>
+    {#if detail.otp_code}
+      <div class="otp-bar">
+        <span class="otp-label">{t("otp.readerLabel")}</span>
+        <span class="otp-code tnum">{detail.otp_code}</span>
+        <button class="btn tonal sm" onclick={() => copyCode(detail.otp_code)}>{@html icons.copy} {t("otp.copy")}</button>
+      </div>
+    {/if}
+    {#if detail.load_error}
+      <div class="load-err" role="alert">
+        <span class="le-text">{@html icons.warning} {t("reader.ldFailed")} - {t("reader.ldStoppedAt", { phase: phaseLabel(detail.load_phase) })}</span>
+        <code class="ld-err">{detail.load_error}</code>
+        <button class="btn tonal sm" title={t("reader.ldRetryHint")} onclick={retryLoad}>{@html icons.refresh} {t("reader.ldRetry")}</button>
+      </div>
+    {/if}
     {#if summary}
       <div class="ai-summary">
         <div class="ai-head">{@html icons.bolt} <b>{t("reader.summary")}</b>
@@ -1069,6 +1132,27 @@
     background: var(--sel); color: var(--on-sel); }
   .placeholder .big :global(svg) { width: 40px; height: 40px; }
   .placeholder.err { color: var(--danger); }
+  .placeholder.err .ld-text { color: var(--text); }
+  /* Material circular progress indicator. */
+  .spinner { width: 40px; height: 40px; border-radius: 50%; border: 4px solid var(--surface-3); border-top-color: var(--accent);
+    animation: ld-spin 0.9s linear infinite; }
+  @keyframes ld-spin { to { transform: rotate(360deg); } }
+  .placeholder p { margin: 0; text-align: center; max-width: 420px; }
+  .ld-text { color: var(--text); font-size: 15px; }
+  .ld-time { font-size: 13px; color: var(--muted); }
+  .ld-slow { margin-top: 6px !important; font-size: 14px; }
+  .ld-hint { font-size: 12px; color: var(--muted); }
+  .ld-err { font-size: 12px; color: var(--danger); background: var(--surface-2); padding: 6px 10px; border-radius: 8px;
+    max-width: 520px; overflow-wrap: anywhere; }
+  .otp-bar { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 0 24px 12px; padding: 10px 12px 10px 18px;
+    border-radius: var(--radius-sm); background: var(--accent-cont); color: var(--on-accent-cont); }
+  .otp-label { font-size: 13px; }
+  .otp-code { flex: 1; font-size: 24px; font-weight: 600; letter-spacing: 0.1em; user-select: all; }
+  .load-err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 24px 12px; padding: 12px 16px;
+    border-radius: var(--radius-sm); background: var(--danger-soft); color: var(--text); font-size: 13.5px; }
+  .load-err .le-text { display: inline-flex; align-items: center; gap: 8px; flex: 1 1 260px; }
+  .load-err .le-text :global(svg) { width: 18px; height: 18px; color: var(--danger); flex: none; }
+  .load-err .ld-err { flex-basis: 100%; order: 3; }
   .placeholder .rapl-link { margin-top: 2px; font-size: 12px; color: var(--accent); text-decoration: none; opacity: 0.8; }
   .placeholder .rapl-link:hover { opacity: 1; text-decoration: underline; }
   /* Message header: flat on the pane - subject large and light, the people

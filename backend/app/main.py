@@ -16,7 +16,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
-from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, devicesync, folders, messages, metrics, rapldesk, rules, sandbox, security, settings as settings_api, signatures, smime, subscriptions, track, unfurl, vault
+from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, devicesync, folders, messages, metrics, rapldesk, rules, sandbox, security, settings as settings_api, signatures, smime, subscriptions, system, track, unfurl, vault
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.logbuffer import install as install_log_buffer
@@ -101,6 +101,7 @@ app.include_router(subscriptions.router)
 app.include_router(rapldesk.router)
 app.include_router(sandbox.router)
 app.include_router(debug.router)
+app.include_router(system.router)
 app.include_router(track.router)
 app.include_router(track.pixel_router)
 

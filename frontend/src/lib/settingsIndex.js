@@ -8,6 +8,8 @@
 // Labels stay concise and match the on-screen wording where possible so the
 // "flash the setting" jump can find it in the rendered panel.
 export const SETTINGS_INDEX = [
+  // ── Notifications ──────────────────────────────────────────────────────────
+  { tab: "notifications", label: "Copy sign-in codes automatically", kw: "2fa otp two factor verification code sign in login copy clipboard přihlašovací kód schránka ověřovací" },
   // ── Inbox ──────────────────────────────────────────────────────────────────
   { tab: "inbox", label: "Inbox view", kw: "smart inbox unified all inboxes combined per account chytrá schránka zobrazení" },
   { tab: "inbox", label: "Smart Inbox groups", kw: "smart inbox group groups categories strip order newsletters skupiny chytrá schránka" },

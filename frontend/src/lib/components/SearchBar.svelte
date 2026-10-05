@@ -162,7 +162,7 @@
   /* Operator chips: Material input chips. */
   .chip { display: inline-flex; align-items: center; gap: 2px; height: 28px; background: var(--sel); color: var(--on-sel);
           border-radius: 8px; padding: 0 2px 0 10px; font-size: 13px; max-width: 240px; }
-  .chip .op { opacity: 0.75; }
+  .chip .op { opacity: 0.75; margin-right: 3px; }
   .chip .val { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .chip .x { color: inherit; opacity: 0.75; width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; }
   .chip .x :global(svg) { width: 16px; height: 16px; }

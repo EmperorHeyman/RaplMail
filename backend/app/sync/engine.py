@@ -32,6 +32,30 @@ from app.providers.base import HeaderInfo
 from app.providers.imap_smtp import Auth, ImapSmtpProvider
 from app.sync.rules import MessageFields, first_matching_action, group_for
 
+# A sign-in code is only worth copying for a few minutes.
+CODE_FRESH_SECONDS = 15 * 60
+
+
+def _fresh(when) -> bool:
+    """Did this mail arrive within the last CODE_FRESH_SECONDS?"""
+    if when is None:
+        return False
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    age = (datetime.now(timezone.utc) - when).total_seconds()
+    return -300 <= age <= CODE_FRESH_SECONDS   # a little clock skew either way
+
+
+def _may_hold_code(subject: str) -> bool:
+    """Cheap subject check before downloading a body at sync time: sign-in
+    wording, the word "code" itself, or a new-device notice (Steam's subject is
+    just "Access from new computer"). find_code on the body decides."""
+    import re
+
+    from app.sync.otp import looks_like_code_mail
+    return looks_like_code_mail(subject) or bool(re.search(
+        r"\bcode\b|kód|\botp\b|\bpin\b|access from new|new (?:device|computer)|nové zařízení", subject, re.I))
+
 log = logging.getLogger("raplmail.sync")
 
 SYNC_INTERVAL_SECONDS = 60   # fallback poll; IMAP IDLE pushes new mail sooner
@@ -572,6 +596,7 @@ class SyncManager:
     def _sync_account_blocking(self, account_id: int) -> dict:
         new_count = 0
         previews: list[dict] = []
+        codes: list[dict] = []     # fresh sign-in codes (app.sync.otp) - the UI can copy them on arrival
         account_email = ""
         with Session(get_engine()) as session:
             account = session.get(Account, account_id)
@@ -619,7 +644,7 @@ class SyncManager:
                 folders = list(session.exec(select(Folder).where(Folder.account_id == account_id)))
                 for folder in folders:
                     try:
-                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks, convo)
+                        new_count += self._sync_folder(session, account, folder, provider, rules, overrides, previews, muted, screen, hooks, convo, codes)
                         # Commit per folder, not once at the end: a failure late in
                         # the sweep used to cost every earlier folder's new mail
                         # (nothing was durable until the final commit), and a
@@ -686,7 +711,7 @@ class SyncManager:
         # (drives sync bookkeeping / health). Keeping them separate is what stops
         # a Sent/Archive/Junk arrival from firing a phantom empty notification.
         return {"new": new_count, "notify": len(previews), "preview": preview,
-                "account": account_email}
+                "account": account_email, "codes": codes}
 
     def _prune_folder(self, session: Session, folder: Folder) -> None:
         """Drop a folder row plus its children in FK order (events -> messages ->
@@ -737,7 +762,7 @@ class SyncManager:
                      provider, rules: list[Rule], overrides: dict[str, str] | None = None,
                      previews: list[dict] | None = None, muted: dict | None = None,
                      screen: dict | None = None, hooks: list[dict] | None = None,
-                     convo=None) -> int:
+                     convo=None, codes: list[dict] | None = None) -> int:
         self._check_uidvalidity(session, folder, provider)
         max_uid = session.exec(
             select(func.max(Message.uid)).where(Message.folder_id == folder.id)
@@ -811,6 +836,25 @@ class SyncManager:
                     "subject": msg.subject or "(no subject)",
                     "date": (msg.date.isoformat() if getattr(msg, "date", None) else ""),
                 })
+            # A sign-in code that just arrived: read the body now (headers alone
+            # don't carry it) so the UI can copy the code the moment it lands -
+            # you're usually sitting on a login page waiting for it. Only for
+            # fresh inbox mail whose subject hints at a code; app.sync.otp makes
+            # the real decision.
+            if (codes is not None and folder.role == FolderRole.inbox and not first_sync
+                    and not msg.is_done and _fresh(msg.date) and _may_hold_code(msg.subject or "")):
+                code = self._read_code(provider, folder, msg)
+                if code:
+                    msg.otp_code = code
+                    session.add(msg)
+                    if msg.id is None:
+                        session.flush()
+                    codes.append({
+                        "id": msg.id, "code": code, "account_id": account.id,
+                        "from": msg.from_name or msg.from_addr or "",
+                        "subject": msg.subject or "",
+                        "date": msg.date.isoformat() if getattr(msg, "date", None) else "",
+                    })
             # Global webhook payloads: every new inbox arrival that wasn't
             # quarantined - including rule-filtered mail (an automation endpoint
             # wants ALL arrivals, not just the ones that ding).
@@ -818,6 +862,24 @@ class SyncManager:
                 hooks.append(self._rule_payload(msg, account))
         self._resync_flags(session, account, folder, provider)
         return new_count
+
+    @staticmethod
+    def _read_code(provider, folder: Folder, msg: Message) -> str | None:
+        """Download one fresh mail and find its sign-in code (or None)."""
+        try:
+            import mailparser
+
+            from app.sync.otp import find_code
+            raw = provider.fetch_raw(folder.path, msg.uid)
+            if not raw or len(raw) > 2_000_000:
+                return None   # sign-in mails are small; don't pull a big one at sync time
+            parsed = mailparser.parse_from_bytes(raw)
+            text = "\n".join(parsed.text_plain or [])
+            html = "\n".join(parsed.text_html or [])
+            return find_code(msg.subject or "", text, html)
+        except Exception:
+            log.debug("code check failed for uid %s", msg.uid, exc_info=True)
+            return None
 
     # --- full-history backfill ----------------------------------------------
     # Ceiling on one folder's catch-up in a single cycle (in messages). Reached

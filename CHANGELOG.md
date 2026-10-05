@@ -11,6 +11,39 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [0.9.19] - 2026-10-05
+
+### Added
+- **Sign-in codes copy themselves.** When a mail with a sign-in or
+  verification code arrives (Microsoft, Google, GitHub, banks, Seznam, Steam,
+  Slack, ...), the code goes straight to the clipboard - also while you're in
+  the browser waiting for it - and the notification says "Code 4281937
+  copied". Such mail also gets a copy chip in the list (for a day), a large
+  code with a Copy button in the reader, and "Copy code" in the right-click
+  menu. It's strict on purpose: promo codes, order numbers, dates, amounts and
+  phone numbers are never taken for a code. Switch it off in Settings →
+  Notifications → Sign-in codes.
+- **Slow-loading mail explains itself.** While a message downloads, the reader
+  says what it's doing ("Waiting for the mail connection - it's busy preloading
+  another message", "Connecting to the mail server", "Downloading the
+  message") with a timer. After 8 seconds a **Try again** button appears; it
+  cuts a stuck connection first, so the retry doesn't queue behind it. A
+  message that fails to load says where it stopped, with the error.
+- **Settings → Debug → Opening messages:** every message downloaded from the
+  server, with a bar showing where the time went (waiting for the connection,
+  connecting, downloading, reading). Slow ones are marked and logged.
+
+### Fixed
+- Opening a message while its hover preload was still downloading waited for
+  the preload and then downloaded the message a second time. It now uses the
+  preload's download.
+- Search: a space after an operator (`from: lpeterek`) no longer ends up in the
+  value, and words typed before an operator ("invoice from: ...") stay in the
+  search instead of disappearing. `cc:` now actually searches Cc recipients
+  (it used to be offered but ignored).
+- The collapsed sidebar has no divider lines any more - sections are set apart
+  by space.
+
 ## [0.9.18] - 2026-10-05
 
 ### Fixed

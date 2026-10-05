@@ -92,6 +92,15 @@
   </section>
 
   <section class="card">
+    <h3>{t("otp.settingsTitle")}</h3>
+    <label class="check">
+      <input type="checkbox" checked={app.settings.autoCopyCodes !== false}
+        onchange={(e) => saveSettings({ autoCopyCodes: e.currentTarget.checked })} />
+      <div><b>{t("otp.autoCopy")}</b><span>{t("otp.autoCopyHint")}</span></div>
+    </label>
+  </section>
+
+  <section class="card">
     <h3>{t("notif.sound")}</h3>
     <label class="inline" style="margin-top:0">{t("notif.soundMail")}
       <select value={app.settings.notifySound || "ding"} onchange={(e) => { saveSettings({ notifySound: e.currentTarget.value }); playSound(e.currentTarget.value, vol / 100); }}>

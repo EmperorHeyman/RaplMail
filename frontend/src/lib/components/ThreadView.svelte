@@ -101,7 +101,7 @@
 
   async function loadBody(id) {
     if (bodies[id]) return;
-    try { bodies = { ...bodies, [id]: await messagesApi.get(id) }; } catch {}
+    try { bodies = { ...bodies, [id]: await messagesApi.get(id, "thread") }; } catch {}
   }
   async function toggle(m) {
     const s = new Set(expanded);

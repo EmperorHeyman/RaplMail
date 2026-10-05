@@ -33,6 +33,14 @@ def clear_logs() -> dict:
     return {"cleared": True}
 
 
+@router.get("/loads")
+def get_loads() -> dict:
+    """Recent message-body loads with the time each phase took (newest first,
+    loads still running on top) - see app.core.loadtrace."""
+    from app.core.loadtrace import SLOW_SECONDS, tracker
+    return {"loads": tracker.recent(), "slow_ms": int(SLOW_SECONDS * 1000)}
+
+
 @router.get("/health")
 def get_health(request: Request) -> dict:
     """Per-account sync status (last sync/attempt, errors, IDLE state) merged with

@@ -24,6 +24,7 @@ import setLook from "./parts/setLook.js";
 import setAccounts from "./parts/setAccounts.js";
 import setMisc from "./parts/setMisc.js";
 import color from "./parts/color.js";
+import otp from "./parts/otp.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -224,5 +225,5 @@ export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
   ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
-  ...calendar.en, ...groups.en, ...reauth.en, ...settingsPanels.en, ...setAi.en, ...setLook.en, ...setAccounts.en, ...setMisc.en, ...color.en,
+  ...calendar.en, ...groups.en, ...reauth.en, ...settingsPanels.en, ...setAi.en, ...setLook.en, ...setAccounts.en, ...setMisc.en, ...color.en, ...otp.en,
 };

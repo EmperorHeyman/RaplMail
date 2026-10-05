@@ -1,6 +1,6 @@
 <script>
   import { icons } from "../icons.js";
-  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen, accountFor, isOutgoingView } from "../store.svelte.js";
+  import { app, snoozeMessage, snoozePresets, presetWhen, prefetchBody, isVip, isTrustedSender, setMessageSeen, accountFor, isOutgoingView, copyCode } from "../store.svelte.js";
   import { t } from "../i18n.svelte.js";
   import { messages as messagesApi, avatarUrlDomain } from "../api.js";
   import { avatarColor } from "../avatar.js";
@@ -80,6 +80,10 @@
   const THRESHOLD = 90;
 
   const fmtTime = (iso) => (app.settings.relativeTime ? relativeTime(iso) : listTime(iso));
+  // A sign-in code the backend found in this mail: one click copies it. Only
+  // while it can still matter - codes expire in minutes, a day is generous.
+  const otp = $derived(message.otp_code && message.date
+    && Date.now() - new Date(message.date).getTime() < 86400000 ? message.otp_code : "");
 
   const initial = $derived((message.from_name || message.from_addr || "?").trim()[0]?.toUpperCase() || "?");
   // Stable per-sender color for the initial-fallback disc (only when there's no
@@ -189,6 +193,8 @@
       </span>
       <span class="subject">{message.subject || t("list.noSubject")}</span>
       <span class="snippet">
+        {#if otp}<button class="otp tnum" title={t("otp.copyTip")} aria-label={t("otp.ctxCopy", { code: otp })}
+          onclick={(e) => { e.stopPropagation(); copyCode(otp); }}>{@html icons.copy}{otp}</button>{/if}
         {#if groupTag}
           <!-- New mail from a Smart Inbox group, shown in the timeline until it's
                read; the tag says where it will fold away to. On the preview
@@ -304,6 +310,11 @@
   }
   .gtag :global(svg) { width: 12px; height: 12px; flex: none; }
   .time { flex: none; color: var(--muted); font-size: 12px; }
+  .otp { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px 0 6px; margin-right: 6px; vertical-align: 1px;
+    border-radius: 6px; font-size: 12.5px; font-weight: 700; letter-spacing: 0.04em;
+    color: var(--on-accent-cont); background: var(--accent-cont); transition: filter var(--t-fast) var(--ease); }
+  .otp :global(svg) { width: 14px; height: 14px; }
+  .otp:hover { filter: brightness(1.12); }
   .subject { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; line-height: 20px; }
   .snippet { color: var(--muted); font-size: 13.5px; line-height: 19px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 

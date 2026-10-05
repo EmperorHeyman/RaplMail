@@ -181,6 +181,9 @@ class Message(SQLModel, table=True):
     suspicious: bool = False
     ai_verdict: str = ""         # "" | safe | suspicious | dangerous
     ai_reason: str = ""
+    # The sign-in / verification code in this mail (app.sync.otp) - set when a
+    # fresh one arrives (sync) or on open; drives the one-click copy button.
+    otp_code: str = ""
 
 
 class MessageState(SQLModel, table=True):

@@ -1,6 +1,6 @@
 <script>
   import { onMount } from "svelte";
-  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge, startComposeBridge, refreshWindowsAccent, watchSystemScheme } from "./lib/store.svelte.js";
+  import { app, refreshVault, loadAccountsAndFolders, startEvents, recategorizeOnce, applyTheme, setWorkspace, openCompose, saveSettings, initSettings, syncAllAccounts, syncTrayPref, startCalendarServices, runUndo, hasUndo, recoverPendingSend, syncAutostart, startSandboxBridge, startComposeBridge, refreshWindowsAccent, watchSystemScheme, startUpdateChecks } from "./lib/store.svelte.js";
   import { openExternal } from "./lib/api.js";
   import { keyCombo } from "./lib/keys.js";
   import { icons } from "./lib/icons.js";
@@ -19,6 +19,7 @@
   import RuleModal from "./lib/components/RuleModal.svelte";
   import ReauthModal from "./lib/components/ReauthModal.svelte";
   import ConfirmDialog from "./lib/components/ConfirmDialog.svelte";
+  import UpdateDialog from "./lib/components/UpdateDialog.svelte";
   import Settings from "./lib/components/Settings.svelte";
   import ScheduledView from "./lib/components/ScheduledView.svelte";
   import NewsletterFeed from "./lib/components/NewsletterFeed.svelte";
@@ -108,7 +109,18 @@
     }
   }
 
+  // Files dragged in from Explorer: only real drop zones (the composer, the
+  // signature editor) take them. Anywhere else the drop is swallowed - a
+  // webview's default for a dropped file is to open it in place of the app.
+  function guardFileDrop(e) {
+    if (!Array.from(e.dataTransfer?.types || []).includes("Files") || e.defaultPrevented) return;
+    e.preventDefault();
+    if (e.type === "dragover") e.dataTransfer.dropEffect = "none";
+  }
+
   onMount(() => {
+    window.addEventListener("dragover", guardFileDrop);
+    window.addEventListener("drop", guardFileDrop);
     applyTheme();
     watchSystemScheme();   // "System" light/dark follows Windows live, in every window
     // A separate #compose / #reminder / #sandbox window must NOT run the app
@@ -198,7 +210,7 @@
   $effect(() => {
     if (app.vault.unlocked && !_booted && !childWindow) {
       _booted = true;
-      (async () => { await initSettings(); refreshWindowsAccent(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); })();
+      (async () => { await initSettings(); refreshWindowsAccent(); syncTrayPref(); syncAutostart(); await loadAccountsAndFolders(); startCalendarServices(); startUpdateChecks(); })();
       startEvents();
       recategorizeOnce();
       recoverPendingSend();  // redeliver a send interrupted by a quit mid-undo-countdown
@@ -305,6 +317,7 @@
   <ShortcutsOverlay open={shortcutsOpen} onclose={() => (shortcutsOpen = false)} />
 {/if}
 <ConfirmDialog />
+<UpdateDialog />
 <Toast />
 
 <style>

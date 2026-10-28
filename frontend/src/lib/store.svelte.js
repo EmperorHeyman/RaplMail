@@ -93,6 +93,10 @@ const DEFAULT_SETTINGS = {
   aiApiKey: "",                  // BYOK: your own provider API key (stays local)
   aiBaseUrl: "",                 // base URL for an OpenAI-compatible endpoint (Groq/OpenRouter/Ollama/…)
   aiModel: "",                   // optional model override (blank = per-provider default)
+  mcpEnabled: false,             // let AI apps (Claude Desktop, Claude Code, ...) use your mail over MCP
+  mcpAccess: "read",             // what they may do: "read" | "act" (organize + drafts) | "send"
+  autoUpdate: true,              // check the RaplMail website for updates and download them in the background
+  aiOn: true,                    // master switch: off = no AI anywhere (buttons, assistant, screening, smart search, briefing, Ollama)
   aiButtons: true,               // show AI buttons (only relevant once a key is set)
   digestEnabled: false,          // deliver a daily AI "morning briefing" of unread mail
   digestHour: 8,                 // local hour (0-23) to deliver the briefing
@@ -232,6 +236,9 @@ export const app = $state({
   queueFailed: 0,
   customizing: false,            // layout-edit mode (resize columns)
   toast: null,
+  // Updates: state idle | checking | none (up to date) | downloading | ready | installing | error
+  update: { state: "idle", current: "", version: "", notes: "", got: 0, total: 0, error: "", checkedAt: 0 },
+  updateDialog: false,
   confirm: null,                 // { title, message, confirmLabel, danger, resolve } - in-app confirm dialog
   syncTick: 0,                   // bumped on each sync:done so views can refresh live
   syncPendingIds: [],            // accounts a manual sync is still waiting on
@@ -713,7 +720,8 @@ export async function openCompose(seed = {}) {
     const url = `${location.pathname}${location.search}#compose`;
     if (isTauri()) {
       const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-      new WebviewWindow(`compose-${Date.now()}`, { url, title: "New message", width: 720, height: 660 });
+      // dragDropEnabled off: files dragged from Explorer reach the page (attach by drop).
+      new WebviewWindow(`compose-${Date.now()}`, { url, title: "New message", width: 720, height: 660, dragDropEnabled: false });
     } else {
       window.open(url, "_blank", "width=720,height=680");
     }
@@ -722,53 +730,105 @@ export async function openCompose(seed = {}) {
   }
 }
 
-// GitHub repo the release check + download page point at.
-export const GITHUB_REPO = "EmperorHeyman/RaplMail";
+// --- Updates -------------------------------------------------------------------
+// The RaplMail website hosts the update feed and the installers. The desktop app
+// goes through the Tauri updater, which only installs what the RaplMail release
+// key signed (its public key is in tauri.conf.json); the browser dev build can
+// only read the feed.
+export const WEBSITE = "https://raplmail.em-production.eu";
+const UPDATE_FEED = `${WEBSITE}/updates/latest.json`;
+const UPDATE_EVERY = 6 * 3600 * 1000;   // background check while RaplMail runs
+let _update = null;                     // the updater's pending Update (downloaded or not)
+let _updateTimer = null;
 
-// Compare two "x.y.z" version strings. >0 if a is newer than b, <0 if older, 0 equal.
-function cmpVersion(a, b) {
-  const norm = (v) => String(v || "").replace(/^v/i, "").split(/[.\-+]/).map((n) => parseInt(n, 10) || 0);
-  const pa = norm(a), pb = norm(b);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-    const d = (pa[i] || 0) - (pb[i] || 0);
-    if (d) return d > 0 ? 1 : -1;
-  }
-  return 0;
-}
-
-// Serverless update check: ask the GitHub Releases API for the latest published
-// release and compare it to the running version. No update server, no signing
-// feed to maintain - if there's a newer release we point the user at its GitHub
-// page to download the installer. (Works in the browser dev build too.)
+// Ask the website for a newer version. Found one: download it (the updater checks
+// it against the release key), then offer "Restart & update". `silent` = the
+// background check: no toasts unless an update is ready.
 export async function checkForUpdates({ silent = false } = {}) {
+  const u = app.update;
+  if (["checking", "downloading", "installing"].includes(u.state)) {
+    if (!silent && u.state === "downloading") app.updateDialog = true;
+    return;
+  }
+  if (u.state === "ready") { if (!silent) app.updateDialog = true; return; }
+  u.state = "checking"; u.error = "";
   try {
-    let current = "0.0.0";
-    if (isTauri()) {
-      try { const { getVersion } = await import("@tauri-apps/api/app"); current = await getVersion(); } catch {}
+    if (!isTauri()) {
+      const r = await fetch(UPDATE_FEED, { cache: "no-store" });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const feed = await r.json();
+      Object.assign(u, { state: "none", checkedAt: Date.now() });
+      if (!silent) notify(t("update.feedSays", { version: feed.version || "?" }));
+      return;
     }
-    const resp = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/releases/latest`, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    if (!resp.ok) throw new Error(`GitHub returned ${resp.status}`);
-    const rel = await resp.json();
-    const latest = (rel.tag_name || rel.name || "").replace(/^v/i, "");
-    if (!latest) { if (!silent) notify(t("update.checkFailed", { err: "no release found" }), "error"); return; }
-    if (isTauri() && cmpVersion(latest, current) <= 0) {
+    const { check } = await import("@tauri-apps/plugin-updater");
+    const found = await check({ timeout: 30000 });
+    u.checkedAt = Date.now();
+    if (!found) {
+      u.state = "none";
       if (!silent) notify(t("update.upToDate"));
       return;
     }
-    const url = rel.html_url || `https://github.com/${GITHUB_REPO}/releases/latest`;
-    const body = (rel.body || "").slice(0, 600);
-    const go = await confirmDialog({
-      title: t("update.available", { version: latest }),
-      message: (body ? body + "\n\n" : "") + t("update.openPage"),
-      confirmLabel: t("update.download"),
-      cancelLabel: t("update.later"),
+    _update = found;
+    Object.assign(u, { version: found.version, notes: found.body || "", got: 0, total: 0, state: "downloading" });
+    if (!silent) app.updateDialog = true;   // asked for it: watch it come in
+    let got = 0, shown = 0;
+    await found.download((ev) => {
+      if (ev.event === "Started") u.total = ev.data?.contentLength || 0;
+      else if (ev.event === "Progress") {
+        got += ev.data?.chunkLength || 0;
+        if (!u.total || got - shown >= u.total / 100) { u.got = shown = got; }   // ~1% steps
+      }
     });
-    if (go) openExternal(url);
+    u.got = got;
+    u.state = "ready";
+    if (!app.updateDialog) {
+      notify(t("update.readyToast", { version: found.version }), "info", null,
+        { label: t("update.details"), run: () => (app.updateDialog = true) });
+    }
   } catch (e) {
-    if (!silent) notify(t("update.checkFailed", { err: e.message || e }), "error");
+    u.state = "error";
+    u.error = String(e?.message || e);
+    if (!silent) notify(t("update.checkFailed", { err: u.error }), "error");
   }
+}
+
+// Restart into the downloaded version. On Windows the installer takes over (a
+// small progress window), replaces RaplMail and starts it again.
+export async function installUpdate() {
+  const u = app.update;
+  if (!_update || u.state !== "ready") return;
+  u.state = "installing";
+  try {
+    await _update.install();
+    const { relaunch } = await import("@tauri-apps/plugin-process");
+    await relaunch();                   // elsewhere the app restarts itself
+  } catch (e) {
+    u.state = "error";
+    u.error = String(e?.message || e);
+    notify(t("update.installFailed", { err: u.error }), "error");
+  }
+}
+
+// Is a message being written (the docked composer, or one in its own window)?
+// The restart closes it - the update dialog says so.
+export async function composeOpen() {
+  if (app.composing) return true;
+  if (!isTauri()) return false;
+  try {
+    const { getAllWebviewWindows } = await import("@tauri-apps/api/webviewWindow");
+    return (await getAllWebviewWindows()).some((w) => w.label.startsWith("compose-"));
+  } catch { return false; }
+}
+
+// Background checks (Settings -> General -> Update automatically): soon after
+// start, then every few hours.
+export async function startUpdateChecks() {
+  if (!isTauri() || _updateTimer) return;
+  try { const { getVersion } = await import("@tauri-apps/api/app"); app.update.current = await getVersion(); } catch {}
+  const tick = () => { if (app.settings.autoUpdate !== false) checkForUpdates({ silent: true }); };
+  setTimeout(tick, 20000);
+  _updateTimer = setInterval(tick, UPDATE_EVERY);
 }
 
 // LIFO stack of recent undoable actions. The toast only shows the latest, but
@@ -1943,7 +2003,7 @@ export async function refreshMessages({ background = false } = {}) {
       app.aiBusy = true;
       try {
         // 1. Local embedding index (best) - only if the user built one.
-        if (app.settings.semanticEnabled) {
+        if (app.settings.semanticEnabled && app.settings.aiOn !== false) {
           const list = await ai.semantic(app.search, 80);
           if (!fresh()) return;
           if (showList(list)) return;
@@ -2151,7 +2211,7 @@ export function runSearch(query) {
 // (local, keyless). This is the single source of truth so keyless Ollama no
 // longer hides every AI button for lack of an API key.
 export function aiEnabled() {
-  if (app.settings.aiButtons === false) return false;
+  if (app.settings.aiOn === false || app.settings.aiButtons === false) return false;
   return !!(app.settings.aiApiKey || "").trim() || app.settings.aiProvider === "ollama";
 }
 
@@ -2404,6 +2464,9 @@ export function startEvents() {
     } else if (ev.event === "sync:error") {
       settleSync(ev.payload?.account_id ?? null);
       refreshSigninNeeded();
+    } else if (ev.event === "mail:changed") {
+      // An AI app changed mail over MCP (marked read, archived, ...): show it.
+      scheduleViewRefresh();
     } else if (ev.event === "queue:flushed") {
       // Queued moves/sends reached the server. Refresh the lists, but leave the
       // sync state alone - this is not a completed mailbox sync.

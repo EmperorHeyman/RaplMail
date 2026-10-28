@@ -6,15 +6,21 @@
 #   .\build-desktop.ps1 -Bump major     # 0.1.0 -> 1.0.0
 #   .\build-desktop.ps1 -Version 1.2.3  # set an exact version
 #   .\build-desktop.ps1 -NoBump         # keep the current version
+#   .\build-desktop.ps1 -Version 1.2.3 -Release
+#                                       # signed + staged for the website (site-dist/)
 #
 # Output: frontend/src-tauri/target/release/bundle/{nsis,msi}/...
+# With -Release also site-dist/ (website + updates/latest.json + installers): upload
+# it to raplmail.em-production.eu and every installed RaplMail offers the update.
 
 param(
   [ValidateSet("patch", "minor", "major")] [string]$Bump = "patch",
   [string]$Version = "",
   [switch]$NoBump,
-  [switch]$Sign   # also produce signed updater artifacts (needs the signing key)
+  [switch]$Sign,    # also produce signed updater artifacts (needs the signing key)
+  [switch]$Release  # signed (required) + stage the website release (stage-release.py)
 )
+if ($Release) { $Sign = $true }
 
 # NOTE: "Continue", not "Stop" -- PyInstaller/npx write progress to stderr, and
 # under "Stop" PowerShell 5.1 turns the first stderr line into a fatal
@@ -104,28 +110,39 @@ for ($i = 1; $i -le 8; $i++) {
 if (-not $placed) { throw "Could not replace the sidecar binary (locked). Close RaplMail and retry." }
 
 # --- 3/3 build app --------------------------------------------------------
-# Updater signing: tauri.conf has createUpdaterArtifacts=true, so the build needs
-# the signing key. By default we skip updater artifacts (no key/password prompt);
-# pass -Sign to produce signed updater artifacts from the gitignored key file.
+# The build itself never signs: with createUpdaterArtifacts on, `tauri build`
+# decrypts the key and - since it reads an empty TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# as "not set" - waits on a password prompt forever. So it builds plain
+# installers, and -Sign / -Release sign them afterwards with `tauri signer sign`
+# (the same signature: over the installer file, which is what the updater checks).
 Write-Host "[3/3] Building Tauri app + installers..." -ForegroundColor Cyan
+$keyPath = "$root\frontend\src-tauri\.tauri-updater.key"
+if ($Sign -and -not (Test-Path $keyPath)) {
+  if ($Release) { throw "-Release needs the signing key at $keyPath (installed apps only accept updates signed with it)" }
+  Write-Host "  (-Sign given but no key at $keyPath; building unsigned)" -ForegroundColor DarkYellow
+  $Sign = $false
+}
 Push-Location "$root\frontend"
 try {
-  $keyPath = "$root\frontend\src-tauri\.tauri-updater.key"
-  if ($Sign -and (Test-Path $keyPath)) {
-    # Signed updater artifacts. The key was generated with an empty password.
-    Write-Host "  (signing updater artifacts)" -ForegroundColor DarkCyan
-    $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content -Raw $keyPath).Trim()
-    $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
-    & npx tauri build
-  }
-  else {
-    # Default: just build the installers, no updater signing (no password prompts).
-    if ($Sign) { Write-Host "  (-Sign given but no key at $keyPath; building unsigned)" -ForegroundColor DarkYellow }
-    $cfg = Join-Path $env:TEMP "raplmail-noupdater.json"
-    '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding ascii $cfg
-    & npx tauri build --config $cfg
-  }
+  $cfg = Join-Path $env:TEMP "raplmail-noupdater.json"
+  '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -Encoding ascii $cfg
+  & npx tauri build --config $cfg
   if ($LASTEXITCODE -ne 0) { throw "tauri build failed (exit $LASTEXITCODE)" }
+
+  if ($Sign) {
+    # The key has an empty password. "--password=" (not -p "") because
+    # PowerShell 5.1 drops an empty "" argument on the way to a native command.
+    Write-Host "  Signing the installers for the updater..." -ForegroundColor DarkCyan
+    $installers = Get-ChildItem "$root\frontend\src-tauri\target\release\bundle" -Recurse -Include *.msi, *-setup.exe |
+      Where-Object { $_.Name -like "*_$($new)_*" }
+    if (-not $installers) { throw "no $new installers found to sign" }
+    foreach ($f in $installers) {
+      Remove-Item "$($f.FullName).sig" -ErrorAction SilentlyContinue
+      & npx tauri signer sign -f $keyPath "--password=" $f.FullName | Out-Null
+      if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$($f.FullName).sig")) { throw "signing $($f.Name) failed" }
+      Write-Host "    signed $($f.Name)"
+    }
+  }
 }
 finally {
   Pop-Location
@@ -134,4 +151,13 @@ finally {
 Write-Host ""
 Write-Host "Done (v$new). Installers:" -ForegroundColor Green
 Get-ChildItem "$root\frontend\src-tauri\target\release\bundle" -Recurse -Include *.msi, *-setup.exe |
+  Where-Object { $_.Name -like "*_$($new)_*" } |
   ForEach-Object { Write-Host "  $($_.FullName)" }
+
+if ($Release) {
+  # Checks the signatures against the app's public key and writes site-dist/.
+  Write-Host ""
+  Write-Host "Staging the website release..." -ForegroundColor Cyan
+  & "$root\backend\.venv\Scripts\python.exe" "$root\stage-release.py" $new
+  if ($LASTEXITCODE -ne 0) { throw "stage-release.py failed (exit $LASTEXITCODE)" }
+}

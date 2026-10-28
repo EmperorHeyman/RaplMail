@@ -278,6 +278,11 @@ export const security = {
   analyze: (id) => api.get(`/security/analyze/${id}`),
 };
 
+// MCP: AI apps (Claude Desktop, Claude Code, ...) working with your mail.
+export const mcp = {
+  info: () => api.get("/mcp/info"),
+};
+
 export const ai = {
   status: () => api.get("/ai/status"),
   summarize: (body) => api.post("/ai/summarize", body),

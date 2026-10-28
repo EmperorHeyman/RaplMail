@@ -96,7 +96,7 @@ def _embed_config(session: Session) -> dict:
     model = str(data.get("embedModel") or "").strip() or (
         OLLAMA_DEFAULT_EMBED_MODEL if provider == "ollama" else OPENAI_DEFAULT_EMBED_MODEL)
     return {
-        "enabled": bool(data.get("semanticEnabled")),
+        "enabled": bool(data.get("semanticEnabled")) and data.get("aiOn") is not False,
         "provider": provider,
         "base_url": base,
         "base_raw": base_raw,

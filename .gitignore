@@ -38,3 +38,6 @@ Thumbs.db
 frontend/src-tauri/.tauri-updater.key
 frontend/src-tauri/.tauri-updater.key.pub
 test-samples/
+
+# staged website release (stage-release.py): installers, generated feed
+site-dist/

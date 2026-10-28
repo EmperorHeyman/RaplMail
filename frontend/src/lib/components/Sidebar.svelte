@@ -378,6 +378,10 @@
   {/if}
 
   <div class="foot">
+    {#if app.update.state === "ready" || app.update.state === "installing"}
+      <button class="foot-btn upd" title={t("update.readyTitle", { version: app.update.version })} aria-label={t("update.readyTitle", { version: app.update.version })}
+        onclick={() => (app.updateDialog = true)}><span class="fi">{@html icons.reset}</span>{#if !collapsed}<span>{t("update.chip")}</span>{/if}</button>
+    {/if}
     <button class="foot-btn" class:spin-ic={app.syncing} title={t("nav.checkNewMail")} aria-label={t("nav.checkNewMail")} onclick={syncAllAccounts} disabled={app.syncing}><span class="fi">{@html icons.sync}</span>{#if !collapsed}<span>{t("nav.sync")}</span>{/if}</button>
     <button class="foot-btn" title={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} aria-label={app.customizing ? t("nav.lockLayout") : t("nav.customizeLayout")} class:active={app.customizing} onclick={() => (app.customizing = !app.customizing)}><span class="fi">{@html app.customizing ? icons.unlock : icons.customize}</span>{#if !collapsed}<span>{t("nav.layout")}</span>{/if}</button>
     <button class="foot-btn" title={t("nav.settings")} aria-label={t("nav.settings")} class:active={app.view === "settings"} onclick={() => (app.view = "settings")}><span class="fi">{@html app.view === "settings" ? filledIcon("settings") : icons.settings}</span>{#if !collapsed}<span>{t("nav.settings")}</span>{/if}</button>
@@ -558,6 +562,8 @@
   .fi { display: grid; place-items: center; width: 56px; height: 32px; border-radius: 16px; transition: background var(--t-fast) var(--ease); }
   .fi :global(svg) { width: 22px; height: 22px; }
   .foot-btn:hover { color: var(--text); }
+  /* A downloaded update: the one tinted foot button, like Chrome's "Update". */
+  .foot-btn.upd, .foot-btn.upd:hover { color: var(--accent); }
   .foot-btn:hover .fi { background: var(--hover); }
   .foot-btn.active { color: var(--on-sel); }
   .foot-btn.active .fi { background: var(--sel); }

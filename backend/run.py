@@ -4,6 +4,16 @@ Tauri injects RAPLMAIL_PORT and RAPLMAIL_TOKEN; we bind localhost only.
 """
 
 import os
+import sys
+
+# `raplmail-backend.exe --mcp`: the stdio MCP server an AI app launches (Claude
+# Desktop, Claude Code, ...). It only relays to the running RaplMail, so it
+# skips the whole backend - no DB, no server, no heavy imports.
+if "--mcp" in sys.argv[1:]:
+    from app.mcp.relay import main as _mcp_main
+
+    _mcp_main()
+    sys.exit(0)
 
 # Pin a valid TLS CA bundle BEFORE requests / msal / ssl import and cache their
 # defaults - otherwise the frozen M365 (msal->requests) path dies with

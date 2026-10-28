@@ -238,7 +238,7 @@
     loading = true; results = [];
     try {
       let list = [];
-      if (app.settings?.semanticEnabled) {
+      if (app.settings?.semanticEnabled && app.settings?.aiOn !== false) {
         try { list = (await ai.semantic(q, 60)) || []; } catch {}
       }
       if (!list.length && aiEnabled()) {

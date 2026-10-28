@@ -315,6 +315,10 @@
   .panel :global(label.check:hover input[type="checkbox"]:not(:disabled)::before) { box-shadow: 0 0 0 8px var(--hover); }
   .panel :global(label.check input[type="checkbox"]:focus-visible) { box-shadow: var(--ring); }
   .panel :global(label.check input[type="checkbox"]:disabled) { opacity: 0.38; cursor: default; }
+  /* A select's longest option sets its natural width; inside a row it must be
+     allowed to shrink, or it pokes out of the card. */
+  .panel :global(select) { max-width: 100%; min-width: 0; text-overflow: ellipsis; }
+  .panel :global(.fieldrow > select), .panel :global(.fieldrow > input) { min-width: 0; }
   /* Segmented buttons. */
   .panel :global(.seg) { background: transparent; border: 1px solid var(--outline); border-radius: 999px; padding: 0; gap: 0; overflow: hidden; }
   .panel :global(.segbtn) { border-radius: 0; padding: 8px 16px; font-size: 13px; font-weight: 500; color: var(--text); }

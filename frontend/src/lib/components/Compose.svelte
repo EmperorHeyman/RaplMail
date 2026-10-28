@@ -409,20 +409,94 @@
     if (url) exec("createLink", url);
   }
 
+  // Many mail servers refuse a message over 25 MB - say so once it gets there.
+  const ATTACH_WARN = 25 * 1024 * 1024;
+  const attachedSize = () => attachments.reduce((n, a) => n + (a.size || 0), 0);
+  function humanSize(n) {
+    if (!n) return "";
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  }
   function readFiles(files) {
     for (const file of files) {
       const reader = new FileReader();
       reader.onload = () => {
         const b64 = String(reader.result).split(",")[1] || "";
+        const before = attachedSize();
         attachments = [...attachments, {
           filename: file.name, content_type: file.type || "application/octet-stream",
           data_b64: b64, size: file.size,
         }];
+        if (before < ATTACH_WARN && attachedSize() >= ATTACH_WARN) {
+          notify(t("compose.attachBig", { size: humanSize(attachedSize()) }), "error");
+        }
       };
+      reader.onerror = () => notify(t("compose.readFailed", { name: file.name }), "error");
       reader.readAsDataURL(file);
     }
   }
   function removeAttachment(i) { attachments = attachments.filter((_, idx) => idx !== i); }
+
+  // --- Files dragged in from Explorer --------------------------------------
+  // The whole composer is a drop target: an overlay shows while files are over
+  // it. Pictures get a zone of their own to go into the text; everything else
+  // (and pictures dropped on the other zone) is attached. Needs the window's
+  // own drag-and-drop off (tauri.conf.json `dragDropEnabled`), or Windows
+  // never hands the drop to the page.
+  let dragDepth = $state(0);
+  let dragImages = $state(false);
+  let dropHot = $state("");
+  const isFileDrag = (e) => Array.from(e.dataTransfer?.types || []).includes("Files");
+  function onPanelDragEnter(e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    if (dragDepth === 0) {
+      dragImages = !mdMode && Array.from(e.dataTransfer.items || [])
+        .some((it) => it.kind === "file" && (it.type || "").startsWith("image/"));
+    }
+    dragDepth += 1;
+  }
+  function onPanelDragLeave(e) { if (isFileDrag(e) && dragDepth > 0) dragDepth -= 1; }
+  function onPanelDragOver(e) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  }
+  function dropFiles(e, mode) {
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragDepth = 0;
+    dropHot = "";
+    // A dropped folder arrives as an empty, unreadable entry - skip it and say why.
+    const dirs = new Set();
+    for (const it of Array.from(e.dataTransfer.items || [])) {
+      const entry = it.kind === "file" ? it.webkitGetAsEntry?.() : null;
+      if (entry?.isDirectory) dirs.add(entry.name);
+    }
+    if (dirs.size) notify(t("compose.dropFolder"), "error");
+    let files = Array.from(e.dataTransfer.files || []).filter((f) => !dirs.has(f.name));
+    if (mode === "inline") {
+      insertImages(files.filter((f) => f.type.startsWith("image/")));
+      files = files.filter((f) => !f.type.startsWith("image/"));
+    }
+    readFiles(files);
+  }
+  function insertImages(imgs) {
+    for (const file of imgs) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = document.createElement("img");
+        img.src = String(reader.result);
+        img.style.maxWidth = "100%";
+        editor.appendChild(img);
+        onBodyInput();
+      };
+      reader.onerror = () => notify(t("compose.readFailed", { name: file.name }), "error");
+      reader.readAsDataURL(file);
+    }
+  }
 
   let laterMenu = $state(false);
   let customWhen = $state("");
@@ -619,16 +693,6 @@
   function onComposeKey(e) {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); send(); }
   }
-  function onDrop(e) {
-    e.preventDefault();
-    const imgs = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
-    for (const file of imgs) {
-      const reader = new FileReader();
-      reader.onload = () => { const img = document.createElement("img"); img.src = String(reader.result); img.style.maxWidth = "100%"; editor.appendChild(img); };
-      reader.readAsDataURL(file);
-    }
-  }
-
   // Detach the docked composer into its own OS window, carrying the draft over.
   async function popOut() {
     const seed = { to: c.to, cc: c.cc, subject: c.subject, html: editor?.innerHTML || "",
@@ -638,7 +702,7 @@
     try {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
-        new WebviewWindow(`compose-${Date.now()}`, { url, title: t("compose.newMessage"), width: 720, height: 680 });
+        new WebviewWindow(`compose-${Date.now()}`, { url, title: t("compose.newMessage"), width: 720, height: 680, dragDropEnabled: false });
       } else {
         window.open(url, "_blank", "width=720,height=680");
       }
@@ -688,7 +752,25 @@
   const toolTitle = (cmd) => t(`compose.tool.${cmd}`);
 </script>
 
-<div class="panel" class:standalone style={dockStyle} bind:this={panelEl} onkeydown={onComposeKey}>
+<div class="panel" class:standalone style={dockStyle} bind:this={panelEl} onkeydown={onComposeKey}
+  ondragenter={onPanelDragEnter} ondragleave={onPanelDragLeave} ondragover={onPanelDragOver}
+  ondrop={(e) => dropFiles(e, "attach")}>
+  {#if dragDepth > 0}
+    <div class="dropveil" class:two={dragImages}>
+      {#if dragImages}
+        <div class="dz" class:hot={dropHot === "inline"} role="region" aria-label={t("compose.dropInline")}
+          ondragenter={() => (dropHot = "inline")} ondragleave={() => { if (dropHot === "inline") dropHot = ""; }}
+          ondrop={(e) => dropFiles(e, "inline")}>
+          <span class="dz-ic">{@html icons.image}</span>{t("compose.dropInline")}
+        </div>
+      {/if}
+      <div class="dz" class:hot={dropHot === "attach" || !dragImages} role="region" aria-label={t("compose.dropAttach")}
+        ondragenter={() => (dropHot = "attach")} ondragleave={() => { if (dropHot === "attach") dropHot = ""; }}
+        ondrop={(e) => dropFiles(e, "attach")}>
+        <span class="dz-ic">{@html icons.attachment}</span>{t("compose.dropAttach")}
+      </div>
+    </div>
+  {/if}
   {#if confirmDiscard}
     <div class="discard-veil" role="dialog" aria-modal="true" aria-label={t("compose.unsavedMessage")}>
       <div class="discard-box">
@@ -820,7 +902,7 @@
 
   <div class="editor" class:hidden={mdMode} contenteditable="true" role="textbox" tabindex="0" aria-label={t("compose.messageBody")}
     spellcheck={spellOn} lang={spellLang}
-    bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} onclick={onEditorClick} ondrop={onDrop} ondragover={(e) => e.preventDefault()}
+    bind:this={editor} onkeydown={onEditorKey} oninput={onBodyInput} onclick={onEditorClick}
     data-placeholder={t("compose.bodyPlaceholder")}></div>
   {#if mdMode}
     <textarea class="editor mdbody" bind:this={mdEl} bind:value={mdSource} oninput={onBodyInput} spellcheck={spellOn} lang={spellLang}
@@ -830,7 +912,7 @@
   {#if attachments.length}
     <div class="attachments">
       {#each attachments as a, i}
-        <span class="chip">{@html icons.attachment} {a.filename}<button onclick={() => removeAttachment(i)}>{@html icons.close}</button></span>
+        <span class="chip">{@html icons.attachment} {a.filename}{#if a.size}<span class="sz">{humanSize(a.size)}</span>{/if}<button onclick={() => removeAttachment(i)}>{@html icons.close}</button></span>
       {/each}
     </div>
   {/if}
@@ -949,6 +1031,17 @@
   .attachments { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--border); }
   .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--surface-3); padding: 4px 8px; border-radius: 6px; font-size: 12px; }
   .chip button { color: var(--muted); }
+  .chip .sz { color: var(--muted); font-size: 11.5px; }
+  /* Drop overlay (files dragged in from Explorer). */
+  .dropveil { position: absolute; inset: 0; z-index: 30; display: grid; gap: 12px; padding: 16px;
+    background: color-mix(in srgb, var(--surface) 86%, transparent); border-radius: inherit; animation: fade-in var(--t) var(--ease); }
+  .dropveil.two { grid-template-rows: 1fr 1fr; }
+  .dz { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    border: 2px dashed var(--outline); border-radius: var(--radius); color: var(--muted); font-size: 15px; font-weight: 500;
+    transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease); }
+  .dz * { pointer-events: none; }
+  .dz.hot { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+  .dz-ic :global(svg) { width: 36px; height: 36px; }
   .chip button:hover { color: var(--danger); }
   footer { display: flex; align-items: center; gap: 8px; padding: 11px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; }
   footer > .btn, footer .later > .btn, .pgp-btn { flex: none; white-space: nowrap; }

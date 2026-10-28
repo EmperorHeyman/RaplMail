@@ -20,12 +20,12 @@ RaplMail brings the keyboard-driven triage of modern email apps to your own mach
 
 ## Install
 
-Grab the latest installer from the releases page and run it:
+Download the latest installer from [raplmail.em-production.eu](https://raplmail.em-production.eu) and run it:
 
 - `RaplMail_x.y.z_x64-setup.exe` (NSIS), or
 - `RaplMail_x.y.z_x64_en-US.msi` (MSI)
 
-On first launch you choose a master password. It unlocks a local encrypted vault that seals your account credentials and keys. Add an account and RaplMail auto-discovers the server settings for you. "Check for updates" in Settings queries the GitHub Releases API and points you at the newest installer to download; there is no update server in between.
+On first launch you choose a master password. It unlocks a local encrypted vault that seals your account credentials and keys. Add an account and RaplMail auto-discovers the server settings for you. After that RaplMail keeps itself up to date: it checks raplmail.em-production.eu every few hours, downloads a new version in the background, and installs it when you click **Restart & update**.
 
 ## Accounts and sign-in
 
@@ -153,7 +153,7 @@ Link two or more RaplMail installs (say, "Main" and "Work") with no cloud accoun
 
 - **System tray**: closing the window minimizes to the tray (IMAP IDLE and sync keep running), with an Open/Quit menu and a taskbar unread badge.
 - **Launch at login** (autostart).
-- **Update check (serverless)**: "Check for updates" asks the GitHub Releases API for the newest published version, compares it to the running one, and opens the download page for the latest installer. No update server and no signing feed sit in the middle.
+- **Automatic updates**: the Tauri updater reads `https://raplmail.em-production.eu/updates/latest.json` (at start, then every 6 hours; Settings > General > Update automatically). A new version downloads in the background and installs on **Restart & update**. Only installers signed with the RaplMail release key (public key in `tauri.conf.json`) are accepted - a file with a bad signature is refused.
 - **Windows installers**: MSI and NSIS, signed. A macOS build (`.dmg`) is produced by the included GitHub Actions workflow.
 
 ## Building from source
@@ -184,6 +184,21 @@ cp dist/raplmail-backend.exe ../frontend/src-tauri/binaries/raplmail-backend-x86
 cd ../frontend && npx tauri build
 # installers land in frontend/src-tauri/target/release/bundle/
 ```
+
+Or all of it in one go: `.\build-desktop.ps1 -Version x.y.z` (freezes the backend, places the sidecar, builds the installers).
+
+### Publishing a release
+
+```powershell
+# 1. Write the "## [x.y.z] - date" section in CHANGELOG.md (it becomes the release notes).
+# 2. Build signed installers and stage the website:
+.\build-desktop.ps1 -Version x.y.z -Release
+# 3. Upload site-dist/ to the web root of raplmail.em-production.eu
+#    (/subdomains/raplmail): download/ first, then the rest - so updates/latest.json
+#    never points at an installer that is still uploading. Keep old installers.
+```
+
+`-Release` signs with `frontend/src-tauri/.tauri-updater.key` (gitignored - back it up: installed apps only accept updates signed with it) and runs `stage-release.py`, which checks every signature against the app's public key before writing `site-dist/`: the website (`site/`), `updates/latest.json` (the feed the app reads), `updates/changelog.json` and the installers in `download/`. The page is `site/index.template.html` and the wiki is `site/wiki/index.template.html` (English and Czech side by side); `node site/build-site.mjs` turns them into `index.html` files with the app's icons inlined.
 
 ## Tests
 

@@ -659,7 +659,7 @@ async def get_message(message_id: int, why: str = "open", session: Session = Dep
     msg = session.get(Message, message_id)
     if msg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "message not found")
-    why = why if why in ("open", "prefetch", "thread") else "open"
+    why = why if why in ("open", "prefetch", "thread", "mcp") else "open"
 
     # The hover preload usually starts downloading this very message a moment
     # before the click. Wait for that download instead of queueing behind it on

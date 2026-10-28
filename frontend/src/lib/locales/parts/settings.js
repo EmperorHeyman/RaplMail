@@ -119,7 +119,7 @@ export default {
 
     // --- General (the app itself) ----------------------------------------------
     "sGen.updates": "Updates",
-    "sGen.updatesHint": "RaplMail has no server: it asks GitHub for the latest published release and, if there's a newer version, points you to its download page. Nothing is sent anywhere except that read-only check.",
+    "sGen.updatesHint": "New versions come from raplmail.em-production.eu. RaplMail only installs a version signed with its release key. Checking reads one small file from that site - nothing about your mail is sent.",
     "sGen.check": "Check for updates",
     "sGen.tray": "Tray & startup",
     "sGen.trayHint": "RaplMail can keep running in the system tray, so sync and notifications keep working with the window closed.",
@@ -278,7 +278,7 @@ export default {
 
     // --- Obecné (aplikace) ---------------------------------------------------------
     "sGen.updates": "Aktualizace",
-    "sGen.updatesHint": "RaplMail nemá žádný server: zeptá se GitHubu na nejnovější vydání, a pokud je k dispozici novější verze, odkáže vás na stránku ke stažení. Kromě tohoto dotazu jen pro čtení se nikam nic neodesílá.",
+    "sGen.updatesHint": "Nové verze přicházejí z raplmail.em-production.eu. RaplMail nainstaluje jen verzi podepsanou svým klíčem pro vydání. Kontrola jen načte jeden malý soubor z tohoto webu - nic o vaší poště se neposílá.",
     "sGen.check": "Zkontrolovat aktualizace",
     "sGen.tray": "Oznamovací oblast a spouštění",
     "sGen.trayHint": "RaplMail může běžet v oznamovací oblasti, takže synchronizace a oznámení fungují i se zavřeným oknem.",

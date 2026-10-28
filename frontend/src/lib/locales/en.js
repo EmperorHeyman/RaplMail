@@ -25,6 +25,8 @@ import setAccounts from "./parts/setAccounts.js";
 import setMisc from "./parts/setMisc.js";
 import color from "./parts/color.js";
 import otp from "./parts/otp.js";
+import mcpStrings from "./parts/mcp.js";
+import updateStrings from "./parts/update.js";
 
 const base = {
   // Common actions / words reused across the app.
@@ -211,12 +213,6 @@ const base = {
   "utility.unsubDone": "Unsubscribed from {who}",
   "utility.unsubOpened": "Opened the unsubscribe page for {who}",
   "utility.unsubFailed": "Couldn't unsubscribe automatically - opening the page instead",
-  "update.upToDate": "You're on the latest version ✓",
-  "update.available": "Update available: {version}",
-  "update.openPage": "Open the download page on GitHub to install it?",
-  "update.download": "Download",
-  "update.later": "Not now",
-  "update.checkFailed": "Update check failed: {err}",
   "schedule.localOnly": "RaplMail is local-only. Scheduled sends and snoozes fire from your computer, so RaplMail must be running (at least in the tray) and the PC powered on at the chosen time - they won't deliver from a server while you're away.",
   "schedule.localOnlyShort": "Local-only: your PC must be on and RaplMail running for this to fire.",
 };
@@ -225,5 +221,5 @@ export default {
   ...base,
   ...nav.en, ...list.en, ...reader.en, ...compose.en, ...cmd.en, ...settingsNav.en,
   ...goto.en, ...search.en, ...devicesync.en, ...security.en, ...sandbox.en,
-  ...calendar.en, ...groups.en, ...reauth.en, ...settingsPanels.en, ...setAi.en, ...setLook.en, ...setAccounts.en, ...setMisc.en, ...color.en, ...otp.en,
+  ...calendar.en, ...groups.en, ...reauth.en, ...settingsPanels.en, ...setAi.en, ...setLook.en, ...setAccounts.en, ...setMisc.en, ...color.en, ...otp.en, ...mcpStrings.en, ...updateStrings.en,
 };

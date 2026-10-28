@@ -431,7 +431,9 @@ class SyncManager:
         with Session(get_engine()) as session:
             row = session.get(Setting, 1)
             data = dict(row.data) if row and row.data else {}
-        return (bool(data.get("digestEnabled")), int(data.get("digestHour", 8) or 8),
+        # The briefing is AI work: off with Settings -> AI assistant -> "Use AI".
+        return (bool(data.get("digestEnabled")) and data.get("aiOn") is not False,
+                int(data.get("digestHour", 8) or 8),
                 str(data.get("digestLastDay") or ""))
 
     def _mark_digest_delivered(self, day: str) -> None:
@@ -495,7 +497,7 @@ class SyncManager:
         with Session(get_engine()) as session:
             row = session.get(Setting, 1)
             data = dict(row.data) if row and row.data else {}
-            if not data.get("semanticEnabled"):
+            if not data.get("semanticEnabled") or data.get("aiOn") is False:
                 return
             from app.sync import embeddings
             deadline = time.monotonic() + self.EMBED_SECONDS_PER_CYCLE

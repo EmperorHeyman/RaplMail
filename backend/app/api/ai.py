@@ -50,6 +50,20 @@ _OLLAMA_URL = "http://localhost:11434"
 _DEFAULT_BASE = {"openai": _OPENAI_URL, "ollama": _OLLAMA_URL}
 
 
+def ai_switched_off(data: dict) -> bool:
+    """Settings -> AI assistant -> "Use AI" off: no AI work at all - no chat
+    calls, no Ollama start or warm-up, no briefing, no smart-search indexing."""
+    return data.get("aiOn") is False
+
+
+def require_ai_on(session: Session = Depends(get_session)) -> None:
+    """Dependency for every endpoint that runs the AI (chat, summaries,
+    screening, search, agent): refused while AI is switched off."""
+    row = session.get(Setting, 1)
+    if ai_switched_off(dict(row.data) if row and row.data else {}):
+        raise HTTPException(status.HTTP_409_CONFLICT, "AI is turned off (Settings -> AI assistant).")
+
+
 def _ai_config(session: Session) -> dict:
     row = session.get(Setting, 1)
     data = dict(row.data) if row and row.data else {}
@@ -275,7 +289,7 @@ def ai_status(session: Session = Depends(get_session)) -> dict:
     return {"configured": _configured(cfg), "model": cfg["model"], "provider": cfg["provider"]}
 
 
-@router.post("/summarize")
+@router.post("/summarize", dependencies=[Depends(require_ai_on)])
 def summarize(body: SummarizeIn, session: Session = Depends(get_session)) -> dict:
     cfg = _require_key(session)
     subject, transcript = _thread_text(session, body.thread_id or "", body.message_id)
@@ -330,7 +344,7 @@ def _parse_screen(raw: str) -> tuple[str, str]:
     return verdict, reason[:240]
 
 
-@router.post("/screen")
+@router.post("/screen", dependencies=[Depends(require_ai_on)])
 def screen_message(body: ScreenIn, session: Session = Depends(get_session)) -> dict:
     """Ask the configured model whether a message looks like phishing / a scam /
     spoofing. Returns {verdict: safe|suspicious|dangerous, reason, model, cached}.
@@ -426,7 +440,7 @@ class DraftIn(BaseModel):
     instruction: str = ""        # optional steer, e.g. "decline politely", "ask for a call"
 
 
-@router.post("/draft")
+@router.post("/draft", dependencies=[Depends(require_ai_on)])
 def draft_reply(body: DraftIn, session: Session = Depends(get_session)) -> dict:
     """Draft a reply in the user's voice + a few one-tap quick replies. Never sends."""
     cfg = _require_key(session)
@@ -488,7 +502,7 @@ def generate_scheduled_digest() -> dict | None:
         return build_inbox_digest(session, cfg)
 
 
-@router.post("/digest")
+@router.post("/digest", dependencies=[Depends(require_ai_on)])
 def inbox_digest(session: Session = Depends(get_session)) -> dict:
     """A prioritized 'catch me up' digest of recent unread inbox mail."""
     cfg = _require_key(session)
@@ -499,7 +513,7 @@ class TriageIn(BaseModel):
     limit: int = 20
 
 
-@router.post("/triage")
+@router.post("/triage", dependencies=[Depends(require_ai_on)])
 def triage_priority(body: TriageIn, session: Session = Depends(get_session)) -> dict:
     """Score the top unread inbox messages 0-100 by importance, with a one-line reason."""
     cfg = _require_key(session)
@@ -556,7 +570,7 @@ class RewriteIn(BaseModel):
     instruction: str = ""     # target language for "translate"; the whole prompt for "custom"
 
 
-@router.post("/rewrite")
+@router.post("/rewrite", dependencies=[Depends(require_ai_on)])
 def rewrite(body: RewriteIn, session: Session = Depends(get_session)) -> dict:
     """Transform the draft (or a selected fragment) in the composer: rephrase,
     fix grammar, change tone, translate, shorten/expand, or a freeform instruction.
@@ -594,7 +608,7 @@ class AskIn(BaseModel):
     history: list[dict] = []      # prior turns [{role: "user"|"assistant", content}]
 
 
-@router.post("/ask")
+@router.post("/ask", dependencies=[Depends(require_ai_on)])
 def ask(body: AskIn, session: Session = Depends(get_session)) -> dict:
     """Answer a freeform question or perform a task over a set of emails held as
     context (the open message, a whole thread, or several messages the user added
@@ -628,7 +642,7 @@ class AiSearchIn(BaseModel):
     q: str
 
 
-@router.post("/search")
+@router.post("/search", dependencies=[Depends(require_ai_on)])
 def ai_search(body: AiSearchIn, session: Session = Depends(get_session)) -> dict:
     """Turn a plain-language request ("find the email about the Audi crash plate")
     into a short keyword search query the mail client can run. Returns just the
@@ -873,7 +887,7 @@ class AgentIn(BaseModel):
     history: list[dict] = []
 
 
-@router.post("/agent")
+@router.post("/agent", dependencies=[Depends(require_ai_on)])
 def agent(body: AgentIn, session: Session = Depends(get_session)) -> dict:
     """The assistant with hands: answers questions about the mailbox and about
     RaplMail itself, and - when asked to change mail - returns a resolved ACTION
@@ -1375,7 +1389,7 @@ def autostart_ollama_if_configured() -> None:
         with Session(get_engine()) as session:
             row = session.get(Setting, 1)
             data = dict(row.data) if row and row.data else {}
-        if str(data.get("aiProvider") or "").strip().lower() != "ollama":
+        if ai_switched_off(data) or str(data.get("aiProvider") or "").strip().lower() != "ollama":
             return
         base = str(data.get("aiBaseUrl") or "").strip().rstrip("/")
         if data.get("ollamaManaged", True) and os.name == "nt" and _is_local_base(base):
@@ -1597,6 +1611,9 @@ def ollama_warm(session: Session = Depends(get_session)) -> dict:
     """Preload the configured model into VRAM (and keep it resident) so it's ready
     the instant the user asks. Used by "adaptive" mode: the app warms on focus and
     unloads on blur. No-op unless the provider is Ollama."""
+    row = session.get(Setting, 1)
+    if ai_switched_off(dict(row.data) if row and row.data else {}):
+        return {"warmed": False}
     cfg = _ai_config(session)
     if cfg["provider"] != "ollama" or not cfg["model"]:
         return {"warmed": False}

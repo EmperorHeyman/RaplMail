@@ -62,6 +62,11 @@ export default {
     "compose.templates": "Templates",
     "compose.attachFile": "Attach file",
     "compose.attach": "Attach",
+    "compose.dropAttach": "Drop to attach",
+    "compose.dropInline": "Drop here to put the picture in the message",
+    "compose.dropFolder": "Folders can't be attached - drop the files inside them",
+    "compose.readFailed": "Couldn't read {name}",
+    "compose.attachBig": "Attachments now total {size} - many mail servers refuse messages over 25 MB",
 
     // Editor body.
     "compose.messageBody": "Message body",
@@ -175,6 +180,11 @@ export default {
     "compose.templates": "Šablony",
     "compose.attachFile": "Přiložit soubor",
     "compose.attach": "Přiložit",
+    "compose.dropAttach": "Pusťte pro přiložení",
+    "compose.dropInline": "Pusťte sem pro vložení obrázku do textu",
+    "compose.dropFolder": "Složky nejde přiložit - přetáhněte soubory, které obsahují",
+    "compose.readFailed": "Soubor {name} se nepodařilo načíst",
+    "compose.attachBig": "Přílohy mají dohromady {size} - mnoho poštovních serverů nepřijme zprávy nad 25 MB",
 
     // Tělo zprávy.
     "compose.messageBody": "Tělo zprávy",

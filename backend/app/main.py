@@ -10,18 +10,21 @@ from __future__ import annotations
 
 import contextlib
 import gc
+import logging
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
-from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, devicesync, folders, messages, metrics, rapldesk, rules, sandbox, security, settings as settings_api, signatures, smime, subscriptions, system, track, unfurl, vault
+from app.api import accounts, ai, avatars, calendar, compose, contacts, debug, devicesync, folders, mcp, messages, metrics, rapldesk, rules, sandbox, security, settings as settings_api, signatures, smime, subscriptions, system, track, unfurl, vault
 from app.core.config import get_settings
 from app.core.db import init_db
 from app.core.logbuffer import install as install_log_buffer
 from app.core.ws import hub
 from app.sync.engine import SyncManager
+
+log = logging.getLogger("raplmail.main")
 
 
 @contextlib.asynccontextmanager
@@ -34,6 +37,12 @@ async def lifespan(app: FastAPI):
     manager = SyncManager(hub)
     app.state.sync = manager
     await manager.start()
+    # Tell an AI app's MCP relay where to find us (app.mcp.endpoint).
+    try:
+        from app.mcp.endpoint import publish
+        publish(get_settings().port)
+    except Exception:  # noqa: BLE001 - MCP is optional, startup isn't
+        log.exception("couldn't publish the MCP endpoint")
     # Bring up the local Ollama server on launch if the user opted in (and it
     # isn't already running). Background thread so it never delays startup.
     import threading as _threading
@@ -49,6 +58,11 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        try:
+            from app.mcp.endpoint import unpublish
+            unpublish()
+        except Exception:  # noqa: BLE001
+            pass
         await manager.stop()
         # Stop the hidden Ollama serve we started (and its runner child) so it
         # doesn't outlive the app. Best-effort; a hard kill by the shell may skip
@@ -102,6 +116,7 @@ app.include_router(rapldesk.router)
 app.include_router(sandbox.router)
 app.include_router(debug.router)
 app.include_router(system.router)
+app.include_router(mcp.router)
 app.include_router(track.router)
 app.include_router(track.pixel_router)
 

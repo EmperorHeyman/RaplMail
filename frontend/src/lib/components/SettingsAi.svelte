@@ -1,16 +1,64 @@
 <script>
   import { onDestroy } from "svelte";
   import { app, saveSettings, notify } from "../store.svelte.js";
-  import { ai, openExternal } from "../api.js";
+  import { ai, mcp, openExternal } from "../api.js";
+  import { dateLocale } from "../time.svelte.js";
   import { icons } from "../icons.js";
   import { t } from "../i18n.svelte.js";
 
   const aiProv = $derived(app.settings.aiProvider || "anthropic");
+  // The master switch. Off hides every AI button and stops all AI work; turning
+  // it off also frees the GPU and stops RaplMail's own hidden Ollama server.
+  const aiOn = $derived(app.settings.aiOn !== false);
+  // --- Connect AI apps (MCP) ------------------------------------------------
+  // The command an AI app launches, and what connected apps did (polled while
+  // the card is open).
+  let mcpInfo = $state(null);
+  let _mcpTimer;
+  async function loadMcp() { try { mcpInfo = await mcp.info(); } catch {} }
+  $effect(() => {
+    if (!app.settings.mcpEnabled) return;
+    loadMcp();
+    _mcpTimer = setInterval(loadMcp, 5000);
+    return () => clearInterval(_mcpTimer);
+  });
+  const mcpLevel = $derived(["read", "act", "send"].includes(app.settings.mcpAccess) ? app.settings.mcpAccess : "read");
+  const quoteArg = (a) => (/[\s"]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a);
+  const desktopJson = $derived(mcpInfo
+    ? JSON.stringify({ mcpServers: { raplmail: { command: mcpInfo.command, args: mcpInfo.args } } }, null, 2) : "");
+  const claudeCodeCmd = $derived(mcpInfo
+    ? `claude mcp add --scope user raplmail -- ${[mcpInfo.command, ...mcpInfo.args].map(quoteArg).join(" ")}` : "");
+  const plainCmd = $derived(mcpInfo ? [mcpInfo.command, ...mcpInfo.args].map(quoteArg).join(" ") : "");
+  function copy(text) {
+    navigator.clipboard?.writeText(text).then(() => notify(t("mcp.copied")), () => notify(t("mcp.copyFailed"), "error"));
+  }
+  // The backend logs what a call was about as fields; word it here.
+  function actSummary(a) {
+    const d = a.detail || {};
+    if ("query" in d) return d.query ? t("mcp.sumQuery", { q: d.query }) : t("mcp.sumRecent");
+    if ("to" in d) return d.subject ? t("mcp.sumToSubj", { to: d.to, subject: d.subject }) : t("mcp.sumTo", { to: d.to });
+    if ("count" in d) return t(d.count === 1 ? "mcp.sumOne" : "mcp.sumMany", { n: d.count });
+    if ("message" in d) return t("mcp.sumMessage", { id: d.message });
+    return "";
+  }
+  const fmtWhen = (iso) => { try { return new Date(iso).toLocaleTimeString(dateLocale(), { hour: "2-digit", minute: "2-digit" }); } catch { return ""; } };
+
+  function setAiOn(on) {
+    saveSettings({ aiOn: on });
+    if (!on) {
+      ai.ollamaUnload().catch(() => {});
+      ai.ollamaManaged(false).catch(() => {});
+    } else if (aiProv === "ollama" && app.settings.ollamaManaged !== false) {
+      ai.ollamaManaged(true).catch(() => {});
+    }
+  }
   // AI actions are "on" once a key is set - or immediately for keyless local Ollama.
   const aiActive = $derived(!!app.settings.aiApiKey || aiProv === "ollama");
 
   // --- Ollama (local, keyless AI) -----------------------------------------
-  let ollama = $state({ loading: false, installed: false, running: false, models: [], base_url: "", version: "" });
+  // checked: false until the first status answer (that can take seconds) - so the
+  // box doesn't claim "not detected" and offer an install while it's still asking.
+  let ollama = $state({ loading: false, checked: false, installed: false, running: false, models: [], base_url: "", version: "" });
   let pullName = $state("");
   let pull = $state(null);       // { active, model, status, percent, error, done }
   let install = $state(null);    // { active, status, error, done, ok }
@@ -38,7 +86,7 @@
   async function refreshOllama() {
     ollama.loading = true;
     try {
-      ollama = { loading: false, ...(await ai.ollamaStatus(app.settings.aiBaseUrl || "")) };
+      ollama = { loading: false, checked: true, ...(await ai.ollamaStatus(app.settings.aiBaseUrl || "")) };
       // Fix the #1 Ollama footgun: if the selected model isn't actually pulled (or
       // none is set), the backend falls back to its default (llama3.2) and every
       // call 404s. Auto-select the first installed model so it just works.
@@ -47,7 +95,7 @@
         const ok = cur && ollama.models.some((m) => sameModel(m, cur));
         if (!ok) saveSettings({ aiModel: ollama.models[0] });
       }
-    } catch { ollama = { ...ollama, loading: false }; }
+    } catch { ollama = { ...ollama, loading: false, checked: true }; }
   }
   async function updateOllama() {
     try { await ai.ollamaUpdate(); install = { active: true, status: t("sAi.statusUpdating") }; pollInstall(); }
@@ -253,6 +301,14 @@
 
 <div class="wrap">
   <section class="card">
+    <label class="check">
+      <input type="checkbox" checked={aiOn} onchange={(e) => setAiOn(e.currentTarget.checked)} />
+      <div><b>{t("sAi.useAi")}</b><span>{aiOn ? t("sAi.useAiHint") : t("sAi.aiOffHint")}</span></div>
+    </label>
+  </section>
+
+  {#if aiOn}
+  <section class="card">
     <h3>{t("sAi.title")} <span class="tag">{aiProv === "ollama" ? t("sAi.tagLocal") : t("sAi.tagByok")}</span></h3>
     <p class="hint">{t("sAi.introA")} <b>Ollama</b> {t("sAi.introB")}</p>
     <label class="fieldrow"><span>{t("sAi.provider")}</span>
@@ -268,7 +324,7 @@
       <div class="ollama">
         <div class="ollama-head">
           <span class="dot" class:on={ollama.running}></span>
-          <b>{ollama.running ? t("sAi.running") : ollama.installed ? t("sAi.installedNotRunning") : t("sAi.notDetected")}</b>
+          <b>{!ollama.checked ? t("sAi.checking") : ollama.running ? t("sAi.running") : ollama.installed ? t("sAi.installedNotRunning") : t("sAi.notDetected")}</b>
           {#if ollama.version}<span class="ver">v{ollama.version}</span>{/if}
           <button class="btn ghost sm" onclick={refreshOllama} disabled={ollama.loading}>{@html icons.sync} {ollama.loading ? "…" : t("sAi.refresh")}</button>
           {#if ollama.installed || ollama.running}
@@ -282,7 +338,9 @@
             <span>{t("sAi.autostart")}</span>
           </label>
         {/if}
-        {#if !ollama.installed && !ollama.running}
+        {#if !ollama.checked}
+          <!-- still asking: no install / start offers yet -->
+        {:else if !ollama.installed && !ollama.running}
           <p class="hint">{t("sAi.installHint")}</p>
           <div class="rowbtns">
             <button class="btn primary" onclick={startInstall} disabled={install?.active}>
@@ -499,6 +557,62 @@
       </div>
     {/if}
   </section>
+  {/if}
+
+  <section class="card mcp">
+    <h3>{t("mcp.title")} <span class="tag">MCP</span></h3>
+    <p class="hint">{t("mcp.intro")}</p>
+    <label class="check">
+      <input type="checkbox" checked={!!app.settings.mcpEnabled} onchange={(e) => saveSettings({ mcpEnabled: e.currentTarget.checked })} />
+      <div><b>{t("mcp.enable")}</b><span>{t("mcp.enableHint")}</span></div>
+    </label>
+    {#if app.settings.mcpEnabled}
+      <div class="mcp-level">
+        <b>{t("mcp.access")}</b>
+        <div class="seg" role="group" aria-label={t("mcp.access")}>
+          {#each ["read", "act", "send"] as lvl}
+            <button class="segbtn" class:on={mcpLevel === lvl} aria-pressed={mcpLevel === lvl}
+              onclick={() => saveSettings({ mcpAccess: lvl })}>{t("mcp.lvl_" + lvl)}</button>
+          {/each}
+        </div>
+        <p class="hint" class:warn-note={mcpLevel === "send"} style="margin:6px 0 0">{t("mcp.lvl_" + mcpLevel + "Hint")}</p>
+      </div>
+
+      <div class="mcp-setup">
+        <b>{t("mcp.setupTitle")}</b>
+        {#if mcpInfo}
+          <p class="hint">{t("mcp.claudeDesktop")}</p>
+          <div class="snip"><pre class="json">{desktopJson}</pre><button class="iconbtn" title={t("mcp.copy")} aria-label={t("mcp.copy")} onclick={() => copy(desktopJson)}>{@html icons.copy}</button></div>
+          <p class="hint">{t("mcp.claudeCode")}</p>
+          <div class="snip"><pre>{claudeCodeCmd}</pre><button class="iconbtn" title={t("mcp.copy")} aria-label={t("mcp.copy")} onclick={() => copy(claudeCodeCmd)}>{@html icons.copy}</button></div>
+          <p class="hint">{t("mcp.other")}</p>
+          <div class="snip"><pre>{plainCmd}</pre><button class="iconbtn" title={t("mcp.copy")} aria-label={t("mcp.copy")} onclick={() => copy(plainCmd)}>{@html icons.copy}</button></div>
+          <p class="hint" style="margin:0">{t("mcp.restartHint")}</p>
+        {:else}
+          <p class="hint">{t("mcp.loading")}</p>
+        {/if}
+      </div>
+
+      <div class="mcp-activity">
+        <b>{t("mcp.activity")}</b>
+        {#if mcpInfo?.activity?.length}
+          <div class="acts">
+            {#each mcpInfo.activity.slice(0, 15) as a (a.at + a.tool)}
+              <div class="act" class:failed={!a.ok}>
+                <span class="a-when tnum">{fmtWhen(a.at)}</span>
+                <code class="a-tool">{a.tool}</code>
+                <span class="a-sum">{actSummary(a)}</span>
+                {#if a.refused}<span class="a-err" title={t("mcp.refused")}>{t("mcp.refusedShort")}</span>
+                {:else if !a.ok}<span class="a-err" title={a.error}>{a.error}</span>{/if}
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="hint" style="margin:0">{t("mcp.noActivity")}</p>
+        {/if}
+      </div>
+    {/if}
+  </section>
 </div>
 
 <style>
@@ -517,6 +631,26 @@
   .rowbtns { display: flex; gap: 12px; flex-wrap: wrap; }
   .tag { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 7px; border-radius: 999px; background: var(--surface-3); color: var(--accent); vertical-align: middle; margin-left: 6px; }
   .fieldrow { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  /* Connect AI apps (MCP) */
+  .mcp-level, .mcp-setup, .mcp-activity { display: flex; flex-direction: column; gap: 8px; padding-top: 16px; }
+  .mcp-level > b, .mcp-setup > b, .mcp-activity > b { font-size: 14.5px; font-weight: 500; }
+  .mcp > .hint { margin: 0 0 10px; }
+  .mcp-level .hint, .mcp-setup .hint, .mcp-activity .hint { margin: 0; }
+  .mcp-level .seg { align-self: flex-start; }
+  .snip { position: relative; }
+  .snip pre { margin: 0; padding: 10px 44px 10px 12px; border-radius: var(--radius-sm); background: var(--surface-2);
+    font: 12px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+  .snip pre.json { white-space: pre; overflow-x: auto; overflow-wrap: normal; }
+  .snip .iconbtn { position: absolute; top: 4px; right: 4px; width: 34px; height: 34px; display: grid; place-items: center;
+    border-radius: 999px; color: var(--muted); background: transparent; }
+  .snip .iconbtn:hover { background: var(--hover); color: var(--text); }
+  .acts { display: flex; flex-direction: column; gap: 4px; max-height: 260px; overflow-y: auto; }
+  .act { display: flex; align-items: baseline; gap: 10px; font-size: 13px; padding: 4px 8px; border-radius: 8px; background: var(--surface-2); min-width: 0; }
+  .act.failed { box-shadow: inset 3px 0 0 var(--danger); }
+  .a-when { color: var(--muted); font-size: 12px; flex: none; }
+  .a-tool { font-size: 12px; color: var(--accent); flex: none; }
+  .a-sum { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+  .a-err { color: var(--danger); font-size: 12px; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .fieldrow > span { width: 140px; flex: none; color: var(--muted); font-size: 13px; }
   .fieldrow input, .fieldrow select { flex: 1; }
   .embed-warn { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; padding: 12px 14px;

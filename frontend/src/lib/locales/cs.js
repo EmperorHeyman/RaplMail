@@ -21,6 +21,8 @@ import setAccounts from "./parts/setAccounts.js";
 import setMisc from "./parts/setMisc.js";
 import color from "./parts/color.js";
 import otp from "./parts/otp.js";
+import mcpStrings from "./parts/mcp.js";
+import updateStrings from "./parts/update.js";
 
 const base = {
   // Běžné akce / opakující se slova.
@@ -207,12 +209,6 @@ const base = {
   "utility.unsubDone": "Odhlášeno od {who}",
   "utility.unsubOpened": "Otevřena stránka pro odhlášení od {who}",
   "utility.unsubFailed": "Nepodařilo se odhlásit automaticky - otevírám stránku",
-  "update.upToDate": "Máte nejnovější verzi ✓",
-  "update.available": "Dostupná aktualizace: {version}",
-  "update.openPage": "Otevřít stránku ke stažení na GitHubu a nainstalovat?",
-  "update.download": "Stáhnout",
-  "update.later": "Teď ne",
-  "update.checkFailed": "Kontrola aktualizací selhala: {err}",
   "schedule.localOnly": "RaplMail běží jen lokálně. Naplánované odeslání a odložení se spouští z vašeho počítače, takže RaplMail musí být spuštěný (aspoň na liště) a PC zapnuté ve zvolený čas - ze serveru se nic neodešle, když jste pryč.",
   "schedule.localOnlyShort": "Jen lokálně: PC musí být zapnuté a RaplMail spuštěný, aby se to provedlo.",
 };
@@ -221,5 +217,5 @@ export default {
   ...base,
   ...nav.cs, ...list.cs, ...reader.cs, ...compose.cs, ...cmd.cs, ...settingsNav.cs,
   ...goto.cs, ...search.cs, ...devicesync.cs, ...security.cs, ...sandbox.cs,
-  ...calendar.cs, ...groups.cs, ...reauth.cs, ...settingsPanels.cs, ...setAi.cs, ...setLook.cs, ...setAccounts.cs, ...setMisc.cs, ...color.cs, ...otp.cs,
+  ...calendar.cs, ...groups.cs, ...reauth.cs, ...settingsPanels.cs, ...setAi.cs, ...setLook.cs, ...setAccounts.cs, ...setMisc.cs, ...color.cs, ...otp.cs, ...mcpStrings.cs, ...updateStrings.cs,
 };

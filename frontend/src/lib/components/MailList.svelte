@@ -826,7 +826,7 @@
 <svelte:window on:keydown={onKey} />
 
 <SearchPalette open={paletteOpen} initial={app.search}
-  smartAvailable={aiEnabled() || app.settings.semanticEnabled}
+  smartAvailable={aiEnabled() || (app.settings.semanticEnabled && app.settings.aiOn !== false)}
   onclose={() => (paletteOpen = false)}
   onsearch={(q) => applySearch(q)}
   onsemantic={(q) => runSemanticSearch(q)}

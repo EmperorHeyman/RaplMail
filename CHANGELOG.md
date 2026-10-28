@@ -11,6 +11,67 @@ Newest releases first. Categories: **Added**, **Changed**, **Fixed**, **Removed*
 
 _Work in progress lands here, then moves under a version number when bundled._
 
+## [1.0.0] - 2026-10-28
+
+_RaplMail 1.0: from here on it keeps itself up to date._
+
+### Added
+- **RaplMail updates itself.** New versions now come from
+  raplmail.em-production.eu: RaplMail checks shortly after it starts and then
+  every few hours, downloads a new version in the background and tells
+  you when it's ready. An Update button appears at the bottom of the sidebar;
+  "Restart & update" shows what's new and installs it in a few seconds. Only
+  versions signed with the RaplMail release key are installed - a damaged or
+  tampered download is refused. Switch the automatic check off in Settings →
+  General → Update automatically; "Check for updates" is still there.
+- **The RaplMail website** at raplmail.em-production.eu: what RaplMail is, the
+  download, and what's new in every version, in English and Czech.
+
+### Changed
+- "Check for updates" no longer sends you to a download page: the update is
+  downloaded and installed from within RaplMail.
+
+## [0.9.21] - 2026-10-28
+
+### Added
+- **Connect AI apps to your mail (MCP).** Claude Desktop, Claude Code and
+  other apps that speak the Model Context Protocol can now search and read
+  your mail, conversations and attachments - and, if you allow it, organize it
+  and write drafts or send. Settings → AI assistant → Connect AI apps: one
+  switch, three access levels (Read only / Read & organize / Full), ready-to-
+  copy setup for Claude Desktop, Claude Code and any other MCP app, and a list
+  of what the apps did (refused calls included). It's off by default, works
+  only on this computer while RaplMail is running, and reading through it
+  never marks mail as read. Changes an app makes show up in the open list
+  straight away.
+- **Turn AI off completely.** A new "Use AI" switch at the top of Settings →
+  AI assistant: off means no AI buttons, no assistant, no summaries,
+  screening, smart search or morning briefing, nothing sent to an AI provider
+  and no model kept on your GPU. Your AI settings are kept for when you turn
+  it back on. Connecting AI apps (above) is separate and stays available.
+
+### Fixed
+- The "Free GPU after" choice (and other long choices in Settings) ran past
+  the edge of its box.
+- The Ollama box said "Ollama not detected" and offered to install it for a
+  few seconds every time the tab opened, while it was still checking.
+
+## [0.9.20] - 2026-10-22
+
+### Added
+- **Drag files from Explorer into a message to attach them.** Drop anywhere on
+  the composer (docked or in its own window): an overlay shows while you drag.
+  Dragging a picture offers two spots - put it in the message text, or attach
+  it. Attachment chips show the file size, and you're told when the
+  attachments pass 25 MB (where many mail servers start refusing).
+
+### Fixed
+- Files dropped on the window never reached the app (the desktop window
+  swallowed them), so dropping onto the composer or the signature editor did
+  nothing. Dropping a folder now says folders can't be attached, and a file
+  dropped anywhere that doesn't take files is ignored instead of opening in
+  place of the app.
+
 ## [0.9.19] - 2026-10-05
 
 ### Added

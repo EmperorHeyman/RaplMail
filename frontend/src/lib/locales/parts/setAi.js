@@ -58,6 +58,9 @@ export default {
 
     // --- AI assistant card --------------------------------------------------------
     "sAi.title": "AI assistant",
+    "sAi.useAi": "Use AI",
+    "sAi.useAiHint": "Turn off to switch AI off completely - every AI button, the assistant, summaries, screening, smart search and the morning briefing. Your AI settings are kept.",
+    "sAi.aiOffHint": "AI is off: no AI buttons, nothing sent to an AI provider, no model loaded on your GPU. Turn it back on any time - your settings are kept.",
     "sAi.tagLocal": "local · private",
     "sAi.tagByok": "bring your own key",
     "sAi.introA": "Powers the AI assistant, “Catch me up”, AI reply, compose rewrites, and inbox triage. Calls go straight from this app to the provider you choose - there's no RaplMail server in between. Pick",
@@ -206,6 +209,9 @@ export default {
 
     // --- Karta AI asistent --------------------------------------------------------
     "sAi.title": "AI asistent",
+    "sAi.useAi": "Používat AI",
+    "sAi.useAiHint": "Vypnutím AI úplně vypnete - všechna AI tlačítka, asistenta, shrnutí, kontrolu zpráv, chytré vyhledávání i ranní přehled. Nastavení AI zůstane uložené.",
+    "sAi.aiOffHint": "AI je vypnutá: žádná AI tlačítka, nic se neposílá poskytovateli AI, na grafické kartě neběží žádný model. Zapnout ji můžete kdykoli - nastavení zůstává.",
     "sAi.tagLocal": "lokálně · soukromě",
     "sAi.tagByok": "vlastní klíč",
     "sAi.introA": "Pohání AI asistenta, „Shrň mi to“, odpověď od AI, přepisování textu při psaní a třídění doručené pošty. Požadavky jdou přímo z této aplikace k poskytovateli, kterého zvolíte - žádný server RaplMailu mezi tím není. S poskytovatelem",

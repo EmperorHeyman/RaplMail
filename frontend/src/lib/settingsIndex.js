@@ -49,6 +49,7 @@ export const SETTINGS_INDEX = [
   { tab: "integrations", label: "RAPL Desk", kw: "rapldesk ticket tickets api helpdesk support" },
   { tab: "general", label: "Language", kw: "language english czech cs locale jazyk" },
   { tab: "general", label: "Check for updates", kw: "update updates version upgrade aktualizace" },
+  { tab: "general", label: "Update automatically", kw: "auto update automatic background download restart install new version aktualizovat automaticky" },
   { tab: "general", label: "Minimize to tray on close", kw: "tray minimize close background lišta" },
   { tab: "general", label: "Launch at login", kw: "startup launch login boot autostart tray spustit" },
 
@@ -79,6 +80,7 @@ export const SETTINGS_INDEX = [
   { tab: "appearance", label: "Custom CSS", kw: "css custom style stylesheet advanced" },
 
   // ── AI assistant ─────────────────────────────────────────────────────────────
+  { tab: "ai", label: "Use AI", kw: "ai off disable turn off completely vypnout ai úplně" },
   { tab: "ai", label: "AI provider", kw: "ai provider ollama openai anthropic claude gpt local keyless" },
   { tab: "ai", label: "API key", kw: "api key token secret" },
   { tab: "ai", label: "Active model", kw: "model llm gpt claude gemma qwen mistral llama" },
@@ -87,6 +89,7 @@ export const SETTINGS_INDEX = [
   { tab: "ai", label: "Free GPU after", kw: "gpu vram keep alive unload adaptive free memory" },
   { tab: "ai", label: "Semantic search", kw: "semantic vector embedding meaning search index" },
   { tab: "ai", label: "Embedding model", kw: "embedding model nomic vector reindex" },
+  { tab: "ai", label: "Connect AI apps", kw: "mcp model context protocol claude desktop claude code cursor ai apps agent access mail připojit ai aplikace" },
 
   // ── Other tabs (jump to the section; these are single-purpose) ───────────────
   { tab: "accounts", label: "Add an account", kw: "account add email imap smtp oauth microsoft google gmail m365 účet" },
